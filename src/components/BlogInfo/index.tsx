@@ -72,15 +72,15 @@ export function BlogUser({
       <div className="bloginfo__description">{tagline}</div>
       <div className="bloginfo__num">
         <Link className="bloginfo__num-item" href="/archive">
-          <Icon icon="carbon:blog" width="20" height="20" />
+          <Icon className = "archive" icon="carbon:blog" width="20" height="20"/>
           {count.blog}
         </Link>
         <Link className="bloginfo__num-item" href="/tags">
-          <Icon icon="ri:price-tag-3-line" width="20" height="20" />
+          <Icon className = "tags"  icon="ri:price-tag-3-line" width="20" height="20" />
           {count.tag}
         </Link>
-        <Link className="bloginfo__num-item" href="/docs/notes">
-          <Icon icon="carbon:notebook" width="20" height="20" />
+        <Link className="bloginfo__num-item" href="/docs/notes/">
+          <Icon className = "docs" icon="carbon:notebook" width="20" height="20" />
           {count.doc}
        </Link>
 

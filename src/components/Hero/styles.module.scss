@@ -27,11 +27,20 @@
 }
 
 .bloghome__intro > p {
-  margin: 26px 0 24px;
+  margin: 26px 0 0px;
   color: hsl(215deg 19% 48%);
   /* text-shadow: 0 0 #8c99ab; */
   font-size: 1.125rem;
   text-align: justify;
+  letter-spacing: -0.04em;
+  line-height: 32px;
+}
+
+.bloghome__intro_right {
+  color: hsl(215deg 19% 48%);
+  /* text-shadow: 0 0 #8c99ab; */
+  font-size: 1.125rem;
+  text-align: right;
   letter-spacing: -0.04em;
   line-height: 32px;
 }
@@ -55,9 +64,12 @@ html[data-theme='dark'] .bloghome__intro > p {
   z-index: 5;
   align-items: center;
   justify-items: center;
+  height:auto;
+  pointer-events: none;
+  user-select: none;
 }
 
-.bloghome__image svg {
+.bloghome__image img {
   width: 100%;
   height: auto;
 }
@@ -166,7 +178,7 @@ html[data-theme='dark'] .bloghome__intro > p {
   margin-left: -2px;
   font-weight: 600;
   background: linear-gradient( 90deg, var(--ifm-color-primary) 11.3%, var(--ifm-color-primary-light) 161.54% );
-  box-shadow: rgb(210 95 116 / 35%) 0 0 32px;
+  box-shadow: rgb(39 119 164 / 50%) 0 0 32px;
   border-radius: 7px;
   font-family: "Yuanti SC", Youyuan, "You Yuan", "幼圆", "PingFang SC", "Microsoft Yahei", Helvetica, sans-serif;
 

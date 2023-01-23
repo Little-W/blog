@@ -1,5 +1,5 @@
 const path = require('path')
-const beian = '萌ICP备20770114514号'
+const beian = '<a href="https://icp.gov.moe/?keyword=20223914" target="_blank">萌ICP备20223914号</a>'
 
 
 
@@ -70,6 +70,11 @@ const config = {
 			position: 'right',
             to: 'archive',
         },
+		 {
+              label: '其他',
+			  position: 'right',
+              to: 'docs/etc/',
+          },
         {
               label: '标签',
               position: 'right',
@@ -77,15 +82,11 @@ const config = {
         },
 
         {
-          label: '导航',
+          label: '网址导航',
           position: 'right',
           to: 'website',
         },
 
-         {
-          type: 'localeDropdown',
-          position: 'right',
-        },
       ],
     },
     footer: {
@@ -101,6 +102,10 @@ const config = {
 		 {
               label: '笔记',
               to: 'docs/notes/',
+          },
+		  {
+              label: '杂项',
+              to: 'docs/etc/',
           },
            {
               label: '标签',
@@ -187,7 +192,9 @@ const config = {
     },
     socials: {
       github: 'https://github.com/Little-W',
-      qq: 'https://wpa.qq.com/msgrd?v=3&amp;uin=1405481963&amp;site=qq',
+      qq: 'https://qm.qq.com/cgi-bin/qm/qr?k=y4eBDiKgn2wxTvy4sRgW8q_T_0bgnr1-&noverify=0&personal_qrcode_source=4',
+	  bilibili:'https://space.bilibili.com/297325003',
+	  twitter:'https://twitter.com/yux2333',
     },
   },
   presets: [
@@ -236,7 +243,7 @@ const config = {
         feedOptions: {
           type: 'all',
           title: 'Yusen',
-          copyright: `Copyright © ${new Date().getFullYear()} Yusen Built with Docusaurus.<p><a href="http://beian.miit.gov.cn/" class="footer_lin">${beian}</a></p>`,
+          copyright: `Copyright © ${new Date().getFullYear()} Yusen Built with Docusaurus.<p>${beian}</p>`,
         },
       }
     ],
@@ -274,7 +281,6 @@ const config = {
   i18n: {
     defaultLocale: 'zh',
     locales: ['zh'],
-
   },
 }
 

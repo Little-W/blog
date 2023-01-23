@@ -1,7 +1,6 @@
 ---
 title: Test post
 authors: [Yusen]
-
 tags: [日语,随笔]
 keywords: [Japanese]
 ---

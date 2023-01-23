@@ -649,7 +649,7 @@ code {
   transition: 0.4s;
 
   &:hover {
-    box-shadow: 0 0 30px rgb(0 120 231 / 20%);
+    box-shadow: 0 0 30px rgb(72 138 174 / 20%);
   }
 }
 

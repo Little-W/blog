@@ -5,7 +5,7 @@ import Translate from '@docusaurus/Translate';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Link from '@docusaurus/Link';
 
-import HeroMain from './img/hero_main.svg';
+import HeroMain from '/img/atri.png';
 
 import JuejinIcon from '@site/static/svg/juejin.svg';
 import { Icon } from '@iconify/react';
@@ -34,17 +34,29 @@ function Hero() {
 			<p>	　ようこそ<span className={styles.intro__name}>私の世界</span>へ</p>
         </animated.div>
         <animated.p style={trails[1]}>
-          <Translate id="homepage.hero.text">
-            {`　　如果尖锐的批评完全消失，温和的批评将会变得刺耳。如果温和的批评也不被允许，
-	    沉默将被认为居心叵测。如果沉默也不再允许，赞扬不够卖力将是一种罪行。
-	    如果只允许一种声音存在，那么，唯一存在的那个声音就是谎言。 　　　　　
-	`}
-          </Translate>
-		  <p align="right"> ——苏格拉底</p>
-          <br />
-          <br />
-          <Translate
-            id="homepage.hero.look"
+          <Translate id="homepage.hero.text.1">
+            　　如果尖锐的批评完全消失，温和的批评将会变得刺耳。如果温和的批评也不被允许，
+	    沉默将被认为居心叵测。如果
+			</Translate>
+			<a>
+				<Translate id="homepage.hero.text.silence">沉默</Translate>
+			</a>
+			<Translate id="homepage.hero.text.2">也不再允许，赞扬不够卖力将是一种</Translate>
+			<a>
+			<Translate id="homepage.hero.text.crime">罪行。</Translate>
+			</a>
+			<Translate id="homepage.hero.text.3">
+			如果只允许一种声音存在，那么，唯一存在的那个声音就是
+			</Translate>
+			<a>
+			<Translate id="homepage.hero.text.lie">谎言。</Translate>
+			</a>
+			</animated.p>
+			<animated.div style={trails[1]} className={styles.bloghome__intro_right}>
+				<a> ——苏格拉底 </a>
+			</animated.div>
+			<animated.p style={trails[1]}>
+			<Translate id="homepage.hero.look"
             values={{
               link: (
                 <Link to="/website">
@@ -69,7 +81,7 @@ function Hero() {
         </animated.div>
       </div>
       <div className={styles.bloghome__image}>
-        <HeroMain />
+        < img src = "/img/atri.png"></img>
       </div>
     </animated.div>
   );
@@ -87,18 +99,25 @@ export function SocialLinks({ ...prop }) {
     wx: string;
     cloudmusic: string;
     zhihu: string;
+	bilibili: string;
   };
 
   return (
     <animated.div className={styles.social__links} {...prop}>
-      <a href="/rss.xml" target="_blank">
+      <a href="/rss.xml" target="_blank" className="rss">
         <Icon icon='ri:rss-line' />
       </a>
-      <a href={socials.github} target="_blank">
+      <a href={socials.github} target="_blank" className="github">
         <Icon icon='ri:github-line' />
       </a>
-      <a href={socials.qq} target="_blank">
+      <a href={socials.qq} target="_blank" className="qq">
         <Icon icon='ri:qq-line' />
+      </a>
+      <a href={socials.bilibili} target="_blank" className="bilibili">
+        <Icon icon='ri:bilibili-line' />
+      </a>
+      <a href={socials.twitter} target="_blank"  className="twitter">
+        <Icon icon='ri:twitter-line' />
       </a>
     </animated.div>
   );

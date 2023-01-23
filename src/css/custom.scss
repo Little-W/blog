@@ -1,11 +1,11 @@
 :root {
-  --ifm-color-primary: #E6A9BD;
+  --ifm-color-primary: #00a8e9;
   --ifm-color-primary-dark: #05a1ec;
   --ifm-color-primary-darker: #0598df;
   --ifm-color-primary-darkest: #047eb8;
-  --ifm-color-primary-light: #e6a6b5;
-  --ifm-color-primary-lighter: #b0e6ff;
-  --ifm-color-primary-lightest: #d5f1fd;
+  --ifm-color-primary-light: #00a8e9;
+  --ifm-color-primary-lighter: #00b2e9;
+  --ifm-color-primary-lightest: #00c3eb;
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', 'Helvetica Neue', 'Noto Sans',
@@ -649,7 +649,7 @@ code {
   transition: 0.4s;
 
   &:hover {
-    box-shadow: 0 0 30px rgb(0 120 231 / 20%);
+    box-shadow: 0 0 30px rgb(72 138 174 / 30%);
   }
 }
 
