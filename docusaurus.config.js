@@ -14,7 +14,7 @@ const config = {
   favicon: 'img/favicon.ico',
   organizationName: 'yusen',
   projectName: 'blog',
-  tagline: '長き闇を撒き散らし、東雲の光を灯す',
+  tagline: '時よ過ぎゆけ、お前は残酷だ',
   /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
   themeConfig: {
     image: 'img/logo.png',
@@ -71,7 +71,7 @@ const config = {
             to: 'archive',
         },
 		 {
-              label: '其他',
+              label: '其他文章',
 			  position: 'right',
               to: 'docs/etc/',
           },
@@ -80,11 +80,15 @@ const config = {
               position: 'right',
               to: 'tags',
         },
-
-        {
+		{
           label: '网址导航',
-          position: 'right',
+          position: 'left',
           to: 'website',
+        },
+        {
+          label: '音乐',
+          position: 'left',
+          to: 'docs/music',
         },
 
       ],
@@ -147,7 +151,7 @@ const config = {
         ],
         },
       ],
-      copyright: `<p>Copyright © 2022 - PRESENT Yusen Built with Docusaurus.</p>
+      copyright: `<p>Copyright © 2022 - now • Yusen Built with Docusaurus.</p>
                   <p>${beian}</p>`,
     },
     prism: {
@@ -182,8 +186,8 @@ const config = {
     giscus: {
       repo: 'little-W/blog',
       repoId: 'R_kgDOIkujTQ',
-      category: 'General',
-      categoryId: 'DIC_kwDOIkujTc4CS_EJ',
+      category: 'Ideas',
+      categoryId: 'DIC_kwDOIkujTc4CS_EL',
       mapping: 'pathname',
       lang: 'zh-CN',
     },
@@ -232,9 +236,7 @@ const config = {
       path.resolve(__dirname, './src/plugin/plugin-content-blog'), {
         path: 'blog',
         routeBasePath: '/',
-        editUrl: ({ locale, blogDirPath, blogPath, permalink }) =>
-          `https://github.com/Little-W/blog/edit/main/${blogDirPath}/${blogPath}`,
-        editLocalizedFiles: false,
+
         blogSidebarCount: 10,
         postsPerPage: 10,
         showReadingTime: true,
