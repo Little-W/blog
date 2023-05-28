@@ -2,7 +2,6 @@ const path = require('path')
 const beian = '<a href="https://icp.gov.moe/?keyword=20223914" target="_blank">萌ICP备20223914号</a>'
 
 
-
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Yusenの小站',
@@ -88,7 +87,7 @@ const config = {
         {
           label: '音乐',
           position: 'left',
-          to: 'docs/music',
+          to: 'music',
         },
 
       ],

@@ -1,0 +1,71 @@
+
+
+<h1>音乐</h1>
+
+<div class="theme-admonition theme-admonition-info alert alert--info admonition_node_modules-@docusaurus-theme-classic-lib-theme-Admonition-styles-module"><div class="admonitionHeading_node_modules-@docusaurus-theme-classic-lib-theme-Admonition-styles-module"><span class="admonitionIcon_node_modules-@docusaurus-theme-classic-lib-theme-Admonition-styles-module"><svg viewBox="0 0 14 16"><path fill-rule="evenodd" d="M7 2.3c3.14 0 5.7 2.56 5.7 5.7s-2.56 5.7-5.7 5.7A5.71 5.71 0 0 1 1.3 8c0-3.14 2.56-5.7 5.7-5.7zM7 1C3.14 1 0 4.14 0 8s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7zm1 3H6v5h2V4zm0 6H6v2h2v-2z"></path></svg></span>信息</div><div class="admonitionContent_node_modules-@docusaurus-theme-classic-lib-theme-Admonition-styles-module"><p>本站音乐为本人自购或来自互联网。</p></div></div>
+
+　　于我而言，音乐是永远的避风港。戴上耳机，就能抛开周遭的嘈杂，进入一个只有自己的小世界。屏幕前的你又喜欢什么样的音乐呢？
+
+<h4>　　以下是我个人收藏的音乐，以 ACG 为主，希望你也能喜欢～ </h4>
+
+<div class="markdown"  style={{marginBottom: "15px"}}>	
+	<h2>歌单切换</h2>
+</div>
+
+
+<div id="aplayer_list_parent">	
+	<div id="aplayer_list">	
+	</div>
+</div>
+
+<div class="markdown" style={{marginBottom: "15px"}}>	
+	<h2>自定义播放列表</h2>
+</div>
+
+
+:::info
+播放列表内歌曲的顺序为选择歌曲时的顺序。关于搜索：要回到进行搜索之前的歌单，可以手动清空搜索框，或者按Delete键清空搜索框，然后点击其他位置。
+:::
+
+<div id="aplayer_list-current-list">
+	<button id="ap_list0" class="sytle-button-current-list">&lt;当前播放列表&gt;</button>
+</div>
+
+<div id="ap_list_button">
+	<div id="ap_list_button_sub">
+		<button id="ap_list_remove" >清空播放列表</button>
+		<button id="ap_list_select_all" >全选</button>
+		<button id="ap_list_random_select" >随机选几首</button>
+	</div>
+</div>
+<div id="aplayer_list_active"></div>
+
+<div class="markdown" style={{marginBottom: "15px"}}>	
+	<h2>音乐播放器</h2>
+</div>
+
+
+:::info
+音质默认为 HQ，即 320K 的 MP3，因为使用无损音质时播放的流畅度受网络环境影响很大。歌曲文件未加载完全时无法调节进度条，无损音质下大概率无法调节进度条。
+播放器使用[APlayer](https://github.com/DIYgod/APlayer)，本页的播放器在播放中切换到别的页面时，需要通过<font color="#dd0000">播放左下角迷你播放器里面的音乐</font>来暂停。
+:::
+
+<div id="aplayer_ctr">
+	<div id="aplayer_qua">
+		<button id="ap_qua1" class="sytle-qua-button">SQ & Hires</button>
+		<button id="ap_qua2" class="sytle-qua-button">HQ</button>
+	</div>
+</div>
+
+<div id="aplayer0">
+	<div id="aplayer0-button">
+		<button id="ap_load" class="sytle-ap-button">点击加载播放器</button>
+	</div>
+</div>
+
+<div class="markdown" style={{marginBottom: "15px"}}>	
+	<h2>MV</h2>
+</div>
+
+<div id="mv_player_div">
+</div>
