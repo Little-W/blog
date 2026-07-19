@@ -207,10 +207,16 @@ function music_hf_url_host(url) {
   try { return new URL(url).hostname.toLowerCase(); } catch (error) { return ''; }
 }
 
-function prioritise_music_hf_urls(urls) {
+function prioritise_music_hf_urls(urls, preferredHost) {
   return (Array.isArray(urls) ? urls : []).slice().sort(function(left, right) {
-    var leftIndex = music_hf_host_priority.indexOf(music_hf_url_host(left));
-    var rightIndex = music_hf_host_priority.indexOf(music_hf_url_host(right));
+    var leftHost = music_hf_url_host(left);
+    var rightHost = music_hf_url_host(right);
+    if (preferredHost) {
+      if (leftHost === preferredHost && rightHost !== preferredHost) return -1;
+      if (rightHost === preferredHost && leftHost !== preferredHost) return 1;
+    }
+    var leftIndex = music_hf_host_priority.indexOf(leftHost);
+    var rightIndex = music_hf_host_priority.indexOf(rightHost);
     return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
       (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
   });
@@ -304,8 +310,9 @@ function music_source_candidates(song) {
 
 function music_cover_candidates(song) {
   if (!song) return [];
-  if (Array.isArray(song.cover_candidates) && song.cover_candidates.length) return prioritise_music_hf_urls(song.cover_candidates);
-  if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return prioritise_music_hf_urls(song.pic_candidates);
+  var preferredHost = song.__musicSourceHost || '';
+  if (Array.isArray(song.cover_candidates) && song.cover_candidates.length) return prioritise_music_hf_urls(song.cover_candidates, preferredHost);
+  if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return prioritise_music_hf_urls(song.pic_candidates, preferredHost);
   var source = song.cover_source || song.pic_source || song.cover || song.pic;
   return music_cover_urls(source) || (source ? [source] : []);
 }
@@ -408,6 +415,7 @@ function install_music_source_fallback(player) {
     song.__musicSourceIndex = 0;
     song.__musicSourceRetries = 0;
     song.url = candidates[0];
+    song.__musicSourceHost = music_hf_url_host(candidates[0]);
   }
 
   function retryOrSwitchSource(reason) {
@@ -439,6 +447,10 @@ function install_music_source_fallback(player) {
     var wasPlaying = !player.audio.paused;
     var sourceURL = retryURL(candidates[sourceIndex], Number(song.__musicSourceRetries) || 0);
     song.url = sourceURL;
+    song.__musicSourceHost = music_hf_url_host(sourceURL);
+    // 音频已切到新的镜像时，封面也必须切到同一主机，不能继续等待另一套
+    // 独立的封面回退策略。
+    set_player_cover(player, song);
 
     function resumeFromFallback() {
       if (player.__yusenMusicSourceRetryId !== retryId) return;
@@ -2977,16 +2989,33 @@ function switch_list() {
   init_custom_list();
 }
 function set_quality() {
+  function updatePlayerTrack(player, index, nextTrack) {
+    if (!player || !player.list || !player.list.audios || !player.list.audios[index] || !nextTrack) return;
+    var currentTrack = player.list.audios[index];
+    ['source_url', 'source_candidates', 'cover_source', 'pic_source', 'cover_candidates', 'pic_candidates', 'cover', 'pic']
+      .forEach(function(key) { currentTrack[key] = nextTrack[key]; });
+    var candidates = music_source_candidates(currentTrack);
+    if (candidates.length) {
+      currentTrack.__musicSourceIndex = 0;
+      currentTrack.__musicSourceRetries = 0;
+      currentTrack.__musicSourceHost = music_hf_url_host(candidates[0]);
+      currentTrack.url = candidates[0];
+    } else {
+      currentTrack.url = nextTrack.url;
+    }
+    if (player.list.index === index) set_player_cover(player, currentTrack);
+  }
   
   for (var i = 0; i < ap_list_ptr[1].length; i++) {
-    ap_list_ptr[0][i] = music_all[quality][ap_list_ptr[1][i]];
+    var nextTrack = music_all[quality][ap_list_ptr[1][i]];
+    ap_list_ptr[0][i] = nextTrack;
     if(typeof window.ap1 == 'object')
     {
-      window.ap1.list.audios[i].url = music_all[quality][ap_list_ptr[1][i]].url;
+      updatePlayerTrack(window.ap1, i, nextTrack);
     }
     if(typeof window.ap0 == 'object')
     {
-      window.ap0.list.audios[i].url = music_all[quality][ap_list_ptr[1][i]].url;
+      updatePlayerTrack(window.ap0, i, nextTrack);
     }
   }
 }
