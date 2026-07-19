@@ -1086,6 +1086,10 @@ function init_custom_list_mv() {
   var MV_RESOLVE_CACHE_TTL_MS = 2 * 60 * 1000;
   var mvFastSourceCache = new Map();
   var MV_FAST_SOURCE_CACHE_TTL_MS = 90 * 1000;
+  // 网络错误不应被缓存或写入用户设置。这里的次数只存在于当前打开的 MV 中，
+  // 用于应对国内 CDN 与函数网络的短暂抖动。
+  var MV_API_REQUEST_RETRIES = 3;
+  var MV_PLAYBACK_RECOVERY_RETRIES = 3;
 
   var listParent = document.createElement("div");
   listParent.setAttribute("id", "mv-list-ol-parent");
@@ -1133,27 +1137,32 @@ function init_custom_list_mv() {
     return String(configured).replace(/\/+$/, "");
   }
 
+  function parserRetryDelay(attempt) {
+    // 350ms、700ms、1400ms，并加入极小抖动，避免瞬时网络错误时的同步重试。
+    return 350 * Math.pow(2, Math.max(0, attempt)) + Math.floor(Math.random() * 120);
+  }
+
   function biliParserRequest(path, options) {
     var requestURL = getBiliParserApi() + path;
-    function requestWithRetry(retriesLeft) {
+    function requestWithRetry(attempt) {
       return fetch(requestURL, options || {}).then(function(response) {
-        // 解析服务的瞬态限流或网关错误重试一次；业务性 4xx 仍立即显示给用户。
-        if (retriesLeft > 0 && (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500)) {
-          return new Promise(function(resolve) { window.setTimeout(resolve, 220); }).then(function() {
-            return requestWithRetry(retriesLeft - 1);
+        // 只重试可能恢复的网关、限流和网络错误；业务性 4xx 不会浪费请求。
+        if (attempt < MV_API_REQUEST_RETRIES && (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500)) {
+          return new Promise(function(resolve) { window.setTimeout(resolve, parserRetryDelay(attempt)); }).then(function() {
+            return requestWithRetry(attempt + 1);
           });
         }
         return response;
       }, function(error) {
-        if (retriesLeft > 0) {
-          return new Promise(function(resolve) { window.setTimeout(resolve, 220); }).then(function() {
-            return requestWithRetry(retriesLeft - 1);
+        if (attempt < MV_API_REQUEST_RETRIES) {
+          return new Promise(function(resolve) { window.setTimeout(resolve, parserRetryDelay(attempt)); }).then(function() {
+            return requestWithRetry(attempt + 1);
           });
         }
         throw error;
       });
     }
-    return requestWithRetry(1).catch(function() {
+    return requestWithRetry(0).catch(function() {
       var remote = getBiliParserMode() === "remote";
       var connectionError = new Error(remote
         ? "无法连接云端解析服务，请确认部署和 /api 路由。"
@@ -1162,7 +1171,7 @@ function init_custom_list_mv() {
       throw connectionError;
     }).then(function(response) {
       return response.json().catch(function() {
-        var invalidResponse = new Error("本地解析服务返回了无效响应。");
+        var invalidResponse = new Error("解析服务返回了无效响应。");
         invalidResponse.code = "INVALID_RESPONSE";
         throw invalidResponse;
       });
@@ -1176,13 +1185,14 @@ function init_custom_list_mv() {
     });
   }
 
-  function resolveMv(item) {
+  function resolveMv(item, forceRefresh) {
     var key = String(item.bilibili_bvid || "") + ":" + String(Math.max(1, parseInt(item.bilibili_page, 10) || 1));
     var cached = mvResolveCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.promise;
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.promise;
     var entry = { expiresAt: Date.now() + MV_RESOLVE_CACHE_TTL_MS, promise: null };
     entry.promise = biliParserRequest("/resolve?bvid=" + encodeURIComponent(item.bilibili_bvid) + "&p=" + encodeURIComponent(Math.max(1, parseInt(item.bilibili_page, 10) || 1))).catch(function(error) {
-      mvResolveCache.delete(key);
+      // 失败永远不进入解析缓存，也不影响下次打开或手动重试。
+      if (mvResolveCache.get(key) === entry) mvResolveCache.delete(key);
       throw error;
     });
     mvResolveCache.set(key, entry);
@@ -1269,6 +1279,10 @@ function init_custom_list_mv() {
     var activeResolved = null;
     var activePlaybackSource = null;
     var destroyed = false;
+    var playbackRecoveryAttempts = 0;
+    var recoveryPending = false;
+    var mediaRetryPending = false;
+    var resumePlaybackAfterRecovery = false;
     activeMvCleanup = function() {
       destroyed = true;
     };
@@ -1276,10 +1290,54 @@ function init_custom_list_mv() {
     function setPlaceholder(titleText, statusText) {
       placeholderTitle.innerText = titleText;
       placeholderText.innerText = statusText;
+      var existingRetryButton = playerPlaceholder.querySelector(".mv-player-retry-button");
+      if (existingRetryButton) existingRetryButton.remove();
       if (!frameWrap.contains(playerPlaceholder)) {
         frameWrap.innerHTML = "";
         frameWrap.appendChild(playerPlaceholder);
       }
+    }
+
+    function disposeCurrentVideoPlayer() {
+      if (mv_player && typeof mv_player.dispose === "function" && !(typeof mv_player.isDisposed === "function" && mv_player.isDisposed())) {
+        mv_player.dispose();
+      }
+      mv_player = null;
+      currentVideo = null;
+      activePlaybackSource = null;
+      mediaRetryPending = false;
+    }
+
+    function showManualRetry() {
+      if (destroyed) return;
+      setPlaceholder("正在等待重新连接", "当前网络线路有波动；本次失败不会被记录，可立即重新尝试。");
+      var retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "mv-player-retry-button";
+      retryButton.innerText = "重新尝试";
+      retryButton.addEventListener("click", function() {
+        playbackRecoveryAttempts = 0;
+        resumePlaybackAfterRecovery = false;
+        resolveCurrentMv(true);
+      });
+      playerPlaceholder.appendChild(retryButton);
+    }
+
+    function scheduleFreshResolve() {
+      if (destroyed || recoveryPending) return;
+      if (playbackRecoveryAttempts >= MV_PLAYBACK_RECOVERY_RETRIES) {
+        showManualRetry();
+        return;
+      }
+      resumePlaybackAfterRecovery = resumePlaybackAfterRecovery || Boolean(mv_player && typeof mv_player.paused === "function" && !mv_player.paused());
+      disposeCurrentVideoPlayer();
+      playbackRecoveryAttempts += 1;
+      recoveryPending = true;
+      setPlaceholder("正在重新连接", "线路连接不稳定，正在重新获取可用视频源（" + playbackRecoveryAttempts + "/" + MV_PLAYBACK_RECOVERY_RETRIES + "）…");
+      window.setTimeout(function() {
+        recoveryPending = false;
+        if (!destroyed) resolveCurrentMv(true);
+      }, parserRetryDelay(playbackRecoveryAttempts));
     }
 
     function applyPlayerTheme(themeName) {
@@ -1297,10 +1355,12 @@ function init_custom_list_mv() {
     function showResolveError(error) {
       if (destroyed) return;
       if (usingRemoteParser && error && error.code === "SERVICE_NOT_LOGGED_IN") {
-        setPlaceholder("视频暂不可播放", "解析服务正在等待登录，请稍后再试。");
+        setPlaceholder("正在等待解析服务", "解析服务正在等待登录，请稍后再试。");
         return;
       }
-      setPlaceholder("视频暂不可播放", "暂时无法加载该视频，请稍后再试或选择其他 MV。");
+      // 不保存解析失败，也不把一次网络抖动当作此 MV 永久不可用；重新解析会获取
+      // 新的短时签名与新的 CDN 候选节点。
+      scheduleFreshResolve();
     }
 
     function dashSourceFor(option) {
@@ -1355,8 +1415,14 @@ function init_custom_list_mv() {
       return Boolean(option && option.fastProgressive);
     }
 
-    function waitForMediaRetry() {
-      return new Promise(function(resolve) { window.setTimeout(resolve, 220); });
+    function mediaRetryDelay(attempt) {
+      return 280 * Math.pow(2, Math.max(0, attempt || 0)) + Math.floor(Math.random() * 100);
+    }
+
+    function waitForMediaRetry(attempt) {
+      return new Promise(function(resolve) {
+        window.setTimeout(resolve, mediaRetryDelay(attempt));
+      });
     }
 
     function retryableMediaResponse(response) {
@@ -1372,7 +1438,7 @@ function init_custom_list_mv() {
       }).then(function(response) {
         if (response.ok) return url;
         if (retriesLeft > 0 && retryableMediaResponse(response)) {
-          return waitForMediaRetry().then(function() { return preflightMediaLink(url, retriesLeft - 1); });
+          return waitForMediaRetry(retriesLeft).then(function() { return preflightMediaLink(url, retriesLeft - 1); });
         }
         var error = new Error("快速直链不可用（HTTP " + response.status + "）。");
         error.mediaStatus = response.status;
@@ -1380,7 +1446,7 @@ function init_custom_list_mv() {
       }).catch(function(error) {
         // 非 HTTP 的网络中断也值得重新请求一次；403、404 则直接尝试备用节点。
         if (retriesLeft > 0 && !Number.isInteger(error && error.mediaStatus)) {
-          return waitForMediaRetry().then(function() { return preflightMediaLink(url, retriesLeft - 1); });
+          return waitForMediaRetry(retriesLeft).then(function() { return preflightMediaLink(url, retriesLeft - 1); });
         }
         throw error;
       });
@@ -1390,7 +1456,7 @@ function init_custom_list_mv() {
       var candidates = Array.from(new Set((urls || []).filter(Boolean)));
       function tryNext(index, lastError) {
         if (index >= candidates.length) return Promise.reject(lastError || new Error("快速直链不可用。"));
-        return preflightMediaLink(candidates[index], 1).then(function(url) {
+        return preflightMediaLink(candidates[index], 3).then(function(url) {
           return { url: url, remaining: candidates.slice(index + 1) };
         }).catch(function(error) {
           return tryNext(index + 1, error);
@@ -1444,7 +1510,7 @@ function init_custom_list_mv() {
     }
 
     function sameLinkRetry(source) {
-      if (!source || (source.requestRetryCount || 0) >= 1) return null;
+      if (!source || (source.requestRetryCount || 0) >= 3) return null;
       return Object.assign({}, source, { requestRetryCount: (source.requestRetryCount || 0) + 1 });
     }
 
@@ -1462,6 +1528,7 @@ function init_custom_list_mv() {
 
     function setVideoJsSource(source) {
       if (!source || !mv_player) return;
+      mediaRetryPending = false;
       activePlaybackSource = source;
       var resumeAt = mv_player.currentTime() || 0;
       var shouldPlay = !mv_player.paused();
@@ -1472,6 +1539,16 @@ function init_custom_list_mv() {
         if (shouldPlay) mv_player.play().catch(function() {});
       });
       mv_player.src({ src: source.src, type: source.type });
+    }
+
+    function scheduleMediaSourceRetry(failedSource, nextSource) {
+      if (!failedSource || !nextSource || destroyed || mediaRetryPending) return;
+      mediaRetryPending = true;
+      var retryNumber = Math.max(1, Number(nextSource.requestRetryCount) || 1);
+      window.setTimeout(function() {
+        if (destroyed || activePlaybackSource !== failedSource) return;
+        setVideoJsSource(nextSource);
+      }, mediaRetryDelay(retryNumber - 1));
     }
 
     function switchVideoJsQuality(nextQuality) {
@@ -1619,34 +1696,44 @@ function init_custom_list_mv() {
       setupQualitySelector();
       mv_player.one("loadedmetadata", unlockPreparedPlayer);
       applyPlayerTheme(savedTheme);
+      if (resumePlaybackAfterRecovery) {
+        mv_player.one("loadedmetadata", function() {
+          resumePlaybackAfterRecovery = false;
+          mv_player.play().catch(function() {});
+        });
+      }
       mv_player.on("error", function() {
         var failedSource = activePlaybackSource;
-        // 同一个节点先重试一次，再依次轮换解析接口给出的备用 CDN 链接。
+        if (!failedSource || mediaRetryPending) return;
+        // 同一个节点做退避重试，再依次轮换解析接口给出的备用 CDN 链接。
         // 两者均耗尽才请求 BiliAnalysis，避免瞬断直接退回较慢的后备链路。
         var retriedSource = sameLinkRetry(failedSource);
         if (retriedSource) {
-          setVideoJsSource(retriedSource);
+          scheduleMediaSourceRetry(failedSource, retriedSource);
           return;
         }
         var nextSource = nextLinkRetry(failedSource);
         if (nextSource) {
-          setVideoJsSource(nextSource);
+          scheduleMediaSourceRetry(failedSource, nextSource);
           return;
         }
         if (failedSource?.biliAnalysisOption && !failedSource.triedBiliAnalysis) {
           // 仅在优先的 DASH 源报错后请求 BiliAnalysis；避免初始播放额外等待一次
           // 渐进式直链解析，也避免低画质直链失败拖慢正常的 DASH 播放。
           failedSource.triedBiliAnalysis = true;
+          mediaRetryPending = true;
           fastSourceFor(failedSource.biliAnalysisOption).then(function(source) {
+            mediaRetryPending = false;
             if (destroyed || activePlaybackSource !== failedSource) return;
             setVideoJsSource(source);
           }).catch(function() {
+            mediaRetryPending = false;
             if (destroyed || activePlaybackSource !== failedSource) return;
-            setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
+            scheduleFreshResolve();
           });
           return;
         }
-        if (!destroyed) setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
+        scheduleFreshResolve();
       });
       // 先让 Video.js 建立技术层，再通过统一入口设置首个 source。直接把 DASH
       // source 传入构造器会与 qualityselector/VHS 的初始化竞争，首段请求可能被
@@ -1689,10 +1776,10 @@ function init_custom_list_mv() {
       createVideoPlayer(directDashSource(selectedQuality, dashSource));
     }
 
-    function resolveCurrentMv() {
+    function resolveCurrentMv(forceRefresh) {
       if (destroyed) return;
-      setPlaceholder("正在加载视频", "正在准备播放器…");
-      resolveMv(item).then(startVideo).catch(showResolveError);
+      setPlaceholder("正在加载视频", forceRefresh ? "正在重新获取可用视频线路…" : "正在准备播放器…");
+      resolveMv(item, Boolean(forceRefresh)).then(startVideo).catch(showResolveError);
     }
 
     resolveCurrentMv();
