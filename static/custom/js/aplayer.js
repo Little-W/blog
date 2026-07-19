@@ -155,9 +155,11 @@ function load_static_data(name) {
 }
 
 // Hugging Face 在国内网络中的可用性会随网络和地区变化。播放器始终先尝试
-// hf-mirror，再在媒体加载失败时切换到官方地址。音频流量由资料源直接发给
+// hf-mirror、Sufy CDN，再在媒体加载失败时切换到官方地址。音频流量由资料源直接发给
 // 浏览器，不经过博客的 Netlify Function。
-var MUSIC_HF_SOURCE_HOSTS = ['hf-mirror.com', 'huggingface.co'];
+var MUSIC_HF_SOURCE_HOSTS = ['hf-mirror.com', 'hf-cdn.sufy.com', 'huggingface.co'];
+var MUSIC_SOURCE_TIMEOUT_MS = 12 * 1000;
+var MUSIC_SOURCE_RETRIES_PER_MIRROR = 2;
 
 function music_hf_source_path(value) {
   try {
@@ -212,35 +214,66 @@ function install_music_source_fallback(player) {
   if (!player || !player.audio || player.__yusenMusicSourceFallback) return;
   player.__yusenMusicSourceFallback = true;
   player.__yusenMusicSourceRetryId = 0;
+  player.__yusenMusicSourceTimeout = null;
+
+  function clearSourceTimeout() {
+    if (player.__yusenMusicSourceTimeout) {
+      window.clearTimeout(player.__yusenMusicSourceTimeout);
+      player.__yusenMusicSourceTimeout = null;
+    }
+  }
+
+  function activeSong() {
+    return player.list && player.list.audios && player.list.audios[player.list.index];
+  }
+
+  function retryURL(url, retryCount) {
+    if (!retryCount) return url;
+    try {
+      var parsed = new URL(url);
+      parsed.searchParams.set('__music_retry', String(retryCount));
+      parsed.searchParams.set('__music_retry_at', String(Date.now()));
+      return parsed.toString();
+    } catch (error) {
+      return url;
+    }
+  }
 
   function resetCurrentSource() {
-    var song = player.list && player.list.audios && player.list.audios[player.list.index];
+    clearSourceTimeout();
+    var song = activeSong();
     var candidates = music_source_candidates(song);
     if (!song || !candidates.length) return;
     song.__musicSourceIndex = 0;
+    song.__musicSourceRetries = 0;
     song.url = candidates[0];
   }
 
-  player.on('listswitch', resetCurrentSource);
-  resetCurrentSource();
-
-  // 使用捕获阶段拦截 audio 的原生错误事件，先切换镜像，再让 APlayer 的默认
-  // “两秒后跳到下一首”逻辑接管。这样短暂的镜像故障不会被误认为曲目失效。
-  player.audio.addEventListener('error', function(event) {
-    var song = player.list && player.list.audios && player.list.audios[player.list.index];
+  function retryOrSwitchSource(reason) {
+    var song = activeSong();
     var candidates = music_source_candidates(song);
     var sourceIndex = Number(song && song.__musicSourceIndex) || 0;
-    if (!song || sourceIndex + 1 >= candidates.length) return;
+    if (!song || !candidates.length || sourceIndex >= candidates.length) return false;
 
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    var nextIndex = sourceIndex + 1;
+    var retries = Number(song.__musicSourceRetries) || 0;
+    if (retries < MUSIC_SOURCE_RETRIES_PER_MIRROR) {
+      song.__musicSourceRetries = retries + 1;
+      player.notice(reason === 'timeout' ? '音乐源响应超时，正在重试…' : '音乐源暂时不可用，正在重试…', 2200);
+    } else if (sourceIndex + 1 < candidates.length) {
+      sourceIndex += 1;
+      song.__musicSourceIndex = sourceIndex;
+      song.__musicSourceRetries = 0;
+      player.notice('正在切换备用音乐源…', 2200);
+    } else {
+      return false;
+    }
+
+    clearSourceTimeout();
     var retryId = ++player.__yusenMusicSourceRetryId;
     var resumeAt = Number(player.audio.currentTime) || 0;
     var wasPlaying = !player.audio.paused;
-    song.__musicSourceIndex = nextIndex;
-    song.url = candidates[nextIndex];
-    player.notice('正在切换备用音乐源…', 2200);
+    var sourceURL = retryURL(candidates[sourceIndex], Number(song.__musicSourceRetries) || 0);
+    song.url = sourceURL;
 
     function resumeFromFallback() {
       if (player.__yusenMusicSourceRetryId !== retryId) return;
@@ -250,12 +283,43 @@ function install_music_source_fallback(player) {
       if (wasPlaying) player.play();
     }
     player.audio.addEventListener('loadedmetadata', resumeFromFallback, {once: true});
-    player.audio.src = song.url;
+    player.audio.src = sourceURL;
     player.audio.load();
-    // 初次加载失败时有些浏览器不会再触发一次 play 事件；主动调用不会绕过用户
-    // 的播放权限，并能让已由用户启动的播放立即恢复。
     if (wasPlaying) player.play();
+    return true;
+  }
+
+  function scheduleSourceTimeout() {
+    clearSourceTimeout();
+    var song = activeSong();
+    if (!song || !music_source_candidates(song).length || player.audio.readyState >= 1 || player.audio.paused) return;
+    var retryId = player.__yusenMusicSourceRetryId;
+    player.__yusenMusicSourceTimeout = window.setTimeout(function() {
+      player.__yusenMusicSourceTimeout = null;
+      if (retryId !== player.__yusenMusicSourceRetryId || player.audio.readyState >= 1 || player.audio.paused) return;
+      retryOrSwitchSource('timeout');
+    }, MUSIC_SOURCE_TIMEOUT_MS);
+  }
+
+  player.on('listswitch', resetCurrentSource);
+  resetCurrentSource();
+
+  // 使用捕获阶段拦截 audio 的原生错误事件。每个镜像最多重新请求两次，随后
+  // 才切换到下一个镜像；全部来源失败时再交给 APlayer 的默认处理逻辑。
+  player.audio.addEventListener('error', function(event) {
+    if (!retryOrSwitchSource('error')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
   }, true);
+  player.audio.addEventListener('loadstart', scheduleSourceTimeout);
+  player.audio.addEventListener('waiting', scheduleSourceTimeout);
+  player.audio.addEventListener('stalled', scheduleSourceTimeout);
+  player.audio.addEventListener('loadedmetadata', clearSourceTimeout);
+  player.audio.addEventListener('canplay', clearSourceTimeout);
+  player.audio.addEventListener('playing', clearSourceTimeout);
+  player.audio.addEventListener('pause', function() {
+    if (player.audio.paused) clearSourceTimeout();
+  });
 }
 
 function ensure_mv_player_runtime() {
