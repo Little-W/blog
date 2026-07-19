@@ -2344,6 +2344,48 @@ function aplayer0() {
   window.ap0.on("listshow", function() { window.setTimeout(sync_queue_toggle, 0); });
   window.ap0.on("listhide", function() { window.setTimeout(sync_queue_toggle, 0); });
   sync_queue_toggle();
+
+  // APlayer 原本按单行歌词的高度计算偏移；新版歌词窗更高时，把当前歌词
+  // 重新对齐到可视区域正中央，前后歌词自然环绕显示。
+  function center_current_lyric() {
+    var lyric_content = window.ap0 && window.ap0.template && window.ap0.template.lrc;
+    if (!lyric_content) return;
+    // template.lrc 指向内容容器，外层 .aplayer-lrc 才是可视歌词窗。
+    var lyric_view = lyric_content.closest(".aplayer-lrc");
+    if (!lyric_view || !lyric_view.clientHeight) return;
+    var current_line = lyric_view.querySelector(".aplayer-lrc-current");
+    if (!current_line) return;
+    var offset = lyric_view.clientHeight / 2 - (current_line.offsetTop + current_line.offsetHeight / 2);
+    lyric_content.style.transform = "translate3d(0," + Math.round(offset) + "px,0)";
+  }
+  var lyric_center_pending = false;
+  function schedule_lyric_center() {
+    if (lyric_center_pending) return;
+    lyric_center_pending = true;
+    window.requestAnimationFrame(function() {
+      // 异步歌词解析器会在本帧末尾写入自己的 transform；再等一帧后覆盖它，
+      // 保证当前句无论首次加载还是播放中切换都稳定落在中间。
+      window.requestAnimationFrame(function() {
+        lyric_center_pending = false;
+        center_current_lyric();
+      });
+    });
+  }
+  window.ap0.on("timeupdate", schedule_lyric_center);
+  window.ap0.on("listswitch", function() { window.setTimeout(schedule_lyric_center, 0); });
+  if (window.__musicLyricObserver) window.__musicLyricObserver.disconnect();
+  if (window.MutationObserver && window.ap0.template && window.ap0.template.lrc) {
+    window.__musicLyricObserver = new window.MutationObserver(schedule_lyric_center);
+    window.__musicLyricObserver.observe(window.ap0.template.lrc, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  }
+  window.setTimeout(schedule_lyric_center, 0);
+  window.setTimeout(schedule_lyric_center, 120);
+  window.setTimeout(schedule_lyric_center, 320);
 }
 
 
