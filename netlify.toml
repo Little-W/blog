@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "build"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "24"
+  NPM_FLAGS = "--no-audit --no-fund --prefer-offline"
+  BILI_PARSER_API = "/api"
+  BILI_PARSER_MODE = "netlify"
+
+[build.processing]
+  skip_processing = true
+
+[functions]
+  node_bundler = "esbuild"
