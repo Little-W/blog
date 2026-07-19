@@ -1133,7 +1133,26 @@ function init_custom_list_mv() {
   }
 
   function biliParserRequest(path, options) {
-    return fetch(getBiliParserApi() + path, options || {}).catch(function() {
+    var requestURL = getBiliParserApi() + path;
+    function requestWithRetry(retriesLeft) {
+      return fetch(requestURL, options || {}).then(function(response) {
+        // 解析服务的瞬态限流或网关错误重试一次；业务性 4xx 仍立即显示给用户。
+        if (retriesLeft > 0 && (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500)) {
+          return new Promise(function(resolve) { window.setTimeout(resolve, 220); }).then(function() {
+            return requestWithRetry(retriesLeft - 1);
+          });
+        }
+        return response;
+      }, function(error) {
+        if (retriesLeft > 0) {
+          return new Promise(function(resolve) { window.setTimeout(resolve, 220); }).then(function() {
+            return requestWithRetry(retriesLeft - 1);
+          });
+        }
+        throw error;
+      });
+    }
+    return requestWithRetry(1).catch(function() {
       var remote = getBiliParserMode() === "remote";
       var connectionError = new Error(remote
         ? "无法连接云端解析服务，请确认部署和 /api 路由。"
@@ -1295,15 +1314,32 @@ function init_custom_list_mv() {
       });
     }
 
-    function fallbackManifest(option) {
-      var fallbackVideo = Array.isArray(option?.candidates?.video) ? option.candidates.video[0] : "";
-      var fallbackAudio = Array.isArray(option?.candidates?.audio) ? option.candidates.audio[0] : "";
-      if (!option?.manifest || (!fallbackVideo && !fallbackAudio)) return "";
+    function fallbackManifest(option, candidateIndex) {
+      var fallbackVideo = Array.isArray(option?.candidates?.video) ? option.candidates.video : [];
+      var fallbackAudio = Array.isArray(option?.candidates?.audio) ? option.candidates.audio : [];
+      if (!option?.manifest || (!fallbackVideo.length && !fallbackAudio.length)) return "";
+      var index = Number.isInteger(candidateIndex) && candidateIndex >= 0 ? candidateIndex : 0;
       var mediaIndex = 0;
       return option.manifest.replace(/<BaseURL>[\s\S]*?<\/BaseURL>/g, function(baseURL) {
-        var fallback = mediaIndex++ === 0 ? fallbackVideo : fallbackAudio;
+        var candidates = mediaIndex++ === 0 ? fallbackVideo : fallbackAudio;
+        // 视频和音频的备用节点数量不一定相同；缺少同序号时复用它们各自的
+        // 第一个备用节点，仍可组成一个完整的 DASH 清单。
+        var fallback = candidates[index] || candidates[0];
         return fallback ? "<BaseURL>" + xmlText(fallback) + "</BaseURL>" : baseURL;
       });
+    }
+
+    function dashRetrySources(option) {
+      if (!option?.manifest) return [];
+      var videoCandidates = Array.isArray(option?.candidates?.video) ? option.candidates.video : [];
+      var audioCandidates = Array.isArray(option?.candidates?.audio) ? option.candidates.audio : [];
+      var count = Math.max(videoCandidates.length, audioCandidates.length);
+      var manifests = [];
+      for (var index = 0; index < count; index += 1) {
+        var manifest = fallbackManifest(option, index);
+        if (manifest && manifests.indexOf(manifest) === -1) manifests.push(manifest);
+      }
+      return manifests.map(dashObjectURL).filter(Boolean);
     }
 
     function dashObjectURL(manifest) {
@@ -1318,6 +1354,50 @@ function init_custom_list_mv() {
       return Boolean(option && option.fastProgressive);
     }
 
+    function waitForMediaRetry() {
+      return new Promise(function(resolve) { window.setTimeout(resolve, 220); });
+    }
+
+    function retryableMediaResponse(response) {
+      return Boolean(response && (response.status === 408 || response.status === 425 || response.status === 429 || response.status >= 500));
+    }
+
+    function preflightMediaLink(url, retriesLeft) {
+      return fetch(url, {
+        headers: { Range: "bytes=0-0" },
+        mode: "cors",
+        credentials: "omit",
+        referrerPolicy: "no-referrer"
+      }).then(function(response) {
+        if (response.ok) return url;
+        if (retriesLeft > 0 && retryableMediaResponse(response)) {
+          return waitForMediaRetry().then(function() { return preflightMediaLink(url, retriesLeft - 1); });
+        }
+        var error = new Error("快速直链不可用（HTTP " + response.status + "）。");
+        error.mediaStatus = response.status;
+        throw error;
+      }).catch(function(error) {
+        // 非 HTTP 的网络中断也值得重新请求一次；403、404 则直接尝试备用节点。
+        if (retriesLeft > 0 && !Number.isInteger(error && error.mediaStatus)) {
+          return waitForMediaRetry().then(function() { return preflightMediaLink(url, retriesLeft - 1); });
+        }
+        throw error;
+      });
+    }
+
+    function firstPlayableMediaLink(urls) {
+      var candidates = Array.from(new Set((urls || []).filter(Boolean)));
+      function tryNext(index, lastError) {
+        if (index >= candidates.length) return Promise.reject(lastError || new Error("快速直链不可用。"));
+        return preflightMediaLink(candidates[index], 1).then(function(url) {
+          return { url: url, remaining: candidates.slice(index + 1) };
+        }).catch(function(error) {
+          return tryNext(index + 1, error);
+        });
+      }
+      return tryNext(0, null);
+    }
+
     function fastSourceFor(option) {
       if (!usesBiliAnalysisFastPath(option) || !activeResolved?.cid) return Promise.reject(new Error("该画质没有可用的快速直链。"));
       var cacheKey = [activeResolved.bvid || item.bilibili_bvid, activeResolved.page || item.bilibili_page, activeResolved.cid, option.qn].join(":");
@@ -1327,10 +1407,16 @@ function init_custom_list_mv() {
       entry.promise = biliParserRequest("/fast?bvid=" + encodeURIComponent(activeResolved.bvid || item.bilibili_bvid) + "&p=" + encodeURIComponent(activeResolved.page || item.bilibili_page) + "&cid=" + encodeURIComponent(activeResolved.cid) + "&qn=" + encodeURIComponent(option.qn)).then(function(data) {
         if (!data?.url) throw new Error("快速解析未返回 MP4 直链。");
         // B 站偶尔会返回已失效或只对解析机房可用的 durl。先以与播放器相同的
-        // 跨域策略读取一个字节，避免把不可用 MP4 交给 video 元素后才报错。
-        return fetch(data.url, { headers: { Range: "bytes=0-0" }, mode: "cors", credentials: "omit", referrerPolicy: "no-referrer" }).then(function(response) {
-          if (!response.ok) throw new Error("快速直链不可用（HTTP " + response.status + "）。");
-          return { format: option.code, src: data.url, type: data.type || "video/mp4" };
+        // 跨域策略读取一个字节；临时网络故障重试一次，节点不可用则轮换备用 URL。
+        return firstPlayableMediaLink([data.url].concat(data.backupUrls || [])).then(function(result) {
+          return {
+            format: option.code,
+            src: result.url,
+            type: data.type || "video/mp4",
+            linkRetrySources: result.remaining,
+            linkRetryIndex: -1,
+            requestRetryCount: 0
+          };
         });
       }).catch(function(error) {
         mvFastSourceCache.delete(cacheKey);
@@ -1347,16 +1433,30 @@ function init_custom_list_mv() {
       return {
         format: dashSource.format,
         src: dashSource.src,
-        fallbackSrc: dashSource.fallbackSrc,
         type: dashSource.type,
+        linkRetrySources: dashSource.linkRetrySources || [],
+        linkRetryIndex: -1,
+        requestRetryCount: 0,
         biliAnalysisOption: usesBiliAnalysisFastPath(option) ? option : null,
         triedBiliAnalysis: false
       };
     }
 
-    function originalDashFallback(source) {
-      if (!source?.fallbackSrc) return null;
-      return { format: source.format, src: source.fallbackSrc, type: source.type };
+    function sameLinkRetry(source) {
+      if (!source || (source.requestRetryCount || 0) >= 1) return null;
+      return Object.assign({}, source, { requestRetryCount: (source.requestRetryCount || 0) + 1 });
+    }
+
+    function nextLinkRetry(source) {
+      if (!source || !Array.isArray(source.linkRetrySources)) return null;
+      var nextIndex = (Number.isInteger(source.linkRetryIndex) ? source.linkRetryIndex : -1) + 1;
+      var nextURL = source.linkRetrySources[nextIndex];
+      if (!nextURL) return null;
+      return Object.assign({}, source, {
+        src: nextURL,
+        linkRetryIndex: nextIndex,
+        requestRetryCount: 0
+      });
     }
 
     function setVideoJsSource(source) {
@@ -1408,13 +1508,26 @@ function init_custom_list_mv() {
         preload: preloadMode,
         poster: currentVideo.poster
       });
+      // qualityselector 会在首个元数据事件中建立菜单。此时若先让用户点击播放，
+      // Video.js、VHS 和插件会并发重设同一个 source，可能永久停在 0:00。
+      // 菜单就绪前统一拦截操作并给出明确状态，下一帧再开放播放器。
+      mv_player.addClass("vjs-mv-preparing");
+      var requestedPlaybackWhilePreparing = false;
+      // 遮罩期间的点击不交给 Video.js（否则会与首个 source 初始化竞争），但记录
+      // 用户的明确播放意图，菜单就绪后自动继续，不需要再点一次。
+      mv_player.el().addEventListener("click", function(event) {
+        if (!mv_player || mv_player.isDisposed() || !mv_player.hasClass("vjs-mv-preparing")) return;
+        requestedPlaybackWhilePreparing = true;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }, true);
       mv_player.volume(read_player_settings().mv.volume);
       mv_player.on("volumechange", function() {
         update_player_settings('mv', { volume: mv_player.volume() });
       });
       var qualitySelectorReady = false;
       function setupQualitySelector() {
-        if (qualitySelectorReady || typeof mv_player?.qualityselector !== "function") return;
+        if (qualitySelectorReady || typeof mv_player?.qualityselector !== "function") return false;
         qualitySelectorReady = true;
         mv_player.qualityselector({
           text: selectedQuality.label,
@@ -1436,6 +1549,13 @@ function init_custom_list_mv() {
             }
           }
         });
+        window.requestAnimationFrame(function() {
+          if (!destroyed && mv_player && !mv_player.isDisposed()) {
+            mv_player.removeClass("vjs-mv-preparing");
+            if (requestedPlaybackWhilePreparing) mv_player.play().catch(function() {});
+          }
+        });
+        return true;
       }
       // qualityselector 初始化时会主动重设一次 source。等待首个 DASH 元数据进入
       // MediaSource 后再挂载，避免与首次加载并发取消首段 Range 请求而一直卡在 0:00。
@@ -1443,32 +1563,29 @@ function init_custom_list_mv() {
       applyPlayerTheme(savedTheme);
       mv_player.on("error", function() {
         var failedSource = activePlaybackSource;
+        // 同一个节点先重试一次，再依次轮换解析接口给出的备用 CDN 链接。
+        // 两者均耗尽才请求 BiliAnalysis，避免瞬断直接退回较慢的后备链路。
+        var retriedSource = sameLinkRetry(failedSource);
+        if (retriedSource) {
+          setVideoJsSource(retriedSource);
+          return;
+        }
+        var nextSource = nextLinkRetry(failedSource);
+        if (nextSource) {
+          setVideoJsSource(nextSource);
+          return;
+        }
         if (failedSource?.biliAnalysisOption && !failedSource.triedBiliAnalysis) {
           // 仅在优先的 DASH 源报错后请求 BiliAnalysis；避免初始播放额外等待一次
           // 渐进式直链解析，也避免低画质直链失败拖慢正常的 DASH 播放。
           failedSource.triedBiliAnalysis = true;
-          var dashFallback = originalDashFallback(failedSource);
           fastSourceFor(failedSource.biliAnalysisOption).then(function(source) {
             if (destroyed || activePlaybackSource !== failedSource) return;
-            source.recoverySource = dashFallback;
             setVideoJsSource(source);
           }).catch(function() {
             if (destroyed || activePlaybackSource !== failedSource) return;
-            if (dashFallback) setVideoJsSource(dashFallback);
-            else setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
+            setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
           });
-          return;
-        }
-        if (failedSource?.recoverySource) {
-          // 快速 MP4 的预检与真实播放之间仍可能出现短时失效；此时先恢复同画质
-          // 的国内 DASH 源，再由其自身处理原始 B 站节点的回退。
-          setVideoJsSource(failedSource.recoverySource);
-          return;
-        }
-        if (failedSource?.fallbackSrc) {
-          // 国内镜像不可达时立即回到 B 站接口原始下发的节点；不重开播放器，
-          // 并保留已选择的画质与播放进度。
-          setVideoJsSource({ format: failedSource.format, src: failedSource.fallbackSrc, type: failedSource.type });
           return;
         }
         if (!destroyed) setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
@@ -1497,10 +1614,14 @@ function init_custom_list_mv() {
       }) || qualityOptions[0];
       qualitySources = qualityOptions.map(function(option) {
         var sourceUrl = dashObjectURL(option.manifest) || option.url;
-        var fallbackSourceUrl = dashObjectURL(fallbackManifest(option));
         // 内联 MPD 必须以 DASH MIME 交给 VHS；后端保留的 video/mp4 是单条
         // 轨道的原始类型，若沿用它，Video.js 会把 data: MPD 误作 MP4 并直接报错。
-        return { format: option.code, src: sourceUrl, fallbackSrc: fallbackSourceUrl, type: option.manifest ? "application/dash+xml" : option.type };
+        return {
+          format: option.code,
+          src: sourceUrl,
+          type: option.manifest ? "application/dash+xml" : option.type,
+          linkRetrySources: dashRetrySources(option)
+        };
       });
       var dashSource = dashSourceFor(selectedQuality);
       if (!dashSource) {
@@ -2483,12 +2604,15 @@ load_music_lists = function() {
   formerPage.addEventListener('click', function() {
     rebuildTagPages();
     if (current_page > 0) current_page--;
-    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'smooth'});
+    // 网格启用 scroll-snap 后，部分浏览器会吞掉程序触发的 smooth 滚动，导致
+    // 页码改变但视觉上仍停在原页。分页按钮使用确定的立即定位，确保每次都
+    // 跳到完整的三行标签页。
+    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'auto'});
   });
   nextPage.addEventListener('click', function() {
     rebuildTagPages();
     if (current_page < target_x_list.length - 1) current_page++;
-    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'smooth'});
+    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'auto'});
   });
   setup_music_lists();
   init_custom_list();
