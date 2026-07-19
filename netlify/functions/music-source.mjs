@@ -37,25 +37,27 @@ function officialSourceURL(value, download) {
   }
   if (!pathname.startsWith(DATASET_PREFIX) || pathname.includes('/../') || !MEDIA_FILE_RE.test(pathname)) return null;
 
-  // hf-mirror 只负责入口转发；实际解析必须在 Netlify 的服务端请求官方站点，
-  // 才能取得浏览器可直连的短期 LFS URL。
+  // hf-mirror 只负责入口转发；由 Netlify 服务端请求官方站点并跟随 LFS
+  // 重定向，浏览器不再直接访问被干扰的 huggingface.co 或 LFS 域名。
   url.hostname = 'huggingface.co';
   if (download) url.searchParams.set('download', 'true');
   return url;
 }
 
-function isTrustedStorageURL(value) {
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== 'https:' || url.username || url.password) return false;
-  const host = url.hostname.toLowerCase();
-  return host === 'cdn-lfs-us-1.hf.co'
-    || host === 'cdn-lfs.huggingface.co'
-    || host.endsWith('.xethub.hf.co');
+function proxyHeaders(response) {
+  const headers = new Headers({
+    // 音频 Range 响应不应由浏览器长期保留；每次由 Netlify 重新验证上游，避免
+    // 使用过期的 LFS 签名地址，也避免 CDN 缓存大体积分段内容。
+    'cache-control': 'private, no-store',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  });
+  ['accept-ranges', 'content-disposition', 'content-length', 'content-range', 'content-type', 'etag', 'last-modified']
+    .forEach((name) => {
+      const value = response.headers.get(name);
+      if (value) headers.set(name, value);
+    });
+  return headers;
 }
 
 export default async (request) => {
@@ -68,32 +70,22 @@ export default async (request) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
+    const range = request.headers.get('range');
+    if (range && !/^bytes=\d*-\d*(?:,\d*-\d*)*$/.test(range)) return textResponse('音频范围请求无效。', 416);
     const response = await fetch(upstream, {
-      method: 'GET',
-      redirect: 'manual',
+      method: request.method,
+      redirect: 'follow',
       signal: controller.signal,
       headers: {
         accept: 'audio/*, application/octet-stream;q=0.9, */*;q=0.1',
-        range: 'bytes=0-0',
+        ...(range ? {range} : {}),
         'user-agent': 'YusenBlog-MusicSource/1.0',
       },
     });
-    const location = response.headers.get('location');
-    if (!location || response.status < 300 || response.status >= 400) {
-      return textResponse('官方音乐源暂时无法生成直连地址。', 502);
-    }
-    const storageURL = new URL(location, upstream).toString();
-    if (!isTrustedStorageURL(storageURL)) return textResponse('官方音乐源返回了不受支持的存储地址。', 502);
-
-    return new Response(null, {
-      status: 302,
-      headers: {
-        location: storageURL,
-        // 签名 URL 有时效，缓存仅用于减少同一首歌短时间内的重复解析。
-        'cache-control': 'public, max-age=60, s-maxage=300',
-        'referrer-policy': 'no-referrer',
-        'x-content-type-options': 'nosniff',
-      },
+    if (!response.ok) return textResponse('官方音乐源暂时无法返回音频内容。', response.status >= 400 && response.status < 500 ? response.status : 502);
+    return new Response(request.method === 'HEAD' ? null : response.body, {
+      status: response.status,
+      headers: proxyHeaders(response),
     });
   } catch (error) {
     return textResponse(error && error.name === 'AbortError' ? '官方音乐源响应超时。' : '官方音乐源暂时无法访问。', 502);
