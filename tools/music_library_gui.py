@@ -11,6 +11,8 @@ for the media repositories.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import shutil
@@ -88,10 +90,25 @@ def clean_text(value: Any) -> str:
     return SPACE_RE.sub(' ', text).strip()
 
 
-def safe_file_name(value: str, fallback: str = 'untitled') -> str:
+def safe_file_name(value: str, fallback: str = 'untitled', max_bytes: int = 180) -> str:
+    """Return one portable path component without exceeding filesystem limits."""
     cleaned = INVALID_FILE_CHARS.sub(' ', value)
     cleaned = SPACE_RE.sub(' ', cleaned).strip(' .')
-    return cleaned or fallback
+    cleaned = cleaned or fallback
+    if len(cleaned.encode('utf-8')) <= max_bytes:
+        return cleaned
+    digest = hashlib.sha256(cleaned.encode('utf-8')).hexdigest()[:12]
+    suffix = f'-{digest}'
+    allowed = max_bytes - len(suffix.encode('utf-8'))
+    prefix: list[str] = []
+    used = 0
+    for character in cleaned:
+        size = len(character.encode('utf-8'))
+        if used + size > allowed:
+            break
+        prefix.append(character)
+        used += size
+    return ''.join(prefix).rstrip(' .') + suffix
 
 
 def metadata_value(tags: Any, keys: Iterable[str]) -> str:
@@ -128,6 +145,76 @@ def discover_companion(path: Path, extensions: tuple[str, ...], generic_names: t
     return None
 
 
+def image_extension(data: bytes, mime_type: str = '') -> str:
+    """Choose a safe filename extension for embedded artwork."""
+    normalized_mime = mime_type.lower().split(';', 1)[0].strip()
+    by_mime = {
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+    }
+    if normalized_mime in by_mime:
+        return by_mime[normalized_mime]
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return '.png'
+    if data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+        return '.webp'
+    return '.jpg'
+
+
+def embedded_cover_data(path: Path) -> tuple[bytes, str] | None:
+    """Read one embedded cover from common Mutagen container types."""
+    try:
+        audio = MutagenFile(path)
+    except Exception:
+        return None
+    if not audio:
+        return None
+
+    pictures = getattr(audio, 'pictures', None) or []
+    for picture in pictures:
+        data = getattr(picture, 'data', b'')
+        if data:
+            return bytes(data), str(getattr(picture, 'mime', ''))
+
+    tags = getattr(audio, 'tags', None)
+    if not tags:
+        return None
+    try:
+        tag_values = tags.items()
+    except AttributeError:
+        return None
+    for key, value in tag_values:
+        key_text = str(key).lower()
+        data = getattr(value, 'data', None)
+        if key_text.startswith('apic') and data:
+            return bytes(data), str(getattr(value, 'mime', ''))
+        if key_text == 'covr':
+            values = value if isinstance(value, (list, tuple)) else (value,)
+            for cover in values:
+                if cover:
+                    return bytes(cover), ''
+        if key_text == 'metadata_block_picture':
+            values = value if isinstance(value, (list, tuple)) else (value,)
+            for encoded in values:
+                try:
+                    decoded = base64.b64decode(str(encoded))
+                except (ValueError, TypeError):
+                    continue
+                if decoded:
+                    # Vorbis comments store a FLAC picture block. FFmpeg can
+                    # still export it later, but treating it as raw image data
+                    # would produce an invalid cover, so skip this uncommon form.
+                    continue
+    return None
+
+
+def embedded_cover_extension(path: Path) -> str | None:
+    cover = embedded_cover_data(path)
+    return image_extension(*cover) if cover else None
+
+
 def relative_to_root(path: Path, root: Path) -> Path:
     try:
         return path.relative_to(root)
@@ -151,6 +238,7 @@ class Track:
     album: str
     cover: Path | None
     lyrics: Path | None
+    embedded_cover_extension: str | None = None
     tag_ids: tuple[int, ...] = ()
 
     @property
@@ -176,6 +264,14 @@ class Track:
         if not sidecar:
             return None
         return self.output_directory / safe_file_name(sidecar.name)
+
+    def cover_relative(self) -> Path | None:
+        external = self.sidecar_relative(self.cover)
+        if external:
+            return external
+        if self.embedded_cover_extension:
+            return self.output_directory / f'cover{self.embedded_cover_extension}'
+        return None
 
 
 @dataclass(frozen=True)
@@ -204,14 +300,16 @@ def read_track(path: Path, source_root: Path) -> Track:
     except Exception:
         # A damaged tag must not stop the scan. The filename remains usable.
         pass
+    cover = discover_companion(path, IMAGE_EXTENSIONS, ('Cover.jpg', 'Cover.png', 'cover.jpg', 'cover.png', 'folder.jpg'))
     return Track(
         source=path,
         source_relative=relative_to_root(path, source_root),
         title=clean_text(title) or path.stem,
         artist=clean_text(artist),
         album=clean_text(album),
-        cover=discover_companion(path, IMAGE_EXTENSIONS, ('Cover.jpg', 'Cover.png', 'cover.jpg', 'cover.png', 'folder.jpg')),
+        cover=cover,
         lyrics=discover_companion(path, ('.lrc',), ('lyrics.lrc', 'Lyrics.lrc')),
+        embedded_cover_extension=None if cover else embedded_cover_extension(path),
     )
 
 
@@ -240,6 +338,19 @@ def copy_if_needed(source: Path | None, target: Path | None, overwrite: bool) ->
     return f'复制 {target.name}'
 
 
+def export_embedded_cover(track: Track, target: Path | None, overwrite: bool) -> str:
+    if not target or not track.embedded_cover_extension:
+        return '无侧车文件'
+    if target.exists() and not overwrite:
+        return f'保留 {target.name}'
+    cover = embedded_cover_data(track.source)
+    if not cover:
+        return '未找到内嵌封面'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(cover[0])
+    return f'导出内嵌封面 {target.name}'
+
+
 def run_ffmpeg(source: Path, target: Path, overwrite: bool) -> None:
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
@@ -265,7 +376,14 @@ def run_ffmpeg(source: Path, target: Path, overwrite: bool) -> None:
         '3',
         str(target),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
+        check=False,
+    )
     if result.returncode:
         detail = (result.stderr or result.stdout).strip().splitlines()
         tail = detail[-1] if detail else f'ffmpeg 退出码 {result.returncode}'
@@ -293,10 +411,15 @@ def process_tracks(
         if transcode:
             mp3_target = config.mp3_repo_dir / track.mp3_relative()
             run_ffmpeg(track.source, mp3_target, config.overwrite)
-            cover_target = config.mp3_repo_dir / track.sidecar_relative(track.cover) if track.cover else None
+            cover_relative = track.cover_relative()
+            cover_target = config.mp3_repo_dir / cover_relative if cover_relative else None
             lyric_target = config.mp3_repo_dir / track.sidecar_relative(track.lyrics) if track.lyrics else None
             progress(f'  MP3：{mp3_target.relative_to(config.mp3_repo_dir)}')
-            for action in (copy_if_needed(track.cover, cover_target, config.overwrite), copy_if_needed(track.lyrics, lyric_target, config.overwrite)):
+            cover_action = (
+                copy_if_needed(track.cover, cover_target, config.overwrite)
+                if track.cover else export_embedded_cover(track, cover_target, config.overwrite)
+            )
+            for action in (cover_action, copy_if_needed(track.lyrics, lyric_target, config.overwrite)):
                 if action != '无侧车文件':
                     progress(f'  {action}')
         if copy_source:
@@ -322,7 +445,7 @@ def read_jsonl_records(path: Path, expected_class: str) -> list[dict[str, Any]]:
 
 def write_jsonl_records(path: Path, class_name: str, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    header = f'{HEADER_PREFIX}{json.dumps({"type": "Class", "class": class_name}, ensure_ascii=False)}'
+    header = f'{HEADER_PREFIX}{json.dumps({"type": "Class", "class": class_name}, ensure_ascii=False, separators=(",", ":"))}'
     content = '\n'.join([header, *(json.dumps(record, ensure_ascii=False, separators=(',', ':')) for record in records)]) + '\n'
     with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=path.parent, delete=False) as output:
         output.write(content)
@@ -377,7 +500,7 @@ def record_for_track(track: Track, mid: int, quality: str, config: LibraryConfig
         'list': list(track.tag_ids or config.list_ids),
         'url': source_url if quality == 'sq' else mp3_url,
     })
-    cover_url = raw_url(config.mp3_raw_url, track.sidecar_relative(track.cover))
+    cover_url = raw_url(config.mp3_raw_url, track.cover_relative())
     lyric_url = raw_url(config.mp3_raw_url, track.sidecar_relative(track.lyrics))
     if cover_url:
         record['pic'] = cover_url
@@ -401,6 +524,8 @@ def export_database(tracks: list[Track], config: LibraryConfig, progress: Callab
     sq = read_jsonl_records(sq_path, 'music_sq')
     hq_by_mid = {record.get('mid'): record for record in hq if isinstance(record.get('mid'), int)}
     sq_by_mid = {record.get('mid'): record for record in sq if isinstance(record.get('mid'), int)}
+    hq_order = [record['mid'] for record in hq if isinstance(record.get('mid'), int)]
+    sq_order = [record['mid'] for record in sq if isinstance(record.get('mid'), int)]
     used_ids = set(hq_by_mid) | set(sq_by_mid)
     next_mid = max(used_ids, default=-1) + 1
     selected_keys: set[tuple[str, str]] = set()
@@ -422,8 +547,13 @@ def export_database(tracks: list[Track], config: LibraryConfig, progress: Callab
         hq_by_mid[mid] = record_for_track(track, mid, 'hq', config, hq_by_mid.get(mid))
         sq_by_mid[mid] = record_for_track(track, mid, 'sq', config, sq_by_mid.get(mid))
 
-    hq_records = [hq_by_mid[mid] for mid in sorted(hq_by_mid)]
-    sq_records = [sq_by_mid[mid] for mid in sorted(sq_by_mid)]
+    # The original LeanCloud export is not ordered strictly by ``mid``. Keep
+    # its established sequence so importing a few new songs changes only the
+    # new or updated records, not the entire static dataset.
+    hq_records = [hq_by_mid[mid] for mid in hq_order if mid in hq_by_mid]
+    sq_records = [sq_by_mid[mid] for mid in sq_order if mid in sq_by_mid]
+    hq_records.extend(hq_by_mid[mid] for mid in sorted(set(hq_by_mid) - set(hq_order)))
+    sq_records.extend(sq_by_mid[mid] for mid in sorted(set(sq_by_mid) - set(sq_order)))
     write_jsonl_records(hq_path, 'music_hq', hq_records)
     write_jsonl_records(sq_path, 'music_sq', sq_records)
     return len(hq_records), len(sq_records)
