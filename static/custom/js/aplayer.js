@@ -154,6 +154,40 @@ function load_static_data(name) {
   return static_data_promises[name];
 }
 
+function official_hf_music_source(value) {
+  try {
+    var source = new URL(String(value || ''), window.location.origin);
+    var host = source.hostname.toLowerCase();
+    var pathname = decodeURIComponent(source.pathname);
+    if (source.protocol !== 'https:' || (host !== 'hf-mirror.com' && host !== 'huggingface.co')) return null;
+    if (pathname.indexOf('/datasets/Yusen/music/resolve/main/') !== 0 || /\/\.\.\//.test(pathname)) return null;
+    if (!/\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i.test(pathname)) return null;
+    source.hostname = 'huggingface.co';
+    return source.toString();
+  } catch (error) {
+    return null;
+  }
+}
+
+function music_source_url(value, download) {
+  var source = official_hf_music_source(value);
+  if (!source) return null;
+  return '/api/music-source?source=' + encodeURIComponent(source) + (download ? '&download=1' : '');
+}
+
+function apply_music_source_urls(library) {
+  if (!Array.isArray(library)) return library;
+  library.forEach(function(song) {
+    if (!song || typeof song.url !== 'string') return;
+    var original = song.source_url || song.url;
+    var resolved = music_source_url(original, false);
+    if (!resolved) return;
+    song.source_url = original;
+    song.url = resolved;
+  });
+  return library;
+}
+
 function ensure_mv_player_runtime() {
   if (typeof window.videojs === 'function' && window.videojsQualityselector) return Promise.resolve();
   if (mv_player_runtime_promise) return mv_player_runtime_promise;
@@ -194,6 +228,7 @@ function ensure_music_quality(nextQuality) {
   music_quality_promises[normalizedQuality] = load_static_data(dataName).then(function(records) {
     var library = records.sort(objectSort('mid'));
     apply_music_tag_overrides(library);
+    apply_music_source_urls(library);
     if (normalizedQuality === 0) music_all_hq = library;
     else music_all_sq = library;
     music_all[normalizedQuality] = library;
@@ -417,6 +452,8 @@ function refresh_music_admin_session() {
 
 function safe_music_download_url(song) {
   if (!song || !song.url) return '';
+  var resolvedDownload = music_source_url(song.source_url || song.url, true);
+  if (resolvedDownload) return new URL(resolvedDownload, window.location.origin).href;
   try {
     var source = new URL(String(song.url), window.location.href);
     if (source.protocol !== 'https:' && source.protocol !== 'http:') return '';
