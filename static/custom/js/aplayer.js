@@ -155,20 +155,25 @@ function load_static_data(name) {
 }
 
 // Hugging Face 在国内网络中的可用性会随网络和地区变化。播放器始终先尝试
-// hf-mirror、Sufy CDN，再在媒体加载失败时切换到官方地址。音频流量由资料源直接发给
+// Sufy CDN、AI 快站、hf-mirror，再在媒体加载失败时切换到官方地址。音频和封面
+// 流量由资料源直接发给
 // 浏览器，不经过博客的 Netlify Function。
-var MUSIC_HF_SOURCE_HOSTS = ['hf-mirror.com', 'hf-cdn.sufy.com', 'huggingface.co'];
+var MUSIC_HF_SOURCE_HOSTS = ['hf-cdn.sufy.com', 'aifasthub.com', 'hf-mirror.com', 'huggingface.co'];
+var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
+var MUSIC_AUDIO_FILE_RE = /\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i;
+var MUSIC_COVER_FILE_RE = /\.(avif|bmp|gif|jpe?g|png|webp)$/i;
 var MUSIC_SOURCE_TIMEOUT_MS = 12 * 1000;
 var MUSIC_SOURCE_RETRIES_PER_MIRROR = 2;
+var MUSIC_COVER_TIMEOUT_MS = 12 * 1000;
 
-function music_hf_source_path(value) {
+function music_hf_dataset_path(value, filePattern) {
   try {
     var source = new URL(String(value || ''), window.location.origin);
     var host = source.hostname.toLowerCase();
     var pathname = decodeURIComponent(source.pathname);
     if (source.protocol !== 'https:' || MUSIC_HF_SOURCE_HOSTS.indexOf(host) === -1) return null;
-    if (pathname.indexOf('/datasets/Yusen/music/resolve/main/') !== 0 || /\/\.\.\//.test(pathname)) return null;
-    if (!/\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i.test(pathname)) return null;
+    if (pathname.indexOf(MUSIC_HF_DATASET_PREFIX) !== 0 || /\/\.\.\//.test(pathname)) return null;
+    if (!filePattern.test(pathname)) return null;
     return {
       pathname: source.pathname,
       search: source.search,
@@ -178,14 +183,29 @@ function music_hf_source_path(value) {
   }
 }
 
-function music_source_urls(value, download) {
-  var source = music_hf_source_path(value);
-  if (!source) return null;
+function music_hf_source_path(value) {
+  return music_hf_dataset_path(value, MUSIC_AUDIO_FILE_RE);
+}
+
+function music_hf_cover_path(value) {
+  return music_hf_dataset_path(value, MUSIC_COVER_FILE_RE);
+}
+
+function music_hf_urls(path, download) {
+  if (!path) return null;
   return MUSIC_HF_SOURCE_HOSTS.map(function(host) {
-    var url = new URL('https://' + host + source.pathname + source.search);
+    var url = new URL('https://' + host + path.pathname + path.search);
     if (download) url.searchParams.set('download', 'true');
     return url.toString();
   });
+}
+
+function music_source_urls(value, download) {
+  return music_hf_urls(music_hf_source_path(value), download);
+}
+
+function music_cover_urls(value) {
+  return music_hf_urls(music_hf_cover_path(value), false);
 }
 
 function apply_music_source_urls(library) {
@@ -198,6 +218,16 @@ function apply_music_source_urls(library) {
     song.source_url = original;
     song.source_candidates = candidates;
     song.url = candidates[0];
+
+    var originalCover = song.cover_source || song.pic_source || song.cover || song.pic;
+    var coverCandidates = music_cover_urls(originalCover);
+    if (!coverCandidates || !coverCandidates.length) return;
+    song.cover_source = originalCover;
+    song.pic_source = originalCover;
+    song.cover_candidates = coverCandidates;
+    song.pic_candidates = coverCandidates;
+    song.cover = coverCandidates[0];
+    song.pic = coverCandidates[0];
   });
   return library;
 }
@@ -208,6 +238,53 @@ function music_source_candidates(song) {
     return song.source_candidates.slice();
   }
   return music_source_urls(song.source_url || song.url, false) || [];
+}
+
+function music_cover_candidates(song) {
+  if (!song) return [];
+  if (Array.isArray(song.cover_candidates) && song.cover_candidates.length) return song.cover_candidates.slice();
+  if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return song.pic_candidates.slice();
+  var source = song.cover_source || song.pic_source || song.cover || song.pic;
+  return music_cover_urls(source) || (source ? [source] : []);
+}
+
+function load_music_cover(candidates, onSuccess, onFailure) {
+  var sources = (Array.isArray(candidates) ? candidates : []).filter(Boolean);
+  var sourceIndex = 0;
+  var attemptId = 0;
+  var timeoutId = 0;
+  var image = new Image();
+
+  function clearAttemptTimeout() {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      timeoutId = 0;
+    }
+  }
+  function loadNext() {
+    clearAttemptTimeout();
+    if (sourceIndex >= sources.length) {
+      if (typeof onFailure === 'function') onFailure();
+      return;
+    }
+    var source = sources[sourceIndex++];
+    var currentAttempt = ++attemptId;
+    image.onload = function() {
+      if (currentAttempt !== attemptId) return;
+      clearAttemptTimeout();
+      if (typeof onSuccess === 'function') onSuccess(source);
+    };
+    image.onerror = function() {
+      if (currentAttempt !== attemptId) return;
+      loadNext();
+    };
+    timeoutId = window.setTimeout(function() {
+      if (currentAttempt !== attemptId) return;
+      loadNext();
+    }, MUSIC_COVER_TIMEOUT_MS);
+    image.src = source;
+  }
+  loadNext();
 }
 
 function install_music_source_fallback(player) {
@@ -2725,9 +2802,13 @@ function init_custom_list() {
     cover.setAttribute("class", "music-track-cover");
     if (arr.pic) {
       var coverImage = document.createElement("img");
-      coverImage.src = arr.pic;
       coverImage.loading = "lazy";
       coverImage.alt = "";
+      load_music_cover(music_cover_candidates(arr), function(source) {
+        coverImage.src = source;
+      }, function() {
+        coverImage.removeAttribute("src");
+      });
       cover.appendChild(coverImage);
     }
     li.appendChild(cover);
@@ -2973,43 +3054,39 @@ function set_player_cover(player, audio) {
   if (!player || !player.template || !player.template.pic) return;
 
   var picture = player.template.pic;
-  var source = audio && (audio.cover || audio.pic);
+  var candidates = music_cover_candidates(audio);
   picture.style.backgroundImage = "";
   picture.classList.add("aplayer-pic--fallback");
-  if (!source) return;
+  if (!candidates.length) return;
 
-  var resolvedSource;
-  try {
-    // 曲库中的文件名可以包含日文、空格和单引号。APlayer 原先使用
-    // url('...') 直接拼接，像 IT'S A PERFECT BLUE 这样的目录会提前结束
-    // CSS 字符串，从而只剩下纯色封面。使用规范化 URL 和双引号可避免此类字符
-    // 破坏 background-image 声明。
-    resolvedSource = new URL(String(source), window.location.href).href;
-  } catch (error) {
-    return;
-  }
-  var cssSource = resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
-    return encodeURIComponent(character);
-  });
-  picture.style.backgroundImage = 'url("' + cssSource + '")';
-
-  // 背景图不会触发元素自身的 error 事件。预读一次图片，在远端文件失效时恢复
-  // 统一的占位图标，避免播放器留下空白方块。
+  // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
+  // 没有响应时会继续尝试下一镜像，避免播放器长期保留空白封面。
   var requestId = String(Number(picture.dataset.coverRequest || "0") + 1);
   picture.dataset.coverRequest = requestId;
-  var image = new Image();
-  image.onload = function() {
+  load_music_cover(candidates, function(source) {
     if (picture.dataset.coverRequest === requestId) {
+      var resolvedSource;
+      try {
+        // 曲库中的文件名可以包含日文、空格和单引号。APlayer 原先使用
+        // url('...') 直接拼接，像 IT'S A PERFECT BLUE 这样的目录会提前结束
+        // CSS 字符串，从而只剩下纯色封面。使用规范化 URL 和双引号可避免此类字符
+        // 破坏 background-image 声明。
+        resolvedSource = new URL(String(source), window.location.href).href;
+      } catch (error) {
+        return;
+      }
+      var cssSource = resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
+        return encodeURIComponent(character);
+      });
+      picture.style.backgroundImage = 'url("' + cssSource + '")';
       picture.classList.remove("aplayer-pic--fallback");
     }
-  };
-  image.onerror = function() {
+  }, function() {
     if (picture.dataset.coverRequest === requestId) {
       picture.style.backgroundImage = "";
       picture.classList.add("aplayer-pic--fallback");
     }
-  };
-  image.src = resolvedSource;
+  });
 }
 
 /*
@@ -3634,6 +3711,7 @@ function aplayer1() {
   });
   bind_music_player_settings(window.ap1);
   install_music_source_fallback(window.ap1);
+  set_player_cover(window.ap1, window.ap1.list && window.ap1.list.audios[window.ap1.list.index]);
 }
 
 function search_music(text) {
