@@ -117,13 +117,3 @@ GET /api/fast?bvid=…&p=…&cid=…&qn=…
 扫码登录由本地 `tools/bili_qr_login_gui.py` 发起。GUI 将管理员令牌保留在进程内；Function 从登录响应中提取 Cookie，经过加密后写入 Netlify Blobs。普通页面只能访问 `/api/resolve`、`/api/fast` 和 `/api/health`，管理员接口必须提供 `Authorization: Bearer <token>`。
 
 不应实现“输入任意视频地址并返回媒体 URL”的接口。白名单、精确的来源检查、短时 URL 和不向浏览器传递 Cookie 是该设计的必要限制条件。
-
-## 验证项目
-
-- `/api/health` 返回 `authenticated: true`；
-- 已收录视频的 `/api/resolve` 返回至少一项视频轨道和一项音频轨道；
-- 画质菜单仅显示响应中存在的档位；
-- 选择 1080P60、2K 或 4K 时，播放器使用对应的 DASH 项，而非静默改为较低档位；
-- 断开一个候选 CDN 后，播放器可转向后续候选或重新解析；
-- 未收录 BVID、错误分 P、任意外部 URL 及未带管理员令牌的管理请求均被拒绝；
-- 构建产物、Git 状态和浏览器全局变量中不出现 Cookie 与管理员令牌。

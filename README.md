@@ -15,7 +15,7 @@
 | `../blog_static/netlify/functions/` | 生产环境的 Netlify Function：B 站会话保存、受限 MV 解析和目录白名单。 |
 | `scripts/` | B 站合集导入、解析器允许目录和 Live2D 运行时构建脚本。 |
 
-完整的架构、播放策略、数据更新、Netlify/本地运行方式、密钥管理和验收清单见 [音乐与 MV 系统说明](docs/etc/music-mv-player.md)。另见[解析 B 站视频直链并嵌入博客的方法](docs/etc/bilibili-direct-url-embed.md)。
+完整的架构、播放策略、数据更新、Netlify/本地运行方式和密钥管理见 [音乐与 MV 系统说明](docs/etc/music-mv-player.md)。另见[解析 B 站视频直链并嵌入博客的方法](docs/etc/bilibili-direct-url-embed.md)。
 
 ### 本地启动
 

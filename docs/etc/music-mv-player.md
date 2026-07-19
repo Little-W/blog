@@ -101,7 +101,7 @@ npm start -- --allow-origin https://example.com
 
 本地实现会代理已经解析好的 Range 请求，让浏览器能安全读取独立的音视频轨道；它不接受任意外部媒体 URL。
 
-## Netlify 部署
+## 生产环境的解析 Function
 
 生产静态站将 `build/` 同步到 `blog_static`，由 `netlify/functions/bili.mjs` 提供同源 `/api`。构建时必须指定同源 API：
 
@@ -118,36 +118,3 @@ Netlify Functions 需要以下仅服务端可见的环境变量：
 | `BILI_ALLOWED_ORIGIN` | 可选。静态站和 Function 同源时不必设置。 |
 
 不要将上述变量写入仓库、Docusaurus 构建变量或浏览器脚本。使用 `tools/bili_qr_login_gui.py` 时，令牌只保留在当前 GUI 进程内。完整的环境变量和接口说明位于部署仓库的 `NETLIFY-BILI-PARSER.md`。
-
-发布时先执行 `npm run build:bili-catalog`，再以 `BILI_PARSER_API=/api BILI_PARSER_MODE=netlify npm run build` 生成静态文件。将 `build/` 同步至 `blog_static` 后，提交静态文件、`netlify/functions/catalog.mjs` 与相关 Function 修改，并推送 `blog_static` 的 `main` 分支。Netlify 以 `netlify.toml` 中的配置发布静态文件和 Function。
-
-## Live2D 资源构建
-
-Live2D 运行时及模型的静态产物不直接人工编辑。构建前会执行：
-
-```bash
-npm run build:live2d
-```
-
-它会把 Cubism R5 的 Web 运行时打包至 `static/live2d/cubism-r5/`。完整站点构建会自动执行该步骤：
-
-```bash
-npm run build
-```
-
-上游许可证随 `vendor/live2d-cubism-r5/` 一并保留。更新该依赖时，应同时核对上游 CHANGELOG、许可证和最终输出文件。
-
-## 验收清单
-
-- `npm run build` 成功完成；
-- 音乐页浅色、深色和移动端均无横向溢出；
-- 刷新页面后播放器音量、画质、MV 视图和特效帧率仍被记住；
-- 解析端已登录时，`/api/health` 返回已认证状态；
-- 选择一支已收录 MV 后，菜单只显示源站实际返回的画质；
-- 默认 720P 可播放；1080P、60fps、2K、4K 等仅在源站返回时显示并可经 DASH 播放；
-- 在中国网络环境用**不经过本地代理**的请求实际测量视频与音频 Range 下载。若某个 UPOS 节点慢，应先比较同一签名资源的 B 站允许镜像，并保留原始节点回退；
-- 登录 Cookie、管理员令牌、`.dev.vars`、本地会话文件和二维码内容均不出现在 Git 状态或构建产物中。
-
-## 提交与发布建议
-
-建议将数据、前端、解析 Function 与部署产物分开提交。数据更新后先生成白名单目录；前端改动完成后再构建并同步 `build/`；最后在部署仓库提交 Function 与静态产物。需要回退时可分别恢复界面、目录数据或解析 Function，不影响已加密保存的登录会话。
