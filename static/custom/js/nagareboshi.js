@@ -12,6 +12,9 @@ var height = window.innerHeight;
 var pathname = window.location.pathname;
 var origin   = window.location.origin;
 origin = origin + '/'
+var starDensity = window.YusenEffects && typeof window.YusenEffects.getEffectComplexity === 'function'
+    ? window.YusenEffects.getEffectComplexity('stars', 100, 35) / 100
+    : 1;
 function rand(min,max){
     var c = max - min + 1;
     return Math.floor(Math.random() * c + min);
@@ -41,7 +44,7 @@ function init(){
     		
     	var ladder = 0;
     	while(ladder < height-300){
-    		for(var i = 0 ; i < (height-ladder)/100 ; i++){
+		for(var i = 0 ; i < Math.max(1, Math.round((height-ladder)/100 * starDensity)) ; i++){
     			starArr.push([rand(0,width),rand(ladder,ladder+20),rand(0,10),0.1]);
     		}
     		ladder += 20;
@@ -55,7 +58,7 @@ function init(){
 			starArr = [];
 			var ladder = 0;
 			while(ladder < height-300){
-				for(var i = 0 ; i < (height-ladder)/100 ; i++){
+			for(var i = 0 ; i < Math.max(1, Math.round((height-ladder)/100 * starDensity)) ; i++){
 					starArr.push([rand(0,width),rand(ladder,ladder+20),rand(0,10),0.1]);
 				}
 				ladder += 20;

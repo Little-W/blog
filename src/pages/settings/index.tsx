@@ -14,7 +14,8 @@ type EffectKey =
   | 'fireworks';
 
 type FrameRate = 0 | 15 | 24 | 30 | 45 | 60;
-type EffectSettings = Record<EffectKey, boolean> & {enabled: boolean; frameRate: FrameRate};
+type Complexity = 'low' | 'balanced' | 'high';
+type EffectSettings = Record<EffectKey, boolean> & {enabled: boolean; frameRate: FrameRate; complexity: Complexity};
 
 const FRAME_RATE_OPTIONS: Array<{value: FrameRate; label: string}> = [
   {value: 0, label: '跟随显示器（垂直同步）'},
@@ -23,6 +24,12 @@ const FRAME_RATE_OPTIONS: Array<{value: FrameRate; label: string}> = [
   {value: 30, label: '30 FPS'},
   {value: 24, label: '24 FPS'},
   {value: 15, label: '15 FPS'},
+];
+
+const COMPLEXITY_OPTIONS: Array<{value: Complexity; label: string; description: string}> = [
+  {value: 'low', label: '轻量', description: '约一半粒子数量，适合低功耗设备。'},
+  {value: 'balanced', label: '均衡', description: '保持当前默认的视觉密度。'},
+  {value: 'high', label: '丰富', description: '提升背景粒子、星空与花瓣密度。'},
 ];
 
 const DEFAULT_SETTINGS: EffectSettings = {
@@ -34,6 +41,7 @@ const DEFAULT_SETTINGS: EffectSettings = {
   particles: true,
   fireworks: true,
   frameRate: 0,
+  complexity: 'balanced',
 };
 
 const EFFECTS: Array<{
@@ -98,12 +106,16 @@ function readSavedSettings(): EffectSettings {
   try {
     const value = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
     const frameRate = Number(value?.frameRate);
+    const complexity = COMPLEXITY_OPTIONS.some((option) => option.value === value?.complexity)
+      ? value.complexity as Complexity
+      : DEFAULT_SETTINGS.complexity;
     return {
       ...DEFAULT_SETTINGS,
       ...value,
       frameRate: FRAME_RATE_OPTIONS.some((option) => option.value === frameRate)
         ? frameRate as FrameRate
         : DEFAULT_SETTINGS.frameRate,
+      complexity,
     };
   } catch {
     return {...DEFAULT_SETTINGS};
@@ -137,6 +149,10 @@ export default function SettingsPage(): JSX.Element {
     setSettings((current) => ({...current, frameRate}));
   }
 
+  function setComplexity(complexity: Complexity) {
+    setSettings((current) => ({...current, complexity}));
+  }
+
   function saveAndApply() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     setApplying(true);
@@ -153,6 +169,7 @@ export default function SettingsPage(): JSX.Element {
       particles: false,
       fireworks: true,
       frameRate: 30,
+      complexity: 'low',
     });
   }
 
@@ -208,6 +225,27 @@ export default function SettingsPage(): JSX.Element {
                 aria-label="特效帧率上限">
                 {FRAME_RATE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section className={styles.frameRateCard}>
+            <div className={styles.frameRateIcon} aria-hidden="true">✧</div>
+            <div className={styles.frameRateCopy}>
+              <span className={styles.sectionLabel}>EFFECT DENSITY</span>
+              <h2>特效复杂度</h2>
+              <p>控制樱花、气泡、星空和粒子连线的数量；不会在滚动时临时改变画面复杂度。</p>
+            </div>
+            <label className={styles.frameRateSelect}>
+              <span>当前密度</span>
+              <select
+                value={settings.complexity}
+                onChange={(event) => setComplexity(event.target.value as Complexity)}
+                disabled={!ready}
+                aria-label="特效复杂度">
+                {COMPLEXITY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}：{option.description}</option>
                 ))}
               </select>
             </label>

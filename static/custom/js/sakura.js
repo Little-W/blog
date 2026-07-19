@@ -120,7 +120,10 @@ function startSakura() {
     document.getElementsByTagName('body')[0].appendChild(canvas);
     cxt = canvas.getContext('2d');
     var sakuraList = new SakuraList();
-    for (var i = 0; i < 36; i++) {
+    var sakuraCount = window.YusenEffects && typeof window.YusenEffects.getEffectComplexity === 'function'
+        ? window.YusenEffects.getEffectComplexity('sakura', 36, 12)
+        : 36;
+    for (var i = 0; i < sakuraCount; i++) {
         var sakura, randomX, randomY, randomS, randomR, randomFnx, randomFny;
         randomX = getRandom('x');
         randomY = getRandom('y');

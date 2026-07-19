@@ -10,9 +10,12 @@
     stars: true,
     particles: true,
     fireworks: true,
-    frameRate: 0
+    frameRate: 0,
+    complexity: "balanced"
   };
   var FRAME_RATE_OPTIONS = [0, 15, 24, 30, 45, 60];
+  var COMPLEXITY_OPTIONS = ["low", "balanced", "high"];
+  var COMPLEXITY_MULTIPLIERS = { low: 0.5, balanced: 1, high: 1.5 };
   var nativeRequestAnimationFrame = (window.requestAnimationFrame || function (callback) {
     return window.setTimeout(function () { callback(Date.now()); }, 16);
   }).bind(window);
@@ -20,7 +23,6 @@
   var frameRequests = {};
   var lastFrameByCallback = new WeakMap();
   var nextFrameRequestId = 1;
-  var scrollingUntil = 0;
 
   function readSettings() {
     var stored = {};
@@ -32,6 +34,7 @@
     var settings = Object.assign({}, DEFAULTS, stored);
     var frameRate = Number(settings.frameRate);
     settings.frameRate = FRAME_RATE_OPTIONS.indexOf(frameRate) === -1 ? 0 : frameRate;
+    settings.complexity = COMPLEXITY_OPTIONS.indexOf(settings.complexity) === -1 ? "balanced" : settings.complexity;
     return settings;
   }
 
@@ -43,14 +46,16 @@
   }
 
   function getFrameRate() {
-    // 保留设置中的“无限制”，但用户正在拖动滚动条时临时让背景特效让出主线程。
-    // 停止滚动后立即恢复原帧率，因此不会改变平时的动画观感或保存的设置。
-    if (Date.now() < scrollingUntil) return settings.frameRate ? Math.min(settings.frameRate, 15) : 15;
     return settings.frameRate || 0;
   }
 
-  function markScrolling() {
-    scrollingUntil = Date.now() + 140;
+  function getEffectComplexity(name, baseValue, minimum) {
+    var multiplier = COMPLEXITY_MULTIPLIERS[settings.complexity] || COMPLEXITY_MULTIPLIERS.balanced;
+    // 为将来单项复杂度扩展预留：旧设置不存在该字段时自然回退到全局档位。
+    if (settings.effectComplexity && Number(settings.effectComplexity[name]) > 0) {
+      multiplier = Number(settings.effectComplexity[name]);
+    }
+    return Math.max(minimum || 1, Math.round(Number(baseValue) * multiplier));
   }
 
   function requestEffectAnimationFrame(callback) {
@@ -138,7 +143,7 @@
       name: "particles",
       src: "/custom/js/canvas-nest.min.js",
       attributes: {
-        count: "45",
+        count: String(getEffectComplexity("particles", 45, 12)),
         opacity: "0.32",
         color: "0,165,235",
         zIndex: "-1"
@@ -163,16 +168,12 @@
     settings: Object.assign({}, settings),
     isEnabled: isEnabled,
     getFrameRate: getFrameRate,
+    getComplexity: function() { return settings.complexity; },
+    getEffectComplexity: getEffectComplexity,
     requestAnimationFrame: requestEffectAnimationFrame,
     cancelAnimationFrame: cancelEffectAnimationFrame,
     loaded: loaded
   };
-
-  // capture 可覆盖页面内独立的滚动容器，例如歌单横向栏与 MV 列表；全部采用
-  // passive，不阻塞浏览器自己的滚动处理。
-  window.addEventListener("wheel", markScrolling, { passive: true, capture: true });
-  window.addEventListener("touchmove", markScrolling, { passive: true, capture: true });
-  window.addEventListener("scroll", markScrolling, { passive: true, capture: true });
 
   if (settings.enabled === false) {
     document.documentElement.dataset.effects = "off";

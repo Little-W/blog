@@ -16,6 +16,9 @@ $(function() {
         // create particles
         circles = [];
         var circleCount = Math.min(140, Math.max(50, Math.round(width * 0.08)));
+        if (window.YusenEffects && typeof window.YusenEffects.getEffectComplexity === 'function') {
+            circleCount = window.YusenEffects.getEffectComplexity('bubbles', circleCount, 20);
+        }
         for(var x = 0; x < circleCount; x++) {
             var c = new Circle();
             circles.push(c);
