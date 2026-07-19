@@ -59,6 +59,10 @@ const config = {
               to: 'docs/notes/embedded_programing',
             },
 			{
+              label: '数字设计',
+              to: 'docs/notes/digital-design',
+            },
+			{
               label: '前端',
               to: 'docs/notes/web',
             },
