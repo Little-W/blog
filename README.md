@@ -4,7 +4,7 @@
 
 ## 音乐与 MV 系统
 
-音乐页不再依赖一段难以维护的内联脚本：React 页面负责结构和无障碍语义，`static/custom/` 中的兼容脚本负责 APlayer、Video.js、MV 筛选与画质切换，数据文件则以 JSON-streaming 格式独立保存。MV 解析服务始终将 B 站登录信息留在服务端或本机，不会把 Cookie、管理员令牌或任意 URL 代理能力暴露给浏览器。
+音乐页不再依赖一段难以维护的内联脚本：React 页面负责结构和无障碍属性，`static/custom/` 中的兼容脚本负责 APlayer、Video.js、MV 筛选与画质切换，数据文件则以 JSON-streaming 格式独立保存。MV 解析服务始终将 B 站登录信息留在服务端或本机，不会把 Cookie、管理员令牌或任意 URL 代理能力暴露给浏览器。
 
 | 模块 | 作用 |
 | --- | --- |
