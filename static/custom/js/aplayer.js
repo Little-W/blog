@@ -166,9 +166,10 @@ var music_hf_cover_probe_promise = null;
 var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
 var MUSIC_AUDIO_FILE_RE = /\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i;
 var MUSIC_COVER_FILE_RE = /\.(avif|bmp|gif|jpe?g|png|webp)$/i;
-var MUSIC_SOURCE_TIMEOUT_MS = 5 * 1000;
+var MUSIC_SOURCE_TIMEOUT_MS = 2500;
 var MUSIC_SOURCE_RETRIES_PER_MIRROR = 1;
 var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 3500;
+var MUSIC_SOURCE_BACKUP_PROBE_TIMEOUT_MS = 1800;
 var MUSIC_COVER_PROBE_TIMEOUT_MS = 2500;
 var MUSIC_COVER_TIMEOUT_MS = 12 * 1000;
 
@@ -465,8 +466,58 @@ function install_music_source_fallback(player) {
     if (!song || !candidates.length) return;
     song.__musicSourceIndex = 0;
     song.__musicSourceRetries = 0;
+    song.__musicSourceTriedHosts = [];
     song.url = candidates[0];
     song.__musicSourceHost = music_hf_url_host(candidates[0]);
+  }
+
+  function probeBackupSources(song) {
+    if (!song || typeof window.fetch !== 'function') return;
+    var candidates = music_source_candidates(song);
+    var activeHost = song.__musicSourceHost || music_hf_url_host(song.url);
+    var probeKey = String(player.list && player.list.index) + ':' + activeHost;
+    if (player.__yusenMusicBackupProbeKey === probeKey) return;
+    player.__yusenMusicBackupProbeKey = probeKey;
+    player.__yusenMusicBackupCandidates = [];
+
+    // 当前音频照常加载；另外三个镜像只发送 HEAD 请求，不下载歌曲正文。这样慢源
+    // 达到超时时间时，通常已经能直接跳到有响应的备用源，而不是串行等待。
+    var probes = candidates.filter(function(url) {
+      return music_hf_url_host(url) !== activeHost;
+    }).map(function(url) {
+      var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+      var startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      var timeoutId = controller ? window.setTimeout(function() { controller.abort(); }, MUSIC_SOURCE_BACKUP_PROBE_TIMEOUT_MS) : 0;
+      var options = {method: 'HEAD', mode: 'no-cors', credentials: 'omit', cache: 'no-store', redirect: 'follow'};
+      if (controller) options.signal = controller.signal;
+      return window.fetch(url, options).then(function() {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        return {url: url, elapsed: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt};
+      }, function() {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        return null;
+      });
+    });
+    if (!probes.length) return;
+    Promise.all(probes).then(function(results) {
+      if (player.__yusenMusicBackupProbeKey !== probeKey) return;
+      player.__yusenMusicBackupCandidates = results.filter(Boolean).sort(function(left, right) {
+        return left.elapsed - right.elapsed;
+      }).map(function(result) { return result.url; });
+    }).catch(function() {});
+  }
+
+  function fastestPreparedBackup(song, candidates) {
+    var activeHost = song && (song.__musicSourceHost || music_hf_url_host(song.url));
+    var triedHosts = song && Array.isArray(song.__musicSourceTriedHosts) ? song.__musicSourceTriedHosts : [];
+    var prepared = Array.isArray(player.__yusenMusicBackupCandidates) ? player.__yusenMusicBackupCandidates : [];
+    var allCandidates = prepared.concat(candidates || []);
+    for (var index = 0; index < allCandidates.length; index += 1) {
+      var candidate = allCandidates[index];
+      var host = music_hf_url_host(candidate);
+      if (host && host !== activeHost && triedHosts.indexOf(host) === -1) return candidate;
+    }
+    return '';
   }
 
   function retryOrSwitchSource(reason) {
@@ -476,9 +527,20 @@ function install_music_source_fallback(player) {
     if (!song || !candidates.length || sourceIndex >= candidates.length) return false;
 
     var retries = Number(song.__musicSourceRetries) || 0;
+    var currentHost = song.__musicSourceHost || music_hf_url_host(song.url);
+    song.__musicSourceTriedHosts = Array.isArray(song.__musicSourceTriedHosts) ? song.__musicSourceTriedHosts : [];
+    if (currentHost && song.__musicSourceTriedHosts.indexOf(currentHost) === -1) song.__musicSourceTriedHosts.push(currentHost);
+    var preparedSource = fastestPreparedBackup(song, candidates);
+    var sourceURL = '';
     // 已在进入音乐页时并发测速并动态排列镜像。发生错误时先立即跳到下一个
     // 已测速来源，不再对同一故障来源连续等待两次；全部来源都试过后才重试。
-    if (sourceIndex + 1 < candidates.length) {
+    if (preparedSource) {
+      sourceIndex = candidates.map(music_hf_url_host).indexOf(music_hf_url_host(preparedSource));
+      song.__musicSourceIndex = sourceIndex < 0 ? 0 : sourceIndex;
+      song.__musicSourceRetries = 0;
+      sourceURL = preparedSource;
+      player.notice(reason === 'timeout' ? '音乐源响应较慢，正在切换最快备用源…' : '音乐源不可用，正在切换备用源…', 2200);
+    } else if (sourceIndex + 1 < candidates.length) {
       sourceIndex += 1;
       song.__musicSourceIndex = sourceIndex;
       song.__musicSourceRetries = 0;
@@ -487,6 +549,7 @@ function install_music_source_fallback(player) {
       sourceIndex = 0;
       song.__musicSourceIndex = sourceIndex;
       song.__musicSourceRetries = retries + 1;
+      song.__musicSourceTriedHosts = [];
       player.notice('正在重新测试音乐源…', 2200);
     } else {
       return false;
@@ -496,7 +559,7 @@ function install_music_source_fallback(player) {
     var retryId = ++player.__yusenMusicSourceRetryId;
     var resumeAt = Number(player.audio.currentTime) || 0;
     var wasPlaying = !player.audio.paused;
-    var sourceURL = retryURL(candidates[sourceIndex], Number(song.__musicSourceRetries) || 0);
+    sourceURL = retryURL(sourceURL || candidates[sourceIndex], Number(song.__musicSourceRetries) || 0);
     song.url = sourceURL;
     song.__musicSourceHost = music_hf_url_host(sourceURL);
     // 音频已切到新的镜像时，封面也必须切到同一主机，不能继续等待另一套
@@ -521,6 +584,7 @@ function install_music_source_fallback(player) {
     clearSourceTimeout();
     var song = activeSong();
     if (!song || !music_source_candidates(song).length || player.audio.readyState >= 1 || player.audio.paused) return;
+    probeBackupSources(song);
     var retryId = player.__yusenMusicSourceRetryId;
     player.__yusenMusicSourceTimeout = window.setTimeout(function() {
       player.__yusenMusicSourceTimeout = null;
@@ -531,6 +595,7 @@ function install_music_source_fallback(player) {
 
   player.on('listswitch', resetCurrentSource);
   resetCurrentSource();
+  probeBackupSources(activeSong());
 
   // 使用捕获阶段拦截 audio 的原生错误事件。每个镜像最多重新请求两次，随后
   // 才切换到下一个镜像；全部来源失败时再交给 APlayer 的默认处理逻辑。
