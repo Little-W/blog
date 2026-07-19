@@ -3241,21 +3241,37 @@ function show_player_cover(picture, cssSource, resolvedSource, requestId) {
   }
 
   clear_player_cover_transition(picture);
+  var previousBackground = picture.style.backgroundImage;
+  // 新图预读完成后从透明覆盖层淡入，旧图不会在新图已经显示后重新出现。动画
+  // 结束时先替换底图、下一帧才移除覆盖层，避免两张图交接的一帧闪出背景色。
+  picture.classList.remove('aplayer-pic--fallback');
+  if (!previousBackground) {
+    picture.style.backgroundImage = 'url("' + cssSource + '")';
+    picture.dataset.coverSource = resolvedSource;
+    return;
+  }
+
   var layer = document.createElement('span');
   layer.className = 'music-player-cover-transition';
   layer.style.backgroundImage = 'url("' + cssSource + '")';
-  picture.classList.remove('aplayer-pic--fallback');
   picture.appendChild(layer);
 
   var completed = false;
   function finish() {
     if (completed) return;
     completed = true;
-    if (picture.dataset.coverRequest === requestId && layer.parentNode === picture) {
-      picture.style.backgroundImage = 'url("' + cssSource + '")';
-      picture.dataset.coverSource = resolvedSource;
+    if (picture.dataset.coverRequest !== requestId || layer.parentNode !== picture) {
+      if (layer.parentNode) layer.remove();
+      return;
     }
-    if (layer.parentNode) layer.remove();
+    picture.style.backgroundImage = 'url("' + cssSource + '")';
+    picture.dataset.coverSource = resolvedSource;
+    var nextFrame = window.requestAnimationFrame || function(callback) { return window.setTimeout(callback, 0); };
+    nextFrame(function() {
+      nextFrame(function() {
+        if (layer.parentNode) layer.remove();
+      });
+    });
   }
   layer.addEventListener('animationend', finish, {once: true});
   // 浏览器在页面切到后台时可能暂停 CSS 动画，不能让临时层永久留在 DOM 中。
