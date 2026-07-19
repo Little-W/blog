@@ -23,6 +23,7 @@
 | --- | --- |
 | `GITHUB_OAUTH_CLIENT_ID` | OAuth App Client ID |
 | `GITHUB_OAUTH_CLIENT_SECRET` | OAuth App Client Secret |
+| `GITHUB_OAUTH_PUBLIC_ORIGIN` | `https://blog.yusen.best` |
 | `GITHUB_SESSION_SECRET` | 不少于 32 字符的随机密钥 |
 | `GITHUB_REPO_TOKEN` | 仅可读写 `Little-W/blog` 的 fine-grained PAT |
 | `GITHUB_REPO_OWNER` | `Little-W` |

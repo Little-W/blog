@@ -15,6 +15,7 @@ const MAX_REQUEST_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAX_DATA_BYTES = 4 * 1024 * 1024;
 const MAX_RECORDS = 20_000;
+const DEFAULT_PUBLIC_ORIGIN = 'https://blog.yusen.best';
 
 const DATASETS = Object.freeze({
   music_hq: {
@@ -155,8 +156,22 @@ function parseCookies(request) {
   );
 }
 
+function publicOrigin(request) {
+  // Netlify may invoke a Function through an internal address. OAuth callback
+  // URLs and browser-origin checks must use the externally visible site URL.
+  const candidate = process.env.GITHUB_OAUTH_PUBLIC_ORIGIN?.trim() || DEFAULT_PUBLIC_ORIGIN;
+  try {
+    const origin = new URL(candidate);
+    if (!['http:', 'https:'].includes(origin.protocol)) throw new Error('invalid protocol');
+    return origin.origin;
+  } catch {
+    // Keep local development usable when the optional override is malformed.
+    return new URL(request.url).origin;
+  }
+}
+
 function cookie(request, name, value, maxAge) {
-  const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
+  const secure = new URL(publicOrigin(request)).protocol === 'https:' ? '; Secure' : '';
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
@@ -172,7 +187,7 @@ function safeReturnTo(value) {
 
 function sameOrigin(request) {
   const origin = request.headers.get('origin');
-  return !origin || origin === new URL(request.url).origin;
+  return !origin || origin === publicOrigin(request);
 }
 
 function githubHeaders(token) {
@@ -247,7 +262,7 @@ async function startLogin(request, url) {
     returnTo: safeReturnTo(url.searchParams.get('returnTo') || '/'),
     expiresAt: Date.now() + OAUTH_TTL_MS,
   });
-  const callback = new URL('/api/console/callback', url.origin).toString();
+  const callback = new URL('/api/console/callback', publicOrigin(request)).toString();
   const authorize = new URL('https://github.com/login/oauth/authorize');
   authorize.searchParams.set('client_id', clientId);
   authorize.searchParams.set('redirect_uri', callback);
@@ -275,7 +290,7 @@ async function finishLogin(request, url) {
   const code = url.searchParams.get('code');
   if (!code) return redirect('/?adminAuth=denied', {'set-cookie': clearOauth});
 
-  const callback = new URL('/api/console/callback', url.origin).toString();
+  const callback = new URL('/api/console/callback', publicOrigin(request)).toString();
   const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: {
