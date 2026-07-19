@@ -3224,19 +3224,62 @@ function bind_music_player_settings(player) {
   }
 }
 
+function clear_player_cover_transition(picture) {
+  if (!picture) return;
+  var layer = picture.querySelector('.music-player-cover-transition');
+  if (layer) layer.remove();
+}
+
+function show_player_cover(picture, cssSource, resolvedSource, requestId) {
+  if (!picture || picture.dataset.coverRequest !== requestId) return;
+
+  // 同一张封面不重新播放动画。音频重试可能会再次进入本函数；若镜像地址没有
+  // 改变，保留已经显示的图像即可。
+  if (picture.dataset.coverSource === resolvedSource && picture.style.backgroundImage) {
+    picture.classList.remove('aplayer-pic--fallback');
+    return;
+  }
+
+  clear_player_cover_transition(picture);
+  var layer = document.createElement('span');
+  layer.className = 'music-player-cover-transition';
+  layer.style.backgroundImage = 'url("' + cssSource + '")';
+  picture.classList.remove('aplayer-pic--fallback');
+  picture.appendChild(layer);
+
+  var completed = false;
+  function finish() {
+    if (completed) return;
+    completed = true;
+    if (picture.dataset.coverRequest === requestId && layer.parentNode === picture) {
+      picture.style.backgroundImage = 'url("' + cssSource + '")';
+      picture.dataset.coverSource = resolvedSource;
+    }
+    if (layer.parentNode) layer.remove();
+  }
+  layer.addEventListener('animationend', finish, {once: true});
+  // 浏览器在页面切到后台时可能暂停 CSS 动画，不能让临时层永久留在 DOM 中。
+  window.setTimeout(finish, 450);
+}
+
 function set_player_cover(player, audio) {
   if (!player || !player.template || !player.template.pic) return;
 
   var picture = player.template.pic;
   var candidates = music_cover_candidates(audio);
-  picture.style.backgroundImage = "";
-  picture.classList.add("aplayer-pic--fallback");
-  if (!candidates.length) return;
-
-  // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
-  // 没有响应时会继续尝试下一镜像，避免播放器长期保留空白封面。
   var requestId = String(Number(picture.dataset.coverRequest || "0") + 1);
   picture.dataset.coverRequest = requestId;
+  if (!candidates.length) {
+    clear_player_cover_transition(picture);
+    picture.style.backgroundImage = "";
+    delete picture.dataset.coverSource;
+    picture.classList.add("aplayer-pic--fallback");
+    return;
+  }
+
+  // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
+  // 没有响应时会继续尝试下一镜像。旧封面在新图成功前继续显示，从而保留切歌
+  // 时的淡入淡出，而不是先出现一帧空白占位图。
   load_music_cover(candidates, function(source) {
     if (picture.dataset.coverRequest === requestId) {
       var resolvedSource;
@@ -3252,12 +3295,13 @@ function set_player_cover(player, audio) {
       var cssSource = resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
         return encodeURIComponent(character);
       });
-      picture.style.backgroundImage = 'url("' + cssSource + '")';
-      picture.classList.remove("aplayer-pic--fallback");
+      show_player_cover(picture, cssSource, resolvedSource, requestId);
     }
   }, function() {
     if (picture.dataset.coverRequest === requestId) {
+      clear_player_cover_transition(picture);
       picture.style.backgroundImage = "";
+      delete picture.dataset.coverSource;
       picture.classList.add("aplayer-pic--fallback");
     }
   });
