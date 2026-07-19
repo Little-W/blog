@@ -1,0 +1,61 @@
+#filetype:JSON-streaming {"type":"Class","class":"music_tag"}
+{"updatedAt":"2023-02-15T06:04:34.622Z","ACL":{"*":{"read":true}},"objectId":"63ec75f214f21573cb4510ac","createdAt":"2023-02-15T06:04:34.622Z","tag_name":"默认","tag_order":1,"tag_id":2}
+{"updatedAt":"2023-02-15T06:04:50.636Z","ACL":{"*":{"read":true}},"objectId":"63ec7602a8db685c2868002a","createdAt":"2023-02-15T06:04:50.636Z","tag_name":"ACG","tag_order":2,"tag_id":3}
+{"updatedAt":"2023-02-15T06:05:02.903Z","ACL":{"*":{"read":true}},"objectId":"63ec760ea8db685c28680030","createdAt":"2023-02-15T06:05:02.903Z","tag_name":"英语","tag_order":3,"tag_id":26}
+{"updatedAt":"2023-02-15T06:05:13.669Z","ACL":{"*":{"read":true}},"objectId":"63ec7619a8db685c28680031","createdAt":"2023-02-15T06:05:13.669Z","tag_name":"华语其他","tag_order":4,"tag_id":22}
+{"updatedAt":"2024-10-02T14:36:25.469Z","ACL":{"*":{"read":true}},"objectId":"63ec762aa8db685c28680032","createdAt":"2023-02-15T06:05:30.036Z","tag_name":"日语","tag_order":8,"tag_id":23}
+{"updatedAt":"2024-04-03T06:22:40.478Z","ACL":{"*":{"read":true}},"objectId":"63ec7632a8db685c28680033","createdAt":"2023-02-15T06:05:38.188Z","tag_name":"古风","tag_order":9,"tag_id":24}
+{"updatedAt":"2024-04-03T06:22:37.344Z","ACL":{"*":{"read":true}},"objectId":"63ec763914f21573cb4510c8","createdAt":"2023-02-15T06:05:45.237Z","tag_name":"其他纯音乐","tag_order":10,"tag_id":25}
+{"updatedAt":"2024-04-03T06:22:26.208Z","ACL":{"*":{"read":true}},"objectId":"63ec76a814f21573cb4510ea","createdAt":"2023-02-15T06:07:36.170Z","tag_name":"周杰伦","tag_order":15,"tag_id":4}
+{"updatedAt":"2024-04-03T06:22:24.198Z","ACL":{"*":{"read":true}},"objectId":"63ec76b314f21573cb4510eb","createdAt":"2023-02-15T06:07:47.122Z","tag_name":"Beyond","tag_order":16,"tag_id":16}
+{"updatedAt":"2024-04-03T06:22:22.007Z","ACL":{"*":{"read":true}},"objectId":"63ec76bc14f21573cb4510ee","createdAt":"2023-02-15T06:07:56.192Z","tag_name":"Aimer","tag_order":17,"tag_id":28}
+{"updatedAt":"2024-04-03T06:22:20.095Z","ACL":{"*":{"read":true}},"objectId":"63ec76c6a8db685c28680067","createdAt":"2023-02-15T06:08:06.750Z","tag_name":"八爷","tag_order":18,"tag_id":29}
+{"updatedAt":"2024-04-03T06:22:16.387Z","ACL":{"*":{"read":true}},"objectId":"63ec76cfa8db685c2868006a","createdAt":"2023-02-15T06:08:15.301Z","tag_name":"ClariS","tag_order":19,"tag_id":40}
+{"updatedAt":"2024-08-06T05:35:34.879Z","ACL":{"*":{"read":true}},"objectId":"63ec76d7a8db685c2868006c","createdAt":"2023-02-15T06:08:23.446Z","tag_name":"ボカロ","tag_order":20,"tag_id":17}
+{"updatedAt":"2024-04-03T06:22:06.640Z","ACL":{"*":{"read":true}},"objectId":"63ec76dfa8db685c2868006f","createdAt":"2023-02-15T06:08:31.130Z","tag_name":"鹿乃","tag_order":21,"tag_id":33}
+{"updatedAt":"2024-04-03T06:21:50.397Z","ACL":{"*":{"read":true}},"objectId":"63ec76e914f21573cb451102","createdAt":"2023-02-15T06:08:41.946Z","tag_name":"YuNi","tag_order":22,"tag_id":42}
+{"updatedAt":"2024-04-03T06:21:47.953Z","ACL":{"*":{"read":true}},"objectId":"63ec76f114f21573cb451105","createdAt":"2023-02-15T06:08:49.343Z","tag_name":"ときのそら","tag_order":23,"tag_id":43}
+{"updatedAt":"2024-10-03T09:17:13.874Z","ACL":{"*":{"read":true}},"objectId":"63ec76f914f21573cb451108","createdAt":"2023-02-15T06:08:57.744Z","tag_name":"22/7","tag_order":27,"tag_id":15}
+{"updatedAt":"2024-10-03T09:17:02.882Z","ACL":{"*":{"read":true}},"objectId":"63ec7705a8db685c28680088","createdAt":"2023-02-15T06:09:09.760Z","tag_name":"虹ヶ咲学園スクールアイドル同好会","tag_order":28,"tag_id":5}
+{"updatedAt":"2024-10-03T09:16:58.472Z","ACL":{"*":{"read":true}},"objectId":"63ec770e14f21573cb451118","createdAt":"2023-02-15T06:09:18.206Z","tag_name":"Liella!","tag_order":29,"tag_id":21}
+{"updatedAt":"2024-10-03T09:16:47.683Z","ACL":{"*":{"read":true}},"objectId":"63ec771da8db685c286800ae","createdAt":"2023-02-15T06:09:33.641Z","tag_name":"东京 7th Sisters","tag_order":30,"tag_id":6}
+{"updatedAt":"2024-10-03T09:16:41.140Z","ACL":{"*":{"read":true}},"objectId":"63ec772a14f21573cb451147","createdAt":"2023-02-15T06:09:46.257Z","tag_name":"世界计划 彩色舞台 feat. 初音未来","tag_order":37,"tag_id":47}
+{"updatedAt":"2024-08-06T05:37:26.270Z","ACL":{"*":{"read":true}},"objectId":"63ec7732a8db685c286800d6","createdAt":"2023-02-15T06:09:54.738Z","tag_name":"K-ON!","tag_order":49,"tag_id":14}
+{"updatedAt":"2024-08-06T05:37:10.086Z","ACL":{"*":{"read":true}},"objectId":"63ec773a14f21573cb45115c","createdAt":"2023-02-15T06:10:02.312Z","tag_name":"天籁人偶","tag_order":51,"tag_id":8}
+{"updatedAt":"2024-08-06T05:37:08.356Z","ACL":{"*":{"read":true}},"objectId":"63ec7743a8db685c286800d9","createdAt":"2023-02-15T06:10:11.031Z","tag_name":"孤独摇滚","tag_order":52,"tag_id":19}
+{"updatedAt":"2024-08-06T05:37:06.682Z","ACL":{"*":{"read":true}},"objectId":"63ec774b14f21573cb451162","createdAt":"2023-02-15T06:10:19.533Z","tag_name":"S.A.O","tag_order":53,"tag_id":9}
+{"updatedAt":"2024-08-06T05:37:05.045Z","ACL":{"*":{"read":true}},"objectId":"63ec7752a8db685c286800e1","createdAt":"2023-02-15T06:10:26.275Z","tag_name":"Fate系列","tag_order":54,"tag_id":30}
+{"updatedAt":"2024-08-06T05:37:03.155Z","ACL":{"*":{"read":true}},"objectId":"63ec7758a8db685c286800ff","createdAt":"2023-02-15T06:10:32.517Z","tag_name":"超炮","tag_order":55,"tag_id":31}
+{"updatedAt":"2024-08-06T05:37:00.849Z","ACL":{"*":{"read":true}},"objectId":"63ec776214f21573cb45119e","createdAt":"2023-02-15T06:10:42.488Z","tag_name":"Vivy -Fluorite Eye's Song","tag_order":57,"tag_id":7}
+{"updatedAt":"2024-08-06T05:36:58.255Z","ACL":{"*":{"read":true}},"objectId":"63ec776a14f21573cb4511b6","createdAt":"2023-02-15T06:10:50.956Z","tag_name":"DARLING in the FRANXX","tag_order":58,"tag_id":39}
+{"updatedAt":"2024-03-12T12:50:22.993Z","ACL":{"*":{"read":true}},"objectId":"63ec777214f21573cb4511cc","createdAt":"2023-02-15T06:10:58.333Z","tag_name":"东方Project -「 Rebirth Story III 」","tag_order":202,"tag_id":32}
+{"updatedAt":"2024-03-12T12:49:58.914Z","ACL":{"*":{"read":true}},"objectId":"63ec777ea8db685c286801a8","createdAt":"2023-02-15T06:11:10.036Z","tag_name":"t7s -「 IT'S A PERFECT BLUE 」Live.","tag_order":302,"tag_id":38}
+{"updatedAt":"2024-03-12T12:49:53.861Z","ACL":{"*":{"read":true}},"objectId":"63ec778ea8db685c286801e0","createdAt":"2023-02-15T06:11:26.413Z","tag_name":"t7s -「 Are You Ready 7th-TYPES 」Live.","tag_order":301,"tag_id":36}
+{"updatedAt":"2024-03-12T12:53:57.351Z","ACL":{"*":{"read":true}},"objectId":"63ec779614f21573cb4512aa","createdAt":"2023-02-15T06:11:34.239Z","tag_name":"君の名は。OST","tag_order":107,"tag_id":13}
+{"updatedAt":"2024-03-12T12:53:47.555Z","ACL":{"*":{"read":true}},"objectId":"63ec779fa8db685c286801f1","createdAt":"2023-02-15T06:11:43.408Z","tag_name":"天気の子 OST","tag_order":106,"tag_id":18}
+{"updatedAt":"2024-03-12T12:54:19.159Z","ACL":{"*":{"read":true}},"objectId":"63ec77a714f21573cb4512af","createdAt":"2023-02-15T06:11:51.522Z","tag_name":"ATRI -My Dear Moments- OST","tag_order":153,"tag_id":10}
+{"updatedAt":"2024-03-12T12:54:14.653Z","ACL":{"*":{"read":true}},"objectId":"63ec77af14f21573cb4512b1","createdAt":"2023-02-15T06:11:59.307Z","tag_name":"Summer Pockets OST","tag_order":152,"tag_id":11}
+{"updatedAt":"2024-03-12T12:54:10.355Z","ACL":{"*":{"read":true}},"objectId":"63ec77b614f21573cb4512b7","createdAt":"2023-02-15T06:12:06.840Z","tag_name":"Angel Beats! OST","tag_order":151,"tag_id":44}
+{"updatedAt":"2024-03-12T12:54:47.175Z","ACL":{"*":{"read":true}},"objectId":"63ec77c0a8db685c286801f8","createdAt":"2023-02-15T06:12:16.720Z","tag_name":"Charlotte OST","tag_order":108,"tag_id":12}
+{"updatedAt":"2024-03-12T12:52:22.888Z","ACL":{"*":{"read":true}},"objectId":"63ec77c6a8db685c286801fa","createdAt":"2023-02-15T06:12:22.678Z","tag_name":"莉兹与青鸟 OST","tag_order":101,"tag_id":35}
+{"updatedAt":"2024-03-12T12:51:48.527Z","ACL":{"*":{"read":true}},"objectId":"63ec77ce14f21573cb4512b9","createdAt":"2023-02-15T06:12:30.987Z","tag_name":"K-ON! OST","tag_order":100,"tag_id":46}
+{"updatedAt":"2024-03-12T12:53:22.559Z","ACL":{"*":{"read":true}},"objectId":"63ec77d714f21573cb4512bb","createdAt":"2023-02-15T06:12:39.341Z","tag_name":"紫罗兰永恒花园 OST","tag_order":105,"tag_id":20}
+{"updatedAt":"2024-03-12T12:52:56.527Z","ACL":{"*":{"read":true}},"objectId":"63ec77df14f21573cb4512f1","createdAt":"2023-02-15T06:12:47.888Z","tag_name":"恋爱小行星 OST","tag_order":104,"tag_id":27}
+{"updatedAt":"2024-03-12T12:52:48.946Z","ACL":{"*":{"read":true}},"objectId":"63ec77e7a8db685c2868023c","createdAt":"2023-02-15T06:12:55.742Z","tag_name":"结城友奈是勇者 OST","tag_order":103,"tag_id":34}
+{"updatedAt":"2024-03-12T12:52:44.235Z","ACL":{"*":{"read":true}},"objectId":"63ec77ef14f21573cb4512f2","createdAt":"2023-02-15T06:13:03.909Z","tag_name":"Re:从零开始的异世界生活 OST","tag_order":102,"tag_id":37}
+{"updatedAt":"2024-03-12T12:53:13.416Z","ACL":{"*":{"read":true}},"objectId":"63ec77f8a8db685c28680241","createdAt":"2023-02-15T06:13:12.532Z","tag_name":"NieR：Automata OST","tag_order":150,"tag_id":41}
+{"updatedAt":"2024-03-12T12:50:09.035Z","ACL":{"*":{"read":true}},"objectId":"63ec7804a8db685c28680250","createdAt":"2023-02-15T06:13:24.817Z","tag_name":"K-ON!「劇中歌集 放課後ティータイム II - CassetteMix」","tag_order":200,"tag_id":45}
+{"updatedAt":"2023-05-29T08:17:02.000Z","ACL":{"*":{"read":true}},"objectId":"64745f5ff742a330ac00cec6","createdAt":"2023-05-29T08:16:31.437Z","tag_name":"「ウマ娘 プリティーダービー ROAD TO THE TOP」OST","tag_order":38,"tag_id":48}
+{"updatedAt":"2024-03-12T13:02:00.582Z","ACL":{"*":{"read":true}},"objectId":"64d49cbd7a64727f6c0fc3b2","createdAt":"2023-08-10T08:15:57.114Z","tag_name":"さくらの雲*スカアレットの恋 コンプリートサウンドアルバム","tag_order":156,"tag_id":49}
+{"updatedAt":"2024-03-12T12:49:47.040Z","ACL":{"*":{"read":true}},"objectId":"65efc0551c8cc00f9b7ea319","createdAt":"2024-03-12T02:39:17.387Z","tag_name":"セカイシンフォニー Sekai Symphony 2023 Live","tag_order":300,"tag_id":50}
+{"updatedAt":"2024-03-12T12:55:00.727Z","ACL":{"*":{"read":true}},"objectId":"65f0499183bf2c2c452e38dd","createdAt":"2024-03-12T12:24:49.877Z","tag_name":"Blue Archive OST","tag_order":154,"tag_id":51}
+{"updatedAt":"2024-03-12T12:57:55.348Z","ACL":{"*":{"read":true}},"objectId":"65f0514a83bf2c2c452e3c53","createdAt":"2024-03-12T12:57:46.878Z","tag_name":"Blue Archive !Arranged","tag_order":155,"tag_id":52}
+{"updatedAt":"2024-04-03T06:32:44.661Z","ACL":{"*":{"read":true}},"objectId":"660cf52aec2ef817e54366ab","createdAt":"2024-04-03T06:20:26.994Z","tag_name":"粤语","tag_order":7,"tag_id":53}
+{"updatedAt":"2024-08-06T05:34:26.234Z","ACL":{"*":{"read":true}},"objectId":"66b1b5b591d2fe228f6aaf0e","createdAt":"2024-08-06T05:33:41.539Z","tag_name":"さくら、もゆ。-as the Night's, Reincarnation- ミュージックコレクション ","tag_order":157,"tag_id":54}
+{"updatedAt":"2024-08-06T05:37:44.771Z","ACL":{"*":{"read":true}},"objectId":"66b1b6a891d2fe228f6ab019","createdAt":"2024-08-06T05:37:44.771Z","tag_name":"GBC","tag_order":50,"tag_id":55}
+{"updatedAt":"2024-10-02T14:25:35.516Z","ACL":{"*":{"read":true}},"objectId":"66fd57c73d0a9434c0550fdb","createdAt":"2024-10-02T14:25:11.790Z","tag_name":"プリマドール 無名典礼 OST","tag_order":158,"tag_id":56}
+{"updatedAt":"2024-10-02T14:28:42.654Z","ACL":{"*":{"read":true}},"objectId":"66fd589a3d0a9434c0551101","createdAt":"2024-10-02T14:28:42.654Z","tag_name":"梦灯花 OST","tag_order":159,"tag_id":57}
+{"updatedAt":"2024-10-03T08:38:33.307Z","ACL":{"*":{"read":true}},"objectId":"66fe57cb3d0a9434c0561f44","createdAt":"2024-10-03T08:37:31.012Z","tag_name":"「かつて魔法少女と悪は敵対していた。」Music Collection","tag_order":109,"tag_id":58}
+{"updatedAt":"2024-10-03T09:17:48.786Z","ACL":{"*":{"read":true}},"objectId":"66fe613c9ab78865d5fe54af","createdAt":"2024-10-03T09:17:48.786Z","tag_name":"ReoNa","tag_order":24,"tag_id":59}
+{"updatedAt":"2024-10-24T10:14:29.160Z","ACL":{"*":{"read":true}},"objectId":"671a1e05ff1aa6151259fcff","createdAt":"2024-10-24T10:14:29.160Z","tag_name":"「星空鉄道とシロの旅」Original Sound Track","tag_order":160,"tag_id":60}
+{"updatedAt":"2024-11-23T13:46:18.521Z","ACL":{"*":{"read":true}},"objectId":"6741dcaab2f19b0bd6765795","createdAt":"2024-11-23T13:46:18.521Z","tag_name":"CHiCO with HoneyWorks","tag_order":25,"tag_id":61}
