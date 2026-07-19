@@ -154,25 +154,36 @@ function load_static_data(name) {
   return static_data_promises[name];
 }
 
-function official_hf_music_source(value) {
+// Hugging Face 在国内网络中的可用性会随网络和地区变化。播放器始终先尝试
+// hf-mirror，再在媒体加载失败时切换到官方地址。音频流量由资料源直接发给
+// 浏览器，不经过博客的 Netlify Function。
+var MUSIC_HF_SOURCE_HOSTS = ['hf-mirror.com', 'huggingface.co'];
+
+function music_hf_source_path(value) {
   try {
     var source = new URL(String(value || ''), window.location.origin);
     var host = source.hostname.toLowerCase();
     var pathname = decodeURIComponent(source.pathname);
-    if (source.protocol !== 'https:' || (host !== 'hf-mirror.com' && host !== 'huggingface.co')) return null;
+    if (source.protocol !== 'https:' || MUSIC_HF_SOURCE_HOSTS.indexOf(host) === -1) return null;
     if (pathname.indexOf('/datasets/Yusen/music/resolve/main/') !== 0 || /\/\.\.\//.test(pathname)) return null;
     if (!/\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i.test(pathname)) return null;
-    source.hostname = 'huggingface.co';
-    return source.toString();
+    return {
+      pathname: source.pathname,
+      search: source.search,
+    };
   } catch (error) {
     return null;
   }
 }
 
-function music_source_url(value, download) {
-  var source = official_hf_music_source(value);
+function music_source_urls(value, download) {
+  var source = music_hf_source_path(value);
   if (!source) return null;
-  return '/api/music-source?source=' + encodeURIComponent(source) + (download ? '&download=1' : '');
+  return MUSIC_HF_SOURCE_HOSTS.map(function(host) {
+    var url = new URL('https://' + host + source.pathname + source.search);
+    if (download) url.searchParams.set('download', 'true');
+    return url.toString();
+  });
 }
 
 function apply_music_source_urls(library) {
@@ -180,12 +191,71 @@ function apply_music_source_urls(library) {
   library.forEach(function(song) {
     if (!song || typeof song.url !== 'string') return;
     var original = song.source_url || song.url;
-    var resolved = music_source_url(original, false);
-    if (!resolved) return;
+    var candidates = music_source_urls(original, false);
+    if (!candidates || !candidates.length) return;
     song.source_url = original;
-    song.url = resolved;
+    song.source_candidates = candidates;
+    song.url = candidates[0];
   });
   return library;
+}
+
+function music_source_candidates(song) {
+  if (!song) return [];
+  if (Array.isArray(song.source_candidates) && song.source_candidates.length) {
+    return song.source_candidates.slice();
+  }
+  return music_source_urls(song.source_url || song.url, false) || [];
+}
+
+function install_music_source_fallback(player) {
+  if (!player || !player.audio || player.__yusenMusicSourceFallback) return;
+  player.__yusenMusicSourceFallback = true;
+  player.__yusenMusicSourceRetryId = 0;
+
+  function resetCurrentSource() {
+    var song = player.list && player.list.audios && player.list.audios[player.list.index];
+    var candidates = music_source_candidates(song);
+    if (!song || !candidates.length) return;
+    song.__musicSourceIndex = 0;
+    song.url = candidates[0];
+  }
+
+  player.on('listswitch', resetCurrentSource);
+  resetCurrentSource();
+
+  // 使用捕获阶段拦截 audio 的原生错误事件，先切换镜像，再让 APlayer 的默认
+  // “两秒后跳到下一首”逻辑接管。这样短暂的镜像故障不会被误认为曲目失效。
+  player.audio.addEventListener('error', function(event) {
+    var song = player.list && player.list.audios && player.list.audios[player.list.index];
+    var candidates = music_source_candidates(song);
+    var sourceIndex = Number(song && song.__musicSourceIndex) || 0;
+    if (!song || sourceIndex + 1 >= candidates.length) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    var nextIndex = sourceIndex + 1;
+    var retryId = ++player.__yusenMusicSourceRetryId;
+    var resumeAt = Number(player.audio.currentTime) || 0;
+    var wasPlaying = !player.audio.paused;
+    song.__musicSourceIndex = nextIndex;
+    song.url = candidates[nextIndex];
+    player.notice('正在切换备用音乐源…', 2200);
+
+    function resumeFromFallback() {
+      if (player.__yusenMusicSourceRetryId !== retryId) return;
+      if (resumeAt > 0 && Number.isFinite(player.audio.duration)) {
+        try { player.audio.currentTime = Math.min(resumeAt, Math.max(0, player.audio.duration - 0.1)); } catch (error) {}
+      }
+      if (wasPlaying) player.play();
+    }
+    player.audio.addEventListener('loadedmetadata', resumeFromFallback, {once: true});
+    player.audio.src = song.url;
+    player.audio.load();
+    // 初次加载失败时有些浏览器不会再触发一次 play 事件；主动调用不会绕过用户
+    // 的播放权限，并能让已由用户启动的播放立即恢复。
+    if (wasPlaying) player.play();
+  }, true);
 }
 
 function ensure_mv_player_runtime() {
@@ -452,8 +522,9 @@ function refresh_music_admin_session() {
 
 function safe_music_download_url(song) {
   if (!song || !song.url) return '';
-  var resolvedDownload = music_source_url(song.source_url || song.url, true);
-  if (resolvedDownload) return new URL(resolvedDownload, window.location.origin).href;
+  // 下载直接交给资料源；音乐播放不会经过本站的 Netlify Function。
+  var downloadCandidates = music_source_urls(song.source_url || song.url, true);
+  if (downloadCandidates && downloadCandidates.length) return downloadCandidates[0];
   try {
     var source = new URL(String(song.url), window.location.href);
     if (source.protocol !== 'https:' && source.protocol !== 'http:') return '';
@@ -3265,6 +3336,7 @@ function aplayer0() {
   });
   install_bilingual_lyrics(window.ap0);
   install_stable_queue_switch(window.ap0);
+  install_music_source_fallback(window.ap0);
   set_player_cover(window.ap0, window.ap0.list && window.ap0.list.audios[window.ap0.list.index]);
   bind_music_player_settings(window.ap0);
 
@@ -3497,6 +3569,7 @@ function aplayer1() {
     audio: ap1_list,
   });
   bind_music_player_settings(window.ap1);
+  install_music_source_fallback(window.ap1);
 }
 
 function search_music(text) {
