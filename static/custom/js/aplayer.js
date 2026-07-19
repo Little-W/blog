@@ -3244,6 +3244,14 @@ function normalize_player_cover_source(source) {
   }
 }
 
+function music_cover_identity(audio) {
+  if (!audio) return '';
+  var source = audio.cover_source || audio.pic_source || audio.cover || audio.pic || '';
+  var hfPath = music_hf_cover_path(source);
+  if (hfPath) return 'hf:' + hfPath.pathname + hfPath.search;
+  return String(source);
+}
+
 function show_player_cover(picture, cssSource, resolvedSource, requestId) {
   if (!picture || picture.dataset.coverRequest !== requestId) return;
 
@@ -3265,7 +3273,7 @@ function show_player_cover(picture, cssSource, resolvedSource, requestId) {
   void picture.offsetWidth;
   picture.classList.add('music-player-cover-changing');
   window.setTimeout(function() {
-    picture.classList.remove('music-player-cover-changing');
+    if (picture.dataset.coverRequest === requestId) picture.classList.remove('music-player-cover-changing');
   }, 220);
 }
 
@@ -3273,13 +3281,19 @@ function set_player_cover(player, audio) {
   if (!player || !player.template || !player.template.pic) return;
 
   var picture = player.template.pic;
+  var coverIdentity = music_cover_identity(audio);
+  // 音频重试、画质同步和重复的播放器回调都会再次调用本函数。只要仍是同一
+  // 张封面，就让正在进行的加载继续完成，不能重置请求编号、背景和动画。
+  if (coverIdentity && picture.dataset.coverIdentity === coverIdentity && picture.style.backgroundImage) return;
   var candidates = music_cover_candidates(audio);
   var requestId = String(Number(picture.dataset.coverRequest || "0") + 1);
   picture.dataset.coverRequest = requestId;
+  picture.dataset.coverIdentity = coverIdentity;
   if (!candidates.length) {
     clear_player_cover_transition(picture);
     picture.style.backgroundImage = "";
     delete picture.dataset.coverSource;
+    delete picture.dataset.coverIdentity;
     picture.classList.add("aplayer-pic--fallback");
     return;
   }
@@ -3301,6 +3315,7 @@ function set_player_cover(player, audio) {
       clear_player_cover_transition(picture);
       picture.style.backgroundImage = "";
       delete picture.dataset.coverSource;
+      delete picture.dataset.coverIdentity;
       picture.classList.add("aplayer-pic--fallback");
     }
   });
