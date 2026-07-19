@@ -3140,7 +3140,8 @@ load_music_lists = function() {
   }
 
   // 先挂载容器再量取可用宽度。标签不再按固定的 5 列硬分组，而是按它们的
-  // 实际文字宽度连续填满三行；这样宽标签完整可见，短标签也不会留下大片空白。
+  // 实际文字宽度连续填满三行；渲染后由 flex 把每行余宽分给现有项目，保证
+  // 长名称完整可见，并让每页的三行都贴齐左右边缘。
   div.appendChild(subdiv);
   var measurementGroup = createTagGroup('playlist-tag-group--measure');
   subdiv.appendChild(measurementGroup);
