@@ -429,8 +429,15 @@ async function readBody(request) {
   }
 }
 
-async function commitFile({path, content, baseHeadSha, message}) {
+async function commitFiles({files, baseHeadSha, message}) {
   if (!baseHeadSha || !/^[0-9a-f]{40}$/i.test(baseHeadSha)) throw requestError('缺少有效的基准提交编号。');
+  if (!Array.isArray(files) || !files.length) throw requestError('没有需要写入的文件。');
+  const paths = new Set();
+  files.forEach(({path, content}) => {
+    if (typeof path !== 'string' || !path || paths.has(path)) throw requestError('文件路径无效或重复。');
+    if (typeof content !== 'string') throw requestError(`文件 ${path} 的内容无效。`);
+    paths.add(path);
+  });
   const snapshot = await repoSnapshot();
   if (snapshot.headSha !== baseHeadSha) {
     const error = new Error('远程仓库已被更新，请重新加载后再保存。');
@@ -438,21 +445,24 @@ async function commitFile({path, content, baseHeadSha, message}) {
     error.code = 'REPOSITORY_CHANGED';
     throw error;
   }
-  const blob = await githubRequest(`${snapshot.root}/git/blobs`, {
-    method: 'POST',
-    body: {content, encoding: 'utf-8'},
-  });
+  const blobs = await Promise.all(files.map(async ({path, content}) => {
+    const blob = await githubRequest(`${snapshot.root}/git/blobs`, {
+      method: 'POST',
+      body: {content, encoding: 'utf-8'},
+    });
+    return {path, mode: '100644', type: 'blob', sha: blob.sha};
+  }));
   const tree = await githubRequest(`${snapshot.root}/git/trees`, {
     method: 'POST',
     body: {
       base_tree: snapshot.commit.tree.sha,
-      tree: [{path, mode: '100644', type: 'blob', sha: blob.sha}],
+      tree: blobs,
     },
   });
   const commit = await githubRequest(`${snapshot.root}/git/commits`, {
     method: 'POST',
     body: {
-      message: String(message || `控制台：更新 ${path}`).slice(0, 240),
+      message: String(message || `控制台：更新 ${files[0].path}`).slice(0, 240),
       tree: tree.sha,
       parents: [snapshot.headSha],
     },
@@ -466,6 +476,14 @@ async function commitFile({path, content, baseHeadSha, message}) {
     commitSha: commit.sha,
     commitUrl: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commit/${commit.sha}`,
   };
+}
+
+async function commitFile({path, content, baseHeadSha, message}) {
+  return commitFiles({
+    files: [{path, content}],
+    baseHeadSha,
+    message: message || `控制台：更新 ${path}`,
+  });
 }
 
 async function listFiles() {
@@ -548,6 +566,79 @@ async function saveDataset(request) {
   return json({success: true, data: {...result, count: records.length}}, 201);
 }
 
+function normalizeMusicTagIds(value, tagRecords) {
+  if (!Array.isArray(value)) throw requestError('tagIds 必须是数组。');
+  const available = new Set(tagRecords.map((record) => Number(record.tag_id)));
+  const seen = new Set();
+  const tagIds = [];
+  value.forEach((item) => {
+    const tagId = Number(item);
+    if (!Number.isInteger(tagId) || !available.has(tagId)) {
+      throw requestError(`歌单标签 ${String(item)} 不存在。`);
+    }
+    if (!seen.has(tagId)) {
+      seen.add(tagId);
+      tagIds.push(tagId);
+    }
+  });
+  // 1 是资料库内部的基础分类，不在公开歌单标签中展示，也不能由页面移除。
+  return [1, ...tagIds];
+}
+
+function updateMusicRecordTags(records, mid, tagIds, datasetName) {
+  let found = 0;
+  let title = '';
+  let author = '';
+  const updated = records.map((record) => {
+    if (Number(record.mid) !== mid) return record;
+    found += 1;
+    title = String(record.title || '未命名曲目');
+    author = String(record.author || '');
+    return {...record, list: tagIds};
+  });
+  if (found !== 1) {
+    throw requestError(`${datasetName} 中未找到唯一的曲目编号 ${mid}。`, 404, 'MUSIC_NOT_FOUND');
+  }
+  return {records: updated, title, author};
+}
+
+async function saveMusicTags(request) {
+  const body = await readBody(request);
+  const mid = Number(body.mid);
+  if (!Number.isInteger(mid) || mid < 0) return fail('曲目编号无效。', 'INVALID_MUSIC_ID');
+
+  const snapshot = await repoSnapshot();
+  const [tagFile, hqFile, sqFile] = await Promise.all([
+    readBlob(snapshot, DATASETS.music_tag.path),
+    readBlob(snapshot, DATASETS.music_hq.path),
+    readBlob(snapshot, DATASETS.music_sq.path),
+  ]);
+  const tagRecords = parseJsonl(tagFile.content, DATASETS.music_tag.header).records;
+  const tagIds = normalizeMusicTagIds(body.tagIds, tagRecords);
+  const hq = updateMusicRecordTags(
+    parseJsonl(hqFile.content, DATASETS.music_hq.header).records,
+    mid,
+    tagIds,
+    DATASETS.music_hq.label,
+  );
+  const sq = updateMusicRecordTags(
+    parseJsonl(sqFile.content, DATASETS.music_sq.header).records,
+    mid,
+    tagIds,
+    DATASETS.music_sq.label,
+  );
+  const displayName = [hq.author || sq.author, hq.title || sq.title].filter(Boolean).join(' - ');
+  const result = await commitFiles({
+    files: [
+      {path: DATASETS.music_hq.path, content: serializeJsonl(DATASETS.music_hq, hq.records)},
+      {path: DATASETS.music_sq.path, content: serializeJsonl(DATASETS.music_sq, sq.records)},
+    ],
+    baseHeadSha: snapshot.headSha,
+    message: `音乐：更新 ${displayName || `曲目 ${mid}`} 的歌单标签`,
+  });
+  return json({success: true, data: {...result, mid, tagIds}}, 201);
+}
+
 function datasetList() {
   return Object.entries(DATASETS).map(([name, dataset]) => ({
     name,
@@ -587,6 +678,7 @@ export default async (request) => {
     }
     if (url.pathname === '/api/console/dataset' && request.method === 'GET') return await getDataset(url);
     if (url.pathname === '/api/console/dataset' && request.method === 'POST') return await saveDataset(request);
+    if (url.pathname === '/api/console/music-tags' && request.method === 'POST') return await saveMusicTags(request);
     if (url.pathname === '/api/console/files' && request.method === 'GET') return await listFiles();
     if (url.pathname === '/api/console/file' && request.method === 'GET') return await getFile(url);
     if (url.pathname === '/api/console/file' && request.method === 'POST') return await saveFile(request);

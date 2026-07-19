@@ -19,6 +19,11 @@ type DatasetPayload = {
   headSha: string;
   blobSha: string;
 };
+type MusicTag = {
+  id: number;
+  name: string;
+  order: number;
+};
 type EditorField = {
   id: string;
   key: string;
@@ -131,14 +136,26 @@ function parseImportedRecords(text: string): JsonRecord[] {
   return records as JsonRecord[];
 }
 
+function parseListTagIds(value: string): number[] {
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.map(Number).filter((id) => Number.isInteger(id) && id >= 0))];
+  } catch {
+    return [];
+  }
+}
+
 function RecordEditor({
   record,
   mode,
+  musicTags,
   onApply,
   onCancel,
 }: {
   record: JsonRecord;
   mode: 'new' | 'edit';
+  musicTags: MusicTag[];
   onApply: (record: JsonRecord) => void;
   onCancel: () => void;
 }) {
@@ -148,6 +165,11 @@ function RecordEditor({
   const changeField = (id: string, patch: Partial<EditorField>) => {
     setFields((current) => current.map((field) => field.id === id ? {...field, ...patch} : field));
   };
+
+  const tagNames = useMemo(() => new Map<number, string>([
+    [1, '基础资料'],
+    ...musicTags.map((tag) => [tag.id, tag.name] as const),
+  ]), [musicTags]);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -199,7 +221,47 @@ function RecordEditor({
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
-            ) : field.type === 'json' ? (
+            ) : field.type === 'json' ? field.key === 'list' && musicTags.length ? (
+              <div className={styles.listFieldValue}>
+                <textarea
+                  className={styles.fieldValue}
+                  aria-label={`${field.key} 的值`}
+                  value={field.value}
+                  onChange={(event) => changeField(field.id, {value: event.target.value})}
+                  rows={3}
+                />
+                <div className={styles.listTagQuickPick}>
+                  <span>快速选择</span>
+                  <div>
+                    {musicTags.map((tag) => {
+                      const selected = parseListTagIds(field.value).includes(tag.id);
+                      return (
+                        <button
+                          type="button"
+                          key={tag.id}
+                          className={selected ? styles.listTagSelected : styles.listTagButton}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            const current = parseListTagIds(field.value);
+                            const next = selected
+                              ? current.filter((id) => id !== tag.id)
+                              : [...current, tag.id];
+                            changeField(field.id, {value: JSON.stringify(next.sort((left, right) => left - right))});
+                          }}>
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <small className={styles.listTagNames}>
+                  当前标签：{(() => {
+                    const ids = parseListTagIds(field.value);
+                    return ids.length ? ids.map((id) => tagNames.get(id) || `未知标签 #${id}`).join(' · ') : '未设置';
+                  })()}
+                </small>
+              </div>
+            ) : (
               <textarea
                 className={styles.fieldValue}
                 aria-label={`${field.key} 的值`}
@@ -264,6 +326,10 @@ function DataConsole({repository}: {repository: string | null}) {
   const [notice, setNotice] = useState('');
   const [importText, setImportText] = useState('');
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const [musicTags, setMusicTags] = useState<MusicTag[]>([]);
+  const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
+
+  const supportsTagFilter = selectedName === 'music_hq' || selectedName === 'music_sq';
 
   const loadDataset = async (name: string) => {
     setBusy(true);
@@ -272,9 +338,24 @@ function DataConsole({repository}: {repository: string | null}) {
     setSelectedIndex(null);
     setCreating(false);
     try {
-      const data = await consoleApi<DatasetPayload>(`/api/console/dataset?name=${encodeURIComponent(name)}`);
+      const tagRequest = (name === 'music_hq' || name === 'music_sq')
+        ? consoleApi<DatasetPayload>('/api/console/dataset?name=music_tag')
+        : Promise.resolve(null);
+      const [data, tagDataset] = await Promise.all([
+        consoleApi<DatasetPayload>(`/api/console/dataset?name=${encodeURIComponent(name)}`),
+        tagRequest,
+      ]);
       setDataset(data);
       setRecords(data.records);
+      setMusicTags((tagDataset?.records || [])
+        .map((record) => ({
+          id: Number(record.tag_id),
+          name: String(record.tag_name || ''),
+          order: Number(record.tag_order) || 0,
+        }))
+        .filter((tag) => Number.isInteger(tag.id) && tag.id >= 0 && tag.name)
+        .sort((left, right) => left.order - right.order || left.id - right.id));
+      setTagFilter('all');
       setDirty(false);
       setPage(0);
     } catch (caught) {
@@ -301,16 +382,22 @@ function DataConsole({repository}: {repository: string | null}) {
     const keyword = search.trim().toLocaleLowerCase();
     return records
       .map((record, index) => ({record, index}))
-      .filter(({record}) => !keyword || JSON.stringify(record).toLocaleLowerCase().includes(keyword))
+      .filter(({record}) => {
+        if (supportsTagFilter && tagFilter !== 'all') {
+          const tags = Array.isArray(record.list) ? record.list.map(Number) : [];
+          if (!tags.includes(tagFilter)) return false;
+        }
+        return !keyword || JSON.stringify(record).toLocaleLowerCase().includes(keyword);
+      })
       .map(({index}) => index);
-  }, [records, search]);
+  }, [records, search, supportsTagFilter, tagFilter]);
   const pageSize = 36;
   const pageCount = Math.max(1, Math.ceil(filteredIndexes.length / pageSize));
   const visibleIndexes = filteredIndexes.slice(page * pageSize, (page + 1) * pageSize);
 
   useEffect(() => {
     setPage(0);
-  }, [search]);
+  }, [search, tagFilter]);
 
   const chooseDataset = (name: string) => {
     if (name === selectedName) return;
@@ -454,6 +541,27 @@ function DataConsole({repository}: {repository: string | null}) {
           {dirty ? <strong className={styles.dirtyMark}>有未提交修改</strong> : null}
         </div>
 
+        {supportsTagFilter ? (
+          <div className={styles.tagFilterBar} aria-label="按歌单标签筛选">
+            <span>歌单标签</span>
+            <button
+              type="button"
+              className={tagFilter === 'all' ? styles.tagFilterActive : styles.tagFilterButton}
+              onClick={() => setTagFilter('all')}>
+              全部
+            </button>
+            {musicTags.map((tag) => (
+              <button
+                type="button"
+                key={tag.id}
+                className={tagFilter === tag.id ? styles.tagFilterActive : styles.tagFilterButton}
+                onClick={() => setTagFilter(tag.id)}>
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className={styles.recordList} aria-busy={busy}>
           {visibleIndexes.map((index) => {
             const record = records[index];
@@ -486,6 +594,7 @@ function DataConsole({repository}: {repository: string | null}) {
             key={creating ? 'new' : `edit-${selectedIndex}-${JSON.stringify(records[selectedIndex as number])}`}
             record={creating ? {} : records[selectedIndex as number]}
             mode={creating ? 'new' : 'edit'}
+            musicTags={supportsTagFilter ? musicTags : []}
             onApply={applyRecord}
             onCancel={() => { setCreating(false); setSelectedIndex(null); }}
           />

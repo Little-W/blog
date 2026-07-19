@@ -17,6 +17,9 @@ let music_all_sq_sql = new Array();
 var static_data_promises = {};
 var music_quality_promises = {};
 var music_quality_switching = false;
+var music_tag_overrides = {};
+var music_admin_state = { authenticated: false, checked: false, loading: false, promise: null };
+var music_tag_editor_state = null;
 var mv_player_runtime_promise = null;
 let SQ_button;
 let HQ_button;
@@ -125,6 +128,9 @@ function init_with_database()
     music_list_all[1] = [];
     hq_list_init_ok = sq_list_init_ok = default_list_init_ok = mv_ok = true;
     init_aplayer();
+    // 登录状态由控制台的 HttpOnly Cookie 决定；仅确认仓库所有者后才渲染
+    // 曲目行中的标签编辑入口。普通访客不会获得任何编辑控件。
+    refresh_music_admin_session();
   }).catch(function(err) { console.error('Unable to load local music data', err); });
 }
 
@@ -183,6 +189,7 @@ function ensure_music_quality(nextQuality) {
   var dataName = normalizedQuality === 1 ? 'music_sq' : 'music_hq';
   music_quality_promises[normalizedQuality] = load_static_data(dataName).then(function(records) {
     var library = records.sort(objectSort('mid'));
+    apply_music_tag_overrides(library);
     if (normalizedQuality === 0) music_all_hq = library;
     else music_all_sq = library;
     music_all[normalizedQuality] = library;
@@ -367,6 +374,271 @@ function get_music_record(musicId) {
     if (library[i] && Number(library[i].mid) === musicId) return library[i];
   }
   return null;
+}
+
+function apply_music_tag_overrides(library) {
+  if (!Array.isArray(library)) return library;
+  library.forEach(function(song) {
+    if (!song) return;
+    var override = music_tag_overrides[Number(song.mid)];
+    if (Array.isArray(override)) song.list = override.slice();
+  });
+  return library;
+}
+
+function refresh_music_admin_session() {
+  if (music_admin_state.loading) return music_admin_state.promise || Promise.resolve(music_admin_state);
+  music_admin_state.loading = true;
+  music_admin_state.promise = fetch('/api/console/auth', {
+    credentials: 'same-origin',
+    headers: {accept: 'application/json'},
+  }).then(function(response) {
+    return response.json().catch(function() { return {}; }).then(function(payload) {
+      music_admin_state.authenticated = Boolean(response.ok && payload && payload.success && payload.data && payload.data.authenticated);
+      music_admin_state.checked = true;
+      return music_admin_state;
+    });
+  }).catch(function() {
+    music_admin_state.authenticated = false;
+    music_admin_state.checked = true;
+    return music_admin_state;
+  }).then(function(state) {
+    music_admin_state.loading = false;
+    var listDiv = document.getElementById('aplayer_list_active');
+    if (listDiv && Array.isArray(active_list) && music_all[quality]) init_custom_list();
+    return state;
+  });
+  return music_admin_state.promise;
+}
+
+function safe_music_download_url(song) {
+  if (!song || !song.url) return '';
+  try {
+    var source = new URL(String(song.url), window.location.href);
+    if (source.protocol !== 'https:' && source.protocol !== 'http:') return '';
+    // Hugging Face 的 resolve 地址支持 download 参数，会以附件方式返回，避免
+    // 浏览器将 MP3 直接导航到新页面。其他旧资源地址保持原样。
+    if (source.hostname === 'hf-mirror.com' && source.pathname.indexOf('/resolve/') !== -1) {
+      source.searchParams.set('download', 'true');
+    }
+    return source.href;
+  } catch (error) {
+    return '';
+  }
+}
+
+function music_download_name(song) {
+  var name = [song && song.author, song && song.title].filter(Boolean).join(' - ') || 'music';
+  return name.replace(/[\\/:*?"<>|]+/g, '_') + '.mp3';
+}
+
+function create_music_action_icon(path) {
+  var icon = _createSvg('svg', {
+    version: '1.1',
+    xmlns: 'http://www.w3.org/2000/svg',
+    width: '16',
+    height: '16',
+    viewBox: '0 0 24 24',
+    'aria-hidden': 'true',
+  });
+  icon.appendChild(_createSvg('path', {fill: 'currentColor', d: path}));
+  return icon;
+}
+
+function create_music_download_action(song) {
+  var download = document.createElement('a');
+  download.setAttribute('class', 'music-track-action music-track-download');
+  download.setAttribute('aria-label', '下载 ' + (song.title || '音乐'));
+  download.setAttribute('title', '下载音乐');
+  download.setAttribute('rel', 'noopener noreferrer');
+  download.setAttribute('target', '_blank');
+  var url = safe_music_download_url(song);
+  if (url) {
+    download.href = url;
+    download.download = music_download_name(song);
+  } else {
+    download.setAttribute('aria-disabled', 'true');
+    download.setAttribute('tabindex', '-1');
+  }
+  download.appendChild(create_music_action_icon('M11 3h2v10.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17V3Zm-6 16h14v2H5v-2Z'));
+  var label = document.createElement('span');
+  label.setAttribute('class', 'music-track-action__label');
+  label.innerText = '下载';
+  download.appendChild(label);
+  download.addEventListener('click', function(event) {
+    event.stopPropagation();
+    if (!url) event.preventDefault();
+  });
+  return download;
+}
+
+function set_music_tag_editor_busy(busy, message) {
+  if (!music_tag_editor_state) return;
+  music_tag_editor_state.saving = Boolean(busy);
+  music_tag_editor_state.save.disabled = Boolean(busy);
+  music_tag_editor_state.cancel.disabled = Boolean(busy);
+  Array.prototype.forEach.call(music_tag_editor_state.chips.querySelectorAll('button'), function(chip) {
+    chip.disabled = Boolean(busy);
+  });
+  music_tag_editor_state.status.innerText = message || '';
+  music_tag_editor_state.status.classList.toggle('is-error', Boolean(message && !busy));
+}
+
+function ensure_music_tag_editor() {
+  if (music_tag_editor_state) return music_tag_editor_state;
+  var dialog = document.createElement('dialog');
+  dialog.setAttribute('class', 'music-tag-editor');
+  dialog.setAttribute('aria-labelledby', 'music-tag-editor-title');
+
+  var form = document.createElement('form');
+  form.setAttribute('method', 'dialog');
+  var header = document.createElement('div');
+  header.setAttribute('class', 'music-tag-editor__header');
+  var copy = document.createElement('div');
+  var eyebrow = document.createElement('span');
+  eyebrow.setAttribute('class', 'music-tag-editor__eyebrow');
+  eyebrow.innerText = 'OWNER EDIT';
+  var title = document.createElement('strong');
+  title.setAttribute('id', 'music-tag-editor-title');
+  copy.appendChild(eyebrow);
+  copy.appendChild(title);
+  var cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.setAttribute('class', 'music-tag-editor__close');
+  cancel.setAttribute('aria-label', '关闭标签编辑');
+  cancel.innerText = '×';
+  cancel.addEventListener('click', function() { dialog.close(); });
+  header.appendChild(copy);
+  header.appendChild(cancel);
+  form.appendChild(header);
+
+  var help = document.createElement('p');
+  help.setAttribute('class', 'music-tag-editor__help');
+  help.innerText = '选择曲目应显示的歌单标签，保存后会同时更新 HQ 与 SQ 数据。';
+  form.appendChild(help);
+  var chips = document.createElement('div');
+  chips.setAttribute('class', 'music-tag-editor__chips');
+  form.appendChild(chips);
+  var footer = document.createElement('div');
+  footer.setAttribute('class', 'music-tag-editor__footer');
+  var status = document.createElement('span');
+  status.setAttribute('class', 'music-tag-editor__status');
+  var save = document.createElement('button');
+  save.type = 'button';
+  save.setAttribute('class', 'music-tag-editor__save');
+  save.innerText = '保存标签';
+  footer.appendChild(status);
+  footer.appendChild(save);
+  form.appendChild(footer);
+  dialog.appendChild(form);
+  dialog.addEventListener('click', function(event) {
+    if (event.target === dialog && !music_tag_editor_state.saving) dialog.close();
+  });
+  document.body.appendChild(dialog);
+
+  music_tag_editor_state = {
+    dialog: dialog,
+    title: title,
+    chips: chips,
+    status: status,
+    save: save,
+    cancel: cancel,
+    musicId: null,
+    selected: new Set(),
+    saving: false,
+  };
+  save.addEventListener('click', function() { save_music_tag_editor(); });
+  return music_tag_editor_state;
+}
+
+function open_music_tag_editor(musicId) {
+  if (!music_admin_state.authenticated) return;
+  var song = get_music_record(musicId);
+  if (!song) return;
+  var editor = ensure_music_tag_editor();
+  editor.musicId = Number(musicId);
+  editor.selected = new Set((song.list || []).filter(function(tagId) { return Number(tagId) !== 1; }).map(Number));
+  editor.title.innerText = [song.author, song.title].filter(Boolean).join(' - ') || '编辑曲目标签';
+  editor.chips.innerHTML = '';
+  music_tags.forEach(function(tag) {
+    var tagId = Number(tag.tag_id);
+    var chip = document.createElement('button');
+    chip.type = 'button';
+    chip.setAttribute('class', 'music-tag-editor__chip');
+    chip.dataset.tagId = String(tagId);
+    chip.setAttribute('aria-pressed', editor.selected.has(tagId) ? 'true' : 'false');
+    chip.innerText = tag.tag_name;
+    chip.addEventListener('click', function() {
+      if (editor.saving) return;
+      if (editor.selected.has(tagId)) editor.selected.delete(tagId);
+      else editor.selected.add(tagId);
+      chip.setAttribute('aria-pressed', editor.selected.has(tagId) ? 'true' : 'false');
+    });
+    editor.chips.appendChild(chip);
+  });
+  set_music_tag_editor_busy(false, '');
+  if (typeof editor.dialog.showModal === 'function') editor.dialog.showModal();
+  else editor.dialog.setAttribute('open', '');
+}
+
+function apply_saved_music_tags(musicId, tagIds) {
+  musicId = Number(musicId);
+  music_tag_overrides[musicId] = tagIds.slice();
+  [0, 1].forEach(function(qualityIndex) {
+    var library = music_all[qualityIndex];
+    if (!Array.isArray(library)) return;
+    library.forEach(function(song) {
+      if (song && Number(song.mid) === musicId) song.list = tagIds.slice();
+    });
+  });
+  music_tags.forEach(function(tag) { music_list_all[Number(tag.tag_id)] = null; });
+  if (current_list !== 0) get_music_list(current_list, true);
+  else init_custom_list();
+}
+
+function save_music_tag_editor() {
+  var editor = music_tag_editor_state;
+  if (!editor || editor.saving || editor.musicId === null) return;
+  set_music_tag_editor_busy(true, '正在保存…');
+  var tagIds = music_tags.filter(function(tag) { return editor.selected.has(Number(tag.tag_id)); })
+    .map(function(tag) { return Number(tag.tag_id); });
+  fetch('/api/console/music-tags', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {'content-type': 'application/json; charset=utf-8', accept: 'application/json'},
+    body: JSON.stringify({mid: editor.musicId, tagIds: tagIds}),
+  }).then(function(response) {
+    return response.json().catch(function() { return {}; }).then(function(payload) {
+      if (!response.ok || !payload || !payload.success) {
+        throw new Error(payload && payload.message || '保存标签失败。');
+      }
+      return payload.data;
+    });
+  }).then(function(result) {
+    apply_saved_music_tags(editor.musicId, result.tagIds || [1].concat(tagIds));
+    editor.dialog.close();
+  }).catch(function(error) {
+    set_music_tag_editor_busy(false, error && error.message || '保存标签失败。');
+  });
+}
+
+function create_music_tag_action(song, musicId) {
+  var edit = document.createElement('button');
+  edit.type = 'button';
+  edit.setAttribute('class', 'music-track-action music-track-tag-editor');
+  edit.setAttribute('aria-label', '编辑 ' + (song.title || '音乐') + ' 的标签');
+  edit.setAttribute('title', '编辑歌单标签');
+  edit.appendChild(create_music_action_icon('M20 13.5V19a1 1 0 0 1-1 1h-5.5l-7-7V7.5l7-7H19a1 1 0 0 1 1 1v5.5l-7 6.5 7 6.5v-6.5ZM8 8v4.17L13.83 18H18.5v-4.17L12.67 8H8Z'));
+  var label = document.createElement('span');
+  label.setAttribute('class', 'music-track-action__label');
+  label.innerText = '标签';
+  edit.appendChild(label);
+  edit.addEventListener('click', function(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    open_music_tag_editor(musicId);
+  });
+  return edit;
 }
 
 function clone_music_record(song) {
@@ -2315,7 +2587,14 @@ function init_custom_list() {
         break;
       }
     }
-    li.appendChild(checkBox);
+    var actions = document.createElement('div');
+    actions.setAttribute('class', 'music-track-actions');
+    actions.appendChild(create_music_download_action(arr));
+    if (music_admin_state.authenticated) {
+      actions.appendChild(create_music_tag_action(arr, active_list[i]));
+    }
+    actions.appendChild(checkBox);
+    li.appendChild(actions);
 
     ol.appendChild(li);
   }
@@ -2657,10 +2936,203 @@ function render_bilingual_lyrics(player) {
   });
 }
 
+/*
+ * APlayer 1.10.1 对 lrcType: 3 只做一次 XMLHttpRequest：请求经过
+ * hf-mirror 的 308 跳转后会落到 Hugging Face。前一个 308 响应没有 CORS
+ * 响应头，浏览器会把这次请求判定为网络错误；直接在地址栏打开却没有问题。
+ *
+ * 新导入的歌词统一经过同源的 /api/music-lyrics 读取。该端点只转发本曲库的
+ * .lrc 文件，服务端可以正常跟随镜像跳转。函数短暂不可用时，再退回允许 CORS
+ * 的 huggingface.co 原始地址。失败不写入 parsed 缓存，下一次切回同一首歌
+ * 会重新请求，而不是永久显示“不可用”。
+ */
+var music_lyric_text_cache = Object.create(null);
+var music_lyric_pending_cache = Object.create(null);
+var MUSIC_LYRIC_TIMEOUT_MS = 8000;
+var MUSIC_LYRIC_PROXY_ATTEMPTS = 3;
+
+function music_lyric_error(message, status) {
+  var error = new Error(message);
+  error.status = Number(status) || 0;
+  return error;
+}
+
+function music_lyric_wait(milliseconds) {
+  return new Promise(function(resolve) { window.setTimeout(resolve, milliseconds); });
+}
+
+function normalise_music_lyric_source(source) {
+  try {
+    var url = new URL(String(source || ""), window.location.href);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url;
+  } catch (error) {
+    return null;
+  }
+}
+
+function music_lyric_proxy_url(source) {
+  return "/api/music-lyrics?source=" + encodeURIComponent(source);
+}
+
+function music_lyric_fetch_targets(source) {
+  var upstream = normalise_music_lyric_source(source);
+  if (!upstream) return [];
+  var targets = [];
+  var hostname = upstream.hostname.toLowerCase();
+  var is_yusen_hf_dataset = (hostname === "hf-mirror.com" || hostname === "huggingface.co") &&
+    upstream.pathname.indexOf("/datasets/Yusen/music/resolve/main/") === 0;
+
+  if (is_yusen_hf_dataset) {
+    // 与静态数据保持 hf-mirror 地址不变；仅歌词请求走同源 Function，避免镜像
+    // 重定向响应缺少 CORS 头。第二个目标供本地开发或 Function 临时失效时使用。
+    targets.push({url: music_lyric_proxy_url(upstream.href), sameOrigin: true, attempts: MUSIC_LYRIC_PROXY_ATTEMPTS});
+    var direct = new URL(upstream.href);
+    direct.protocol = "https:";
+    direct.hostname = "huggingface.co";
+    direct.port = "";
+    targets.push({url: direct.href, sameOrigin: false, attempts: 1});
+  } else {
+    targets.push({url: upstream.href, sameOrigin: upstream.origin === window.location.origin, attempts: 2});
+  }
+  return targets;
+}
+
+function fetch_music_lyric_text_once(target) {
+  var controller = typeof window.AbortController === "function" ? new window.AbortController() : null;
+  var timeout = controller ? window.setTimeout(function() { controller.abort(); }, MUSIC_LYRIC_TIMEOUT_MS) : 0;
+  var options = {
+    method: "GET",
+    cache: "force-cache",
+    credentials: target.sameOrigin ? "same-origin" : "omit",
+    headers: {accept: "text/plain, text/*;q=0.9, */*;q=0.1"},
+  };
+  if (controller) options.signal = controller.signal;
+
+  return fetch(target.url, options).then(function(response) {
+    if (!response.ok) throw music_lyric_error("歌词请求失败（HTTP " + response.status + "）", response.status);
+    return response.text();
+  }).then(function(text) {
+    if (!String(text || "").trim()) throw music_lyric_error("歌词文件为空", 502);
+    // LRC 是纯文本，限制异常上游响应占用播放器内存；正常文件通常仅几十 KiB。
+    if (text.length > 1024 * 1024) throw music_lyric_error("歌词文件过大", 413);
+    return text;
+  }).then(function(text) {
+    if (timeout) window.clearTimeout(timeout);
+    return text;
+  }, function(error) {
+    if (timeout) window.clearTimeout(timeout);
+    throw error;
+  });
+}
+
+function should_retry_music_lyric_request(error) {
+  var status = Number(error && error.status) || 0;
+  return !status || status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function request_music_lyric_target(target, attempt) {
+  return fetch_music_lyric_text_once(target).catch(function(error) {
+    if (attempt + 1 >= target.attempts || !should_retry_music_lyric_request(error)) throw error;
+    // 退避时间很短：歌词文件小，网络瞬断或 Function 冷启动恢复后可立即复用。
+    return music_lyric_wait(300 * (attempt + 1)).then(function() {
+      return request_music_lyric_target(target, attempt + 1);
+    });
+  });
+}
+
+function request_music_lyric_text(source) {
+  var key = String(source || "");
+  if (Object.prototype.hasOwnProperty.call(music_lyric_text_cache, key)) {
+    return Promise.resolve(music_lyric_text_cache[key]);
+  }
+  if (music_lyric_pending_cache[key]) return music_lyric_pending_cache[key];
+
+  var targets = music_lyric_fetch_targets(key);
+  if (!targets.length) return Promise.reject(music_lyric_error("歌词地址无效", 400));
+  var next_target = function(index) {
+    if (index >= targets.length) return Promise.reject(music_lyric_error("歌词暂时无法载入", 0));
+    return request_music_lyric_target(targets[index], 0).catch(function() {
+      return next_target(index + 1);
+    });
+  };
+  var pending = next_target(0).then(function(text) {
+    music_lyric_text_cache[key] = text;
+    delete music_lyric_pending_cache[key];
+    return text;
+  }, function(error) {
+    delete music_lyric_pending_cache[key];
+    throw error;
+  });
+  music_lyric_pending_cache[key] = pending;
+  return pending;
+}
+
+function write_music_lyric_lines(lyric, lines) {
+  lyric.container.textContent = "";
+  lines.forEach(function(line, index) {
+    var paragraph = document.createElement("p");
+    paragraph.textContent = String(line && line[1] || "");
+    if (index === 0) paragraph.className = "aplayer-lrc-current";
+    lyric.container.appendChild(paragraph);
+  });
+  lyric.index = 0;
+  lyric.current = lines;
+  lyric.update(0);
+}
+
+function install_resilient_lyric_loader(player) {
+  var lyric = player && player.lrc;
+  if (!lyric || lyric.__yusenResilientLyrics) return;
+  lyric.__yusenResilientLyrics = true;
+  lyric.__yusenLyricRequestId = 0;
+
+  lyric.switch = function(index) {
+    var activeIndex = Number(index);
+    if (!Number.isInteger(activeIndex) || !this.player.list.audios[activeIndex]) return;
+    var audio = this.player.list.audios[activeIndex];
+    var source = audio && audio.lrc;
+    var requestId = ++this.__yusenLyricRequestId;
+    var currentLyric = this;
+
+    if (this.parsed[activeIndex]) {
+      write_music_lyric_lines(this, this.parsed[activeIndex]);
+      return;
+    }
+    if (!source || typeof source !== "string") {
+      write_music_lyric_lines(this, [[0, "暂无歌词"]]);
+      return;
+    }
+
+    write_music_lyric_lines(this, [[0, "歌词加载中…"]]);
+    request_music_lyric_text(source).then(function(text) {
+      var parsed = currentLyric.parse(text);
+      if (!Array.isArray(parsed) || !parsed.length) throw music_lyric_error("歌词格式无有效时间标签", 422);
+      currentLyric.parsed[activeIndex] = parsed;
+      // 曲目已切换时只写缓存，不覆盖当前歌词；下一次切回可直接使用缓存。
+      if (currentLyric.player.list.index === activeIndex && currentLyric.__yusenLyricRequestId === requestId) {
+        write_music_lyric_lines(currentLyric, parsed);
+        render_bilingual_lyrics(currentLyric.player);
+      }
+    }).catch(function(error) {
+      // 不缓存失败结果。hf-mirror 的短暂波动、Function 冷启动和网络恢复后，切歌
+      // 或再次选择当前曲目时会发起全新的请求。
+      if (currentLyric.player.list.index === activeIndex && currentLyric.__yusenLyricRequestId === requestId) {
+        write_music_lyric_lines(currentLyric, [[0, "歌词暂时无法载入"]]);
+        currentLyric.player.notice("歌词暂时无法载入，将在下次切换时重试。", 2600);
+      }
+      if (window.console && typeof window.console.warn === "function") {
+        window.console.warn("Unable to load lyric", error);
+      }
+    });
+  };
+}
+
 function install_bilingual_lyrics(player) {
   if (!player || !player.lrc || player.lrc.__yusenBilingualLyrics) return;
   player.lrc.parse = parse_bilingual_lrc;
   player.lrc.__yusenBilingualLyrics = true;
+  install_resilient_lyric_loader(player);
   // APlayer has already created the first LRC object before this page-level
   // extension is installed. Reload the active item once so the first song and
   // every subsequent list switch use the grouped representation.

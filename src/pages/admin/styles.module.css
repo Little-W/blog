@@ -348,6 +348,53 @@
   font-size: 0.75rem;
 }
 
+.tagFilterBar {
+  display: flex;
+  gap: 0.42rem;
+  margin: -0.1rem 0 0.85rem;
+  padding: 0.18rem 0 0.42rem;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-color: color-mix(in srgb, var(--ifm-color-primary) 42%, transparent) transparent;
+}
+
+.tagFilterBar > span {
+  flex: 0 0 auto;
+  margin-right: 0.12rem;
+  color: var(--ifm-color-emphasis-650, var(--ifm-color-emphasis-700));
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.tagFilterButton,
+.tagFilterActive {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.38rem 0.62rem;
+  color: var(--ifm-color-emphasis-700);
+  background: color-mix(in srgb, var(--ifm-color-emphasis-100) 72%, transparent);
+  border: 1px solid var(--ifm-color-emphasis-250, var(--ifm-color-emphasis-200));
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.tagFilterButton:hover {
+  color: var(--ifm-color-primary-darkest);
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 50%, var(--ifm-color-emphasis-300));
+}
+
+.tagFilterActive {
+  color: #fff;
+  background: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ifm-color-primary) 24%, transparent);
+}
+
 .searchBox {
   display: flex;
   min-width: 0;
@@ -544,6 +591,74 @@
 textarea.fieldValue {
   resize: vertical;
   font-family: var(--ifm-font-family-monospace);
+}
+
+.listFieldValue {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.listFieldValue .fieldValue {
+  width: 100%;
+}
+
+.listTagQuickPick {
+  display: flex;
+  gap: 0.42rem;
+  align-items: flex-start;
+}
+
+.listTagQuickPick > span {
+  flex: 0 0 auto;
+  padding-top: 0.28rem;
+  color: var(--ifm-color-emphasis-650, var(--ifm-color-emphasis-700));
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.listTagQuickPick > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  max-height: 5.7rem;
+  overflow-y: auto;
+  padding-right: 0.18rem;
+}
+
+.listTagButton,
+.listTagSelected {
+  margin: 0;
+  padding: 0.26rem 0.45rem;
+  color: var(--ifm-color-emphasis-700);
+  background: color-mix(in srgb, var(--ifm-color-emphasis-100) 70%, transparent);
+  border: 1px solid var(--ifm-color-emphasis-250, var(--ifm-color-emphasis-200));
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.67rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.listTagButton:hover {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 55%, var(--ifm-color-emphasis-300));
+}
+
+.listTagSelected {
+  color: #fff;
+  background: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+}
+
+.listTagNames {
+  overflow-wrap: anywhere;
+  color: var(--ifm-color-emphasis-650, var(--ifm-color-emphasis-700));
+  font-size: 0.68rem;
+  line-height: 1.45;
 }
 
 .fieldKey:focus,

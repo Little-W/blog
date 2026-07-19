@@ -53,7 +53,7 @@ function Page(): JSX.Element {
         </div></div>
       </div>
 
-      <div className="music-track-head"><span>#</span><span>歌曲</span><span>加入播放列表</span></div>
+      <div className="music-track-head"><span>#</span><span>歌曲</span><span>操作</span></div>
       <div id="aplayer_list_active" />
       <p className="music-library__hint">可通过上方设置调整列表显示高度；点击曲目即可加入或移出播放列表。</p>
     </section>
