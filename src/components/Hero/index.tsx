@@ -63,14 +63,14 @@ function Hero() {
                   <Translate id="hompage.hero.link">网址导航</Translate>
                 </Link>
               ),		  
-              idea: (
-                <Link to="/tags/随笔">
-                  <Translate id="hompage.hero.idea">想法感悟</Translate>
+              notes: (
+                <Link to="/docs/notes/">
+                  <Translate id="hompage.hero.notes">学习笔记</Translate>
                 </Link>
               ),
             }}
           >
-            {`你可以随处逛逛，查看{link} 、以及我的{idea}。`}
+            {`你可以随处逛逛，查看{link}、音乐与{notes}。`}
           </Translate>
         </animated.p>
         <SocialLinks style={trails[2]} />
@@ -104,9 +104,6 @@ export function SocialLinks({ ...prop }) {
 
   return (
     <animated.div className={styles.social__links} {...prop}>
-      <a href="/rss.xml" target="_blank" className="rss">
-        <Icon icon='ri:rss-line' />
-      </a>
       <a href={socials.github} target="_blank" className="github">
         <Icon icon='ri:github-line' />
       </a>
