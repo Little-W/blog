@@ -1406,7 +1406,6 @@ function init_custom_list_mv() {
       currentVideo.setAttribute("preload", preloadMode);
       currentVideo.setAttribute("referrerpolicy", "no-referrer");
       currentVideo.poster = item.bilibili_cover || item.post_small_url || item.post_url || "";
-      if (initialSource.type === "video/mp4") currentVideo.src = initialSource.src;
       frameWrap.appendChild(currentVideo);
 
       if (typeof window.videojs !== "function") {
@@ -1420,8 +1419,7 @@ function init_custom_list_mv() {
         controls: true,
         autoplay: false,
         preload: preloadMode,
-        poster: currentVideo.poster,
-        sources: [initialSource]
+        poster: currentVideo.poster
       });
       mv_player.volume(read_player_settings().mv.volume);
       mv_player.on("volumechange", function() {
@@ -1488,6 +1486,10 @@ function init_custom_list_mv() {
         }
         if (!destroyed) setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
       });
+      // 先让 Video.js 建立技术层，再通过统一入口设置首个 source。直接把 DASH
+      // source 传入构造器会与 qualityselector/VHS 的初始化竞争，首段请求可能被
+      // 取消而停在 0:00。
+      setVideoJsSource(initialSource);
     }
 
     function startVideo(resolved) {
