@@ -1,0 +1,17 @@
+{
+  "name": "my-website-bili-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy",
+    "login": "node scripts/login.mjs",
+    "import-session": "node scripts/import-local-session.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "qrcode-terminal": "^0.12.0",
+    "wrangler": "4.112.0"
+  }
+}

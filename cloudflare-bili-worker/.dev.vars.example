@@ -1,0 +1,3 @@
+# 仅用于 wrangler dev 的本地测试值；复制为 .dev.vars 后自行替换，切勿提交。
+PARSER_ADMIN_TOKEN="replace-with-a-long-random-admin-token"
+BILI_SESSION_ENCRYPTION_KEY="replace-with-a-long-random-encryption-key"

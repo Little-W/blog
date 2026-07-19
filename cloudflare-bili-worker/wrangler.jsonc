@@ -1,0 +1,15 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "my-website-bili-player",
+	"main": "./src/worker.js",
+	"compatibility_date": "2026-07-18",
+	"kv_namespaces": [
+		{
+			"binding": "BILI_STATE",
+			"id": "22ad835f1b1b4c2ba3de7004085a0f4e"
+		}
+	],
+	"vars": {
+		"ALLOWED_SITE_ORIGIN": "https://little-w.github.io"
+	}
+}
