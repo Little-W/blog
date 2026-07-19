@@ -287,6 +287,28 @@ function load_music_cover(candidates, onSuccess, onFailure) {
   loadNext();
 }
 
+function set_music_track_cover_image(image, song) {
+  var candidates = music_cover_candidates(song);
+  var sourceIndex = 0;
+  var attemptId = 0;
+  function loadNext() {
+    if (sourceIndex >= candidates.length) {
+      image.removeAttribute('src');
+      return;
+    }
+    var source = candidates[sourceIndex++];
+    var currentAttempt = ++attemptId;
+    image.onload = function() {
+      if (currentAttempt !== attemptId) return;
+    };
+    image.onerror = function() {
+      if (currentAttempt === attemptId) loadNext();
+    };
+    image.src = source;
+  }
+  loadNext();
+}
+
 function install_music_source_fallback(player) {
   if (!player || !player.audio || player.__yusenMusicSourceFallback) return;
   player.__yusenMusicSourceFallback = true;
@@ -2804,11 +2826,9 @@ function init_custom_list() {
       var coverImage = document.createElement("img");
       coverImage.loading = "lazy";
       coverImage.alt = "";
-      load_music_cover(music_cover_candidates(arr), function(source) {
-        coverImage.src = source;
-      }, function() {
-        coverImage.removeAttribute("src");
-      });
+      // 列表一次会生成大量曲目。直接由对应的 <img> 进行懒加载，并为每个
+      // 节点单独维护镜像重试状态，不能共用循环内的 coverImage 变量。
+      set_music_track_cover_image(coverImage, arr);
       cover.appendChild(coverImage);
     }
     li.appendChild(cover);
