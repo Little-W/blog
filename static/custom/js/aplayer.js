@@ -2514,6 +2514,161 @@ function bind_music_player_settings(player) {
   }
 }
 
+function set_player_cover(player, audio) {
+  if (!player || !player.template || !player.template.pic) return;
+
+  var picture = player.template.pic;
+  var source = audio && (audio.cover || audio.pic);
+  picture.style.backgroundImage = "";
+  picture.classList.add("aplayer-pic--fallback");
+  if (!source) return;
+
+  var resolvedSource;
+  try {
+    // 曲库中的文件名可以包含日文、空格和单引号。APlayer 原先使用
+    // url('...') 直接拼接，像 IT'S A PERFECT BLUE 这样的目录会提前结束
+    // CSS 字符串，从而只剩下纯色封面。使用规范化 URL 和双引号可避免此类字符
+    // 破坏 background-image 声明。
+    resolvedSource = new URL(String(source), window.location.href).href;
+  } catch (error) {
+    return;
+  }
+  var cssSource = resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
+    return encodeURIComponent(character);
+  });
+  picture.style.backgroundImage = 'url("' + cssSource + '")';
+
+  // 背景图不会触发元素自身的 error 事件。预读一次图片，在远端文件失效时恢复
+  // 统一的占位图标，避免播放器留下空白方块。
+  var requestId = String(Number(picture.dataset.coverRequest || "0") + 1);
+  picture.dataset.coverRequest = requestId;
+  var image = new Image();
+  image.onload = function() {
+    if (picture.dataset.coverRequest === requestId) {
+      picture.classList.remove("aplayer-pic--fallback");
+    }
+  };
+  image.onerror = function() {
+    if (picture.dataset.coverRequest === requestId) {
+      picture.style.backgroundImage = "";
+      picture.classList.add("aplayer-pic--fallback");
+    }
+  };
+  image.src = resolvedSource;
+}
+
+/*
+ * LDDC 导出的逐行歌词会把原文和译文写成相邻、相同时间戳的两行。APlayer
+ * 默认把它们当作两条独立歌词，播放时会在原文和译文之间来回跳动。这里在
+ * 解析阶段合并同一毫秒的文本；数组的第三项供渲染时作为译文使用，APlayer
+ * 仍然只使用前两项计算播放时间，因此单行 LRC 与原有行为完全一致。
+ */
+function parse_bilingual_lrc(lrc_source) {
+  if (!lrc_source) return [];
+
+  var timestamp_pattern = /\[(\d{2}):(\d{2})(\.(\d{2,3}))?\]/g;
+  var inline_timestamp_pattern = /<(\d{2}):(\d{2})(\.(\d{2,3}))?>/g;
+  var timed_lines = [];
+  var source_lines = String(lrc_source)
+    .replace(/([^\]^\n])\[/g, function(match, prefix) { return prefix + "\n["; })
+    .split(/\r?\n/);
+
+  source_lines.forEach(function(source_line, source_index) {
+    var timestamps = [];
+    var match;
+    timestamp_pattern.lastIndex = 0;
+    while ((match = timestamp_pattern.exec(source_line))) {
+      var minutes = Number(match[1]);
+      var seconds = Number(match[2]);
+      var fractional = match[4] ? Number(match[4]) / Math.pow(10, match[4].length) : 0;
+      timestamps.push(minutes * 60 + seconds + fractional);
+    }
+    if (!timestamps.length) return;
+
+    var text = source_line
+      .replace(/\[(\d{2}):(\d{2})(\.(\d{2,3}))?\]/g, "")
+      .replace(inline_timestamp_pattern, "")
+      .replace(/^\s+|\s+$/g, "");
+    if (!text) return;
+
+    timestamps.forEach(function(time, timestamp_index) {
+      timed_lines.push({
+        time: time,
+        text: text,
+        order: source_index * 100 + timestamp_index,
+      });
+    });
+  });
+
+  timed_lines.sort(function(left, right) {
+    return left.time - right.time || left.order - right.order;
+  });
+
+  var grouped_lines = [];
+  timed_lines.forEach(function(line) {
+    var key = Math.round(line.time * 1000);
+    var group = grouped_lines[grouped_lines.length - 1];
+    if (!group || group.key !== key) {
+      group = {key: key, time: line.time, texts: []};
+      grouped_lines.push(group);
+    }
+    // 部分歌词源会重复写入同一句；不把重复内容显示成伪译文。
+    if (group.texts.indexOf(line.text) === -1) group.texts.push(line.text);
+  });
+
+  return grouped_lines.map(function(group) {
+    var original = group.texts[0] || "";
+    var alternatives = group.texts.slice(1);
+    // 原文、罗马音和中文译文同时存在时，优先显示中文译文；只有双行时保持
+    // LDDC 文件中的相邻顺序。
+    var chinese_translation = alternatives.filter(function(text) { return /[\u3400-\u9fff]/.test(text); });
+    var translation = (chinese_translation.length ? chinese_translation : alternatives).join("\n");
+    return translation ? [group.time, original, translation] : [group.time, original];
+  });
+}
+
+function render_bilingual_lyrics(player) {
+  var lyric = player && player.lrc;
+  if (!lyric || !lyric.container || !lyric.current || !lyric.current.length) return;
+  var paragraphs = lyric.container.getElementsByTagName("p");
+  if (paragraphs.length !== lyric.current.length) return;
+
+  Array.prototype.forEach.call(paragraphs, function(paragraph, index) {
+    var line = lyric.current[index] || [];
+    var original = String(line[1] || "");
+    var translation = line[2] ? String(line[2]) : "";
+    var identity = original + "\u0000" + translation;
+    if (paragraph.dataset.bilingualIdentity === identity) return;
+    paragraph.dataset.bilingualIdentity = identity;
+    paragraph.textContent = "";
+    paragraph.classList.toggle("aplayer-lrc-bilingual", Boolean(translation));
+
+    var original_element = document.createElement("span");
+    original_element.className = "aplayer-lrc-original";
+    original_element.textContent = original;
+    paragraph.appendChild(original_element);
+
+    if (translation) {
+      var translation_element = document.createElement("span");
+      translation_element.className = "aplayer-lrc-translation";
+      translation_element.textContent = translation;
+      paragraph.appendChild(translation_element);
+    }
+  });
+}
+
+function install_bilingual_lyrics(player) {
+  if (!player || !player.lrc || player.lrc.__yusenBilingualLyrics) return;
+  player.lrc.parse = parse_bilingual_lrc;
+  player.lrc.__yusenBilingualLyrics = true;
+  // APlayer has already created the first LRC object before this page-level
+  // extension is installed. Reload the active item once so the first song and
+  // every subsequent list switch use the grouped representation.
+  if (player.list && typeof player.lrc.switch === "function") {
+    player.lrc.switch(player.list.index);
+  }
+}
+
 function install_stable_queue_switch(player) {
   if (!player || !player.list || player.list.__yusenStableSwitch) return;
   var list = player.list;
@@ -2525,7 +2680,7 @@ function install_stable_queue_switch(player) {
     this.player.events.trigger("listswitch", { index: index });
     this.index = index;
     var audio = this.audios[index];
-    this.player.template.pic.style.backgroundImage = audio.cover ? "url('" + audio.cover + "')" : "";
+    set_player_cover(this.player, audio);
     this.player.theme(audio.theme || this.player.options.theme, index, false);
     this.player.template.title.innerHTML = audio.name;
     this.player.template.author.innerHTML = audio.artist ? " - " + audio.artist : "";
@@ -2595,7 +2750,9 @@ function aplayer0() {
     lrcType: 3,
     audio: ap0_list,
   });
+  install_bilingual_lyrics(window.ap0);
   install_stable_queue_switch(window.ap0);
+  set_player_cover(window.ap0, window.ap0.list && window.ap0.list.audios[window.ap0.list.index]);
   bind_music_player_settings(window.ap0);
 
   window.ap0.on('pause', function () {
@@ -2785,6 +2942,7 @@ function aplayer0() {
       // 保证当前句无论首次加载还是播放中切换都稳定落在中间。
       window.requestAnimationFrame(function() {
         lyric_center_pending = false;
+        render_bilingual_lyrics(window.ap0);
         center_current_lyric();
       });
     });
