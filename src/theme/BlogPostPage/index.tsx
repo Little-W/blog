@@ -11,6 +11,7 @@ import TOC from '@theme/TOC';
 import type {Props} from '@theme/BlogPostPage';
 import type {BlogSidebar} from '@docusaurus/plugin-content-blog';
 import Comment from '@site/src/components/Comment';
+import {AdminEditButton} from '@site/src/components/AdminSession';
 
 function BlogPostPageContent({
   sidebar,
@@ -38,7 +39,10 @@ function BlogPostPageContent({
           />
         ) : undefined
       }>
-      <BlogPostItem>{children}</BlogPostItem>
+      <BlogPostItem>
+        <AdminEditButton source={metadata.source} />
+        {children}
+      </BlogPostItem>
 
       {(nextItem || prevItem) && (
         <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />

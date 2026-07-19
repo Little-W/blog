@@ -61,8 +61,8 @@ export function BlogUser({
     <div
       className={`row ${isNavbar ? 'bloginfo__card-navbar' : 'bloginfo__card'
         }`}>
-      <Link href="/about">
-        <img className="bloginfo__img" src={logoLink} alt="logo"></img>
+      <Link href="/about" aria-label="关于 Yusen">
+        <img className="bloginfo__img" src={logoLink} alt="Yusen 头像" />
       </Link>
       <div>
         <Link className="bloginfo__name" href="about">

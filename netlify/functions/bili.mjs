@@ -25,7 +25,20 @@ const FAST_UPOS_MIRROR = 'upos-sz-mirroralib.bilivideo.com';
 let warmSession = null;
 let warmAuthentication = null;
 
-export const config = { path: '/api/*', preferStatic: false };
+export const config = {
+  path: [
+    '/api/health',
+    '/api/resolve',
+    '/api/fast',
+    '/api/manifest/*',
+    '/api/admin/status',
+    '/api/admin/login/qr',
+    '/api/admin/login/qr/status',
+    '/api/admin/session/import',
+    '/api/admin/logout',
+  ],
+  preferStatic: false,
+};
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers } });

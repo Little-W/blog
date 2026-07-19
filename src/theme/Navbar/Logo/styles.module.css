@@ -1,0 +1,13 @@
+.avatarLink,
+.titleLink {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.avatarLink:hover,
+.titleLink:hover {
+  color: inherit;
+  text-decoration: none;
+}
