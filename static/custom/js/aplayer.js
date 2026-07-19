@@ -272,24 +272,15 @@ function prime_music_hf_mirrors(sampleSource) {
   return music_hf_probe_promise;
 }
 
-function refresh_music_list_cover_sources() {
-  if (typeof document === 'undefined' || !music_all || !music_all[quality]) return;
-  Array.prototype.forEach.call(document.querySelectorAll('.music-list[data-music-id] .music-track-cover img'), function(image) {
-    var row = image.closest('.music-list');
-    var musicId = row && Number(row.dataset.musicId);
-    var song = Number.isInteger(musicId) ? music_all[quality][musicId] : null;
-    if (song) set_music_track_cover_image(image, song);
-  });
-}
-
 function prime_music_hf_cover_mirrors(sampleCover) {
   if (music_hf_cover_probe_promise) return music_hf_cover_probe_promise;
   var samplePath = music_hf_cover_path(sampleCover);
   var candidates = music_hf_urls(samplePath, false, music_hf_cover_host_priority);
   if (!candidates || !candidates.length || typeof window.fetch !== 'function') return Promise.resolve();
 
-  // 封面与音频采用独立测速。四个 HEAD 请求并发发出，图片正文不会被下载；
-  // 结果只影响播放列表及未绑定播放源的封面，当前播放封面仍优先跟随其音频主机。
+  // 封面与音频采用独立测速。四个 HEAD 请求并发发出，图片正文不会被下载。
+  // 测速结果仅供后续创建的封面节点排序使用；不重置已经显示的图片，以免打断
+  // 切歌时播放器封面的淡入淡出动画。
   var probes = candidates.map(function(url) {
     var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
     var startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -319,7 +310,6 @@ function prime_music_hf_cover_mirrors(sampleCover) {
         if (nextPriority.indexOf(host) === -1) nextPriority.push(host);
       });
       music_hf_cover_host_priority = nextPriority;
-      refresh_music_list_cover_sources();
     }
     return music_hf_cover_host_priority.slice();
   }).catch(function() {
