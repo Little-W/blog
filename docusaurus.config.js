@@ -241,8 +241,7 @@ const config = {
           const biliParserApi = process.env.BILI_PARSER_API || 'http://127.0.0.1:19180/api';
           const biliParserMode = process.env.BILI_PARSER_MODE || 'local';
           const files = [
-            'theme-transition.js', 'jquery.min.js', 'jsrender.min.js', 'video.min.js',
-            'videojs-qualityselector.min.js', 'aplayer.js', 'animate.js',
+            'theme-transition.js', 'jquery.min.js', 'jsrender.min.js', 'aplayer.js', 'animate.js',
           ];
           return {
             postBodyTags: [

@@ -14,6 +14,10 @@ let music_all_hq = new Array();
 let music_all_sq = new Array();
 let music_all_hq_sql = new Array();
 let music_all_sq_sql = new Array();
+var static_data_promises = {};
+var music_quality_promises = {};
+var music_quality_switching = false;
+var mv_player_runtime_promise = null;
 let SQ_button;
 let HQ_button;
 let active_list = new Array();
@@ -107,14 +111,15 @@ function objectSort(property) {
 
 function init_with_database()
 {
-  Promise.all(['music_hq', 'music_sq', 'music_tag', 'mv_bilibili'].map(load_static_data)).then(function (sets) {
-    music_all_hq = sets[0].sort(objectSort('mid'));
-    music_all_sq = sets[1].sort(objectSort('mid'));
-    mv_list = sets[3].sort(objectSort('mv_id'));
-    music_tags = sets[2].sort(objectSort('tag_order'));
+  // 首屏只下载当前选中的音质。另一份约 1.5 MB 的曲库在用户真正切换音质时
+  // 才读取；歌单和 MV 资料仍和当前曲库并行加载，页面功能不会等待无用数据。
+  Promise.all([ensure_music_quality(quality), load_static_data('music_tag'), load_static_data('mv_bilibili')]).then(function (sets) {
+    var activeLibrary = sets[0];
+    mv_list = sets[2].sort(objectSort('mv_id'));
+    music_tags = sets[1].sort(objectSort('tag_order'));
     var libraryCount = document.getElementById('music-library-count');
-    if (libraryCount) libraryCount.innerText = music_all_sq.length;
-    music_list_all[2] = music_all_sq.filter(function(song) {
+    if (libraryCount) libraryCount.innerText = activeLibrary.length;
+    music_list_all[2] = activeLibrary.filter(function(song) {
       return song.list && song.list.indexOf(2) !== -1;
     }).map(function(song) { return song.mid; });
     music_list_all[1] = [];
@@ -124,13 +129,69 @@ function init_with_database()
 }
 
 function load_static_data(name) {
-  return fetch('/data/' + name + '.0.jsonl').then(function(response) {
+  if (static_data_promises[name]) return static_data_promises[name];
+  var request = fetch('/data/' + name + '.0.jsonl').then(function(response) {
     if (!response.ok) throw new Error(response.status + ' ' + name);
     return response.text();
   }).then(function(text) {
     return text.split('\n').filter(function(line) { return line && line.charAt(0) === '{'; })
       .map(function(line) { return JSON.parse(line); });
   });
+  static_data_promises[name] = request.catch(function(error) {
+    delete static_data_promises[name];
+    throw error;
+  });
+  return static_data_promises[name];
+}
+
+function ensure_mv_player_runtime() {
+  if (typeof window.videojs === 'function' && window.videojsQualityselector) return Promise.resolve();
+  if (mv_player_runtime_promise) return mv_player_runtime_promise;
+  function loadRuntimeScript(src) {
+    return new Promise(function(resolve, reject) {
+      var existing = document.querySelector('script[data-mv-runtime="' + src + '"]');
+      if (existing) {
+        existing.addEventListener('load', resolve, {once: true});
+        existing.addEventListener('error', reject, {once: true});
+        return;
+      }
+      var script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.dataset.mvRuntime = src;
+      script.onload = resolve;
+      script.onerror = function() { reject(new Error('无法加载 MV 播放器组件。')); };
+      document.head.appendChild(script);
+    });
+  }
+  // Video.js 与画质菜单只在真正打开 MV 时下载；解析请求会和这两个脚本并行进行。
+  mv_player_runtime_promise = loadRuntimeScript('/custom/js/video.min.js').then(function() {
+    return loadRuntimeScript('/custom/js/videojs-qualityselector.min.js');
+  }).catch(function(error) {
+    mv_player_runtime_promise = null;
+    throw error;
+  });
+  return mv_player_runtime_promise;
+}
+
+function ensure_music_quality(nextQuality) {
+  var normalizedQuality = Number(nextQuality) === 1 ? 1 : 0;
+  if (music_all[normalizedQuality] && music_all[normalizedQuality].length) {
+    return Promise.resolve(music_all[normalizedQuality]);
+  }
+  if (music_quality_promises[normalizedQuality]) return music_quality_promises[normalizedQuality];
+  var dataName = normalizedQuality === 1 ? 'music_sq' : 'music_hq';
+  music_quality_promises[normalizedQuality] = load_static_data(dataName).then(function(records) {
+    var library = records.sort(objectSort('mid'));
+    if (normalizedQuality === 0) music_all_hq = library;
+    else music_all_sq = library;
+    music_all[normalizedQuality] = library;
+    return library;
+  }).catch(function(error) {
+    delete music_quality_promises[normalizedQuality];
+    throw error;
+  });
+  return music_quality_promises[normalizedQuality];
 }
 
 /* Kept as no-op compatibility shims for the older player code. */
@@ -141,7 +202,8 @@ function get_mv_list() {}
 function get_music_list(k,is_switch)
 {
   if (!music_list_all[k]) {
-    music_list_all[k] = music_all_sq.filter(function(song) {
+    var activeLibrary = music_all[quality] || [];
+    music_list_all[k] = activeLibrary.filter(function(song) {
       return song.list && song.list.indexOf(k) !== -1;
     }).map(function(song) { return song.mid; });
   }
@@ -428,8 +490,9 @@ function clear_music_playlist() {
 
 function init_aplayer() {
   //console.log("init player")
-  music_all[0] = JSON.parse(JSON.stringify(music_all_hq));
-  music_all[1] = JSON.parse(JSON.stringify(music_all_sq));
+  // 当前音质已经由 ensure_music_quality 填充；避免为了未选择的音质再复制一整份
+  // 2277 首曲目资料。
+  music_all[quality] = JSON.parse(JSON.stringify(music_all[quality] || []));
   ap_list_ptr[0] = new Array();
   ap_list_ptr[1] = new Array();
   for (var i = 0; i < music_all[quality].length; i++) {
@@ -570,26 +633,8 @@ function init_aplayer() {
   //   aplayer0();
   // });
 
-  $(document).on("click", "#ap_qua1", function (e) {
-    if(quality != 1)
-    {
-      quality = 1;
-      update_player_settings('music', { quality: quality });
-      HQ_button.style.opacity = 0.4;
-      SQ_button.style.opacity = 1;
-      set_quality();
-    }
-  });
-  $(document).on("click", "#ap_qua2", function (e) {
-    if(quality != 0)
-    {
-      quality = 0;
-      update_player_settings('music', { quality: quality });
-      SQ_button.style.opacity = 0.4;
-      HQ_button.style.opacity = 1;
-      set_quality();
-    }
-  });
+  $(document).on("click", "#ap_qua1", function () { switch_music_quality(1); });
+  $(document).on("click", "#ap_qua2", function () { switch_music_quality(0); });
   
 }
 
@@ -603,22 +648,7 @@ function init_page() {
       load_music_lists();
       SQ_button = document.getElementById("ap_qua1");
       HQ_button = document.getElementById("ap_qua2");
-      if (quality == 0) {
-        SQ_button.style.opacity = 0.4;
-        HQ_button.style.opacity = 1;
-      } else {
-        HQ_button.style.opacity = 0.4;
-        SQ_button.style.opacity = 1;
-      }
-      if (SQ_button && HQ_button) {
-        if (quality == 0) {
-          SQ_button.style.opacity = 0.4;
-          HQ_button.style.opacity = 1;
-        } else {
-          HQ_button.style.opacity = 0.4;
-          SQ_button.style.opacity = 1;
-        }
-      }
+      sync_music_quality_buttons(false);
       active_list = music_list_all[current_list].slice();
       init_custom_list_mv();
       add_search_box();
@@ -1229,6 +1259,7 @@ function init_custom_list_mv() {
 
   function renderMv(item, card) {
     if (!item.bilibili_bvid) return;
+    var playerRuntime = ensure_mv_player_runtime();
     if (sourceBiliLink) {
       sourceBiliLink.href = "https://www.bilibili.com/video/" + encodeURIComponent(item.bilibili_bvid) + (Number(item.bilibili_page || 1) > 1 ? "?p=" + encodeURIComponent(item.bilibili_page) : "");
       sourceBiliLink.setAttribute("aria-label", "跳转到 B 站播放 " + item.title);
@@ -1802,38 +1833,40 @@ function init_custom_list_mv() {
     }
 
     function startVideo(resolved) {
-      if (destroyed) return;
-      activeResolved = resolved;
-      qualityOptions = resolved.sources.map(function(source) {
-        return { code: source.code, label: source.label, qn: source.qn, url: source.url, manifest: source.manifest, candidates: source.candidates || {}, type: source.type || "video/mp4", resolution: source.resolution || "", fastProgressive: Boolean(source.fastProgressive) };
-      });
-      if (!qualityOptions.length) {
-        showResolveError(new Error("解析服务未返回可播放的媒体直链。"));
-        return;
-      }
-      var preferredQuality = read_player_settings().mv.qualityCode;
-      selectedQuality = qualityOptions.find(function(option) {
-        return option.code === preferredQuality;
-      }) || qualityOptions.find(function(option) {
-        return Number(option.qn) === 64;
-      }) || qualityOptions[0];
-      qualitySources = qualityOptions.map(function(option) {
-        var sourceUrl = dashObjectURL(option.manifest) || option.url;
-        // 内联 MPD 必须以 DASH MIME 交给 VHS；后端保留的 video/mp4 是单条
-        // 轨道的原始类型，若沿用它，Video.js 会把 data: MPD 误作 MP4 并直接报错。
-        return {
-          format: option.code,
-          src: sourceUrl,
-          type: option.manifest ? "application/dash+xml" : option.type,
-          linkRetrySources: dashRetrySources(option)
-        };
-      });
-      var dashSource = dashSourceFor(selectedQuality);
-      if (!dashSource) {
-        showResolveError(new Error("解析服务未返回所选画质。"));
-        return;
-      }
-      createVideoPlayer(directDashSource(selectedQuality, dashSource));
+      playerRuntime.then(function() {
+        if (destroyed) return;
+        activeResolved = resolved;
+        qualityOptions = resolved.sources.map(function(source) {
+          return { code: source.code, label: source.label, qn: source.qn, url: source.url, manifest: source.manifest, candidates: source.candidates || {}, type: source.type || "video/mp4", resolution: source.resolution || "", fastProgressive: Boolean(source.fastProgressive) };
+        });
+        if (!qualityOptions.length) {
+          showResolveError(new Error("解析服务未返回可播放的媒体直链。"));
+          return;
+        }
+        var preferredQuality = read_player_settings().mv.qualityCode;
+        selectedQuality = qualityOptions.find(function(option) {
+          return option.code === preferredQuality;
+        }) || qualityOptions.find(function(option) {
+          return Number(option.qn) === 64;
+        }) || qualityOptions[0];
+        qualitySources = qualityOptions.map(function(option) {
+          var sourceUrl = dashObjectURL(option.manifest) || option.url;
+          // 内联 MPD 必须以 DASH MIME 交给 VHS；后端保留的 video/mp4 是单条
+          // 轨道的原始类型，若沿用它，Video.js 会把 data: MPD 误作 MP4 并直接报错。
+          return {
+            format: option.code,
+            src: sourceUrl,
+            type: option.manifest ? "application/dash+xml" : option.type,
+            linkRetrySources: dashRetrySources(option)
+          };
+        });
+        var dashSource = dashSourceFor(selectedQuality);
+        if (!dashSource) {
+          showResolveError(new Error("解析服务未返回所选画质。"));
+          return;
+        }
+        createVideoPlayer(directDashSource(selectedQuality, dashSource));
+      }).catch(showResolveError);
     }
 
     function resolveCurrentMv(forceRefresh) {
@@ -2332,6 +2365,38 @@ function set_quality() {
   }
 }
 
+function sync_music_quality_buttons(isLoading) {
+  if (SQ_button) {
+    SQ_button.disabled = Boolean(isLoading);
+    SQ_button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    SQ_button.style.opacity = quality === 1 ? 1 : 0.4;
+  }
+  if (HQ_button) {
+    HQ_button.disabled = Boolean(isLoading);
+    HQ_button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    HQ_button.style.opacity = quality === 0 ? 1 : 0.4;
+  }
+}
+
+function switch_music_quality(nextQuality) {
+  nextQuality = Number(nextQuality) === 1 ? 1 : 0;
+  if (nextQuality === quality || music_quality_switching) return;
+  music_quality_switching = true;
+  sync_music_quality_buttons(true);
+  ensure_music_quality(nextQuality).then(function() {
+    quality = nextQuality;
+    update_player_settings('music', { quality: quality });
+    set_quality();
+    // 同一首歌在两个资料库中的编号一致；重绘可同步封面和标题，不改变当前队列。
+    if (active_list && active_list.length) init_custom_list();
+  }).catch(function(error) {
+    console.error('Unable to load selected music quality', error);
+  }).then(function() {
+    music_quality_switching = false;
+    sync_music_quality_buttons(false);
+  });
+}
+
 function _createSvg(tag, obj) {
   //SVG节点要带命名空间'http://www.w3.org/2000/svg'
   const oTag = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -2455,7 +2520,7 @@ function install_stable_queue_switch(player) {
   // APlayer 1.10.1 每次切歌都会启动一个 500ms 的 scrollTop 动画，且动画无法
   // 取消。用户先手动滚动队列再连续点歌时，旧动画会把列表拉回上一首，随后新动画
   // 又拉到新歌。改为一次无动画定位，队列只会朝本次选中的歌曲移动。
-  list.switch = function(index) {
+  list.switch = function(index, options) {
     if (index === undefined || !this.audios[index]) return;
     this.player.events.trigger("listswitch", { index: index });
     this.index = index;
@@ -2471,14 +2536,43 @@ function install_stable_queue_switch(player) {
     if (entry) {
       entry.classList.add("aplayer-list-light");
       var queue = this.player.template.listOl;
-      var target = entry.offsetTop - Math.max(0, (queue.clientHeight - entry.offsetHeight) / 2);
-      queue.scrollTop = Math.max(0, Math.min(target, queue.scrollHeight - queue.clientHeight));
+      // 用户已经手动滚动到目标行时，点击不应再次把队列拉回中间。否则惯性滚动
+      // 与自动定位会让第一次点击看起来像“只滚动了列表”，需要第二次才能选歌。
+      if (!options || !options.preserveQueuePosition) {
+        var target = entry.offsetTop - Math.max(0, (queue.clientHeight - entry.offsetHeight) / 2);
+        queue.scrollTop = Math.max(0, Math.min(target, queue.scrollHeight - queue.clientHeight));
+      }
     }
     this.player.setAudio(audio);
     if (this.player.lrc) this.player.lrc.switch(index);
     if (this.player.lrc) this.player.lrc.update(0);
     if (this.player.duration !== 1) this.player.template.dtime.innerHTML = "00:00";
   };
+
+  // APlayer 1.10.1 在气泡阶段按显示序号处理点击，并且必定调用 switch() 的
+  // 自动滚动逻辑。使用捕获阶段接管队列行的点击：以实际 li 的索引选歌，并保留
+  // 用户刚刚滚出的可视位置。这样滚动停止后的第一次点击就会直接切歌。
+  var queuePanel = player.template.list;
+  var queueList = player.template.listOl;
+  queuePanel.addEventListener("click", function(event) {
+    var target = event.target;
+    var entry = target && target.closest ? target.closest("li") : null;
+    if (!entry || !queueList.contains(entry)) return;
+
+    var entries = queueList.querySelectorAll("li");
+    var index = Array.prototype.indexOf.call(entries, entry);
+    if (index < 0 || !list.audios[index]) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    var wasCurrent = index === list.index;
+    if (wasCurrent) {
+      player.toggle();
+      return;
+    }
+    list.switch(index, { preserveQueuePosition: true });
+    player.play();
+  }, true);
   list.__yusenStableSwitch = true;
 }
 
@@ -2838,7 +2932,7 @@ function search_music(text) {
 /* Local replacement for the former LeanCloud full-text search. */
 search_music = function(text) {
   var keyword = String(text || '').trim().toLowerCase();
-  active_list = music_all_sq.filter(function(song) {
+  active_list = (music_all[quality] || []).filter(function(song) {
     var fullName = (song.z_full_name || ((song.author || '') + ' - ' + (song.title || ''))).toLowerCase();
     return fullName.indexOf(keyword) !== -1;
   }).map(function(song) { return song.mid; });
