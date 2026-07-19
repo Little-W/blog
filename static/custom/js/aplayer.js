@@ -1230,13 +1230,16 @@ function init_custom_list_mv() {
     sourceLabel.innerText = "MV 视频来源";
     var sourceMeta = document.createElement("p");
     sourceMeta.setAttribute("class", "mv-player-source");
-    sourceMeta.innerText = "哔哩哔哩 · UP主：加载中";
+    sourceMeta.innerText = "视频来自 B 站 UP 主「加载中」";
     var biliLink = document.createElement("a");
     biliLink.setAttribute("class", "mv-player-bili-link");
     biliLink.href = "https://www.bilibili.com/video/" + encodeURIComponent(item.bilibili_bvid) + (Number(item.bilibili_page || 1) > 1 ? "?p=" + encodeURIComponent(item.bilibili_page) : "");
     biliLink.target = "_blank";
     biliLink.rel = "noopener noreferrer";
-    biliLink.innerText = "在 B 站打开";
+    biliLink.setAttribute("aria-label", "跳转到 B 站播放 " + item.title);
+    biliLink.innerText = "跳转到 B 站";
+    var sourceBody = document.createElement("div");
+    sourceBody.setAttribute("class", "mv-player-source-panel__body");
     var playerTags = document.createElement("div");
     playerTags.setAttribute("class", "mv-card-tags");
     addTags(playerTags, item);
@@ -1248,8 +1251,9 @@ function init_custom_list_mv() {
     }
     copy.appendChild(playerTags);
     sourcePanel.appendChild(sourceLabel);
-    sourcePanel.appendChild(sourceMeta);
-    sourcePanel.appendChild(biliLink);
+    sourceBody.appendChild(sourceMeta);
+    sourceBody.appendChild(biliLink);
+    sourcePanel.appendChild(sourceBody);
     info.appendChild(copy);
     info.appendChild(sourcePanel);
     shell.appendChild(info);
@@ -1496,7 +1500,7 @@ function init_custom_list_mv() {
       if (destroyed) return;
       activeResolved = resolved;
       var ownerName = String(resolved?.owner?.name || "").trim();
-      sourceMeta.innerText = "哔哩哔哩" + (ownerName ? " · UP主：" + ownerName : "");
+      sourceMeta.innerText = ownerName ? "视频来自 B 站 UP 主「" + ownerName + "」" : "视频来自 B 站";
       qualityOptions = resolved.sources.map(function(source) {
         return { code: source.code, label: source.label, qn: source.qn, url: source.url, manifest: source.manifest, candidates: source.candidates || {}, type: source.type || "video/mp4", resolution: source.resolution || "", fastProgressive: Boolean(source.fastProgressive) };
       });
@@ -1656,11 +1660,17 @@ function init_custom_list_mv() {
     listParent.style.maxHeight = targetHeight + "px";
   }
 
+  var mvListHeightScheduled = false;
   function scheduleMvListHeight() {
+    if (mvListHeightScheduled) return;
+    mvListHeightScheduled = true;
     window.requestAnimationFrame(function() {
       syncMvListHeight();
       // 滚动条出现后可用宽度会略变，下一帧再校正一次以保证正好两排。
-      window.requestAnimationFrame(syncMvListHeight);
+      window.requestAnimationFrame(function() {
+        syncMvListHeight();
+        mvListHeightScheduled = false;
+      });
     });
   }
 
@@ -1735,6 +1745,13 @@ function init_custom_list_mv() {
   if (window.__yusenMvListResizeHandler) window.removeEventListener("resize", window.__yusenMvListResizeHandler);
   window.__yusenMvListResizeHandler = scheduleMvListHeight;
   window.addEventListener("resize", window.__yusenMvListResizeHandler);
+  if (window.__yusenMvListResizeObserver) window.__yusenMvListResizeObserver.disconnect();
+  if (typeof window.ResizeObserver === "function") {
+    // 首次渲染时封面和样式可能稍后才完成布局；观察列表本身，重新测量后始终
+    // 展示完整两排，而不是按初始的临时卡片高度截断第二排。
+    window.__yusenMvListResizeObserver = new window.ResizeObserver(scheduleMvListHeight);
+    window.__yusenMvListResizeObserver.observe(ol);
+  }
   renderFilters();
   applyViewMode();
   renderCards();
