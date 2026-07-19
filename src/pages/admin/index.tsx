@@ -328,6 +328,7 @@ function DataConsole({repository}: {repository: string | null}) {
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
   const [musicTags, setMusicTags] = useState<MusicTag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
+  const [syncMusicLists, setSyncMusicLists] = useState(true);
 
   const supportsTagFilter = selectedName === 'music_hq' || selectedName === 'music_sq';
 
@@ -429,18 +430,24 @@ function DataConsole({repository}: {repository: string | null}) {
     setBusy(true);
     setError('');
     try {
-      const result = await consoleApi<{commitSha: string; commitUrl: string; count: number}>('/api/console/dataset', {
+      const result = await consoleApi<{commitSha: string; commitUrl: string; count: number; syncedCount?: number; unmatchedCount?: number}>('/api/console/dataset', {
         method: 'POST',
         body: JSON.stringify({
           name: dataset.name,
           operation: 'replace',
           records,
           baseHeadSha: dataset.headSha,
-          message: `数据：通过控制台编辑 ${dataset.label}`,
+          syncMusicLists: supportsTagFilter && syncMusicLists,
+          message: supportsTagFilter && syncMusicLists
+            ? `音乐：通过控制台更新 ${dataset.label} 并同步另一音质的歌单标签`
+            : `数据：通过控制台编辑 ${dataset.label}`,
         }),
       });
       await loadDataset(dataset.name);
-      setNotice(`已创建提交 ${result.commitSha.slice(0, 8)}，GitHub Actions 将继续构建和部署。`);
+      const syncNotice = supportsTagFilter && syncMusicLists
+        ? `；已同步另一音质的 ${result.syncedCount || 0} 条标签设置${result.unmatchedCount ? `，另有 ${result.unmatchedCount} 条曲目未找到对应项` : ''}`
+        : '';
+      setNotice(`已创建提交 ${result.commitSha.slice(0, 8)}${syncNotice}。GitHub Actions 将继续构建和部署。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '提交数据表失败。');
     } finally {
@@ -512,6 +519,16 @@ function DataConsole({repository}: {repository: string | null}) {
             <p>{dataset ? `${records.length} 条记录 · ${dataset.path}` : '从 GitHub 仓库读取'}</p>
           </div>
           <div className={styles.headerActions}>
+            {supportsTagFilter ? (
+              <label className={styles.musicListSyncControl} title="提交当前 HQ 或 SQ 表时，同时将每首歌的 list 标签写入另一份音质资料">
+                <input
+                  type="checkbox"
+                  checked={syncMusicLists}
+                  onChange={(event) => setSyncMusicLists(event.target.checked)}
+                />
+                同步 HQ/SQ 标签
+              </label>
+            ) : null}
             <button type="button" className={styles.secondaryButton} onClick={() => { setCreating(true); setSelectedIndex(null); }} disabled={!dataset || busy}>
               <Icon icon="lucide:plus" />
               新增表项

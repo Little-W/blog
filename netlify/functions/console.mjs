@@ -548,15 +548,37 @@ async function saveDataset(request) {
   if (!['append', 'replace'].includes(body.operation)) return fail('数据操作类型无效。', 'INVALID_OPERATION');
   validateRecords(body.records);
   let records = body.records;
-  if (body.operation === 'append') {
-    const snapshot = await repoSnapshot();
+  const companion = musicCompanionDataset(dataset);
+  const syncMusicLists = Boolean(body.syncMusicLists) && Boolean(companion);
+  let snapshot = null;
+  if (body.operation === 'append' || syncMusicLists) {
+    snapshot = await repoSnapshot();
     if (snapshot.headSha !== body.baseHeadSha) {
       return fail('远程仓库已被更新，请重新加载后再导入。', 'REPOSITORY_CHANGED', 409);
     }
+  }
+  if (body.operation === 'append') {
     const current = parseJsonl((await readBlob(snapshot, dataset.path)).content, dataset.header);
     records = [...current.records, ...body.records];
   }
   const content = serializeJsonl(dataset, records);
+  if (syncMusicLists) {
+    const companionFile = await readBlob(snapshot, companion.path);
+    const companionRecords = parseJsonl(companionFile.content, companion.header).records;
+    const synced = synchronizeMusicLists(records, companionRecords, dataset.label, companion.label);
+    const result = await commitFiles({
+      files: [
+        {path: dataset.path, content},
+        {path: companion.path, content: serializeJsonl(companion, synced.records)},
+      ],
+      baseHeadSha: body.baseHeadSha,
+      message: body.message || `音乐：更新 ${dataset.label} 并同步 ${companion.label} 歌单标签`,
+    });
+    return json({
+      success: true,
+      data: {...result, count: records.length, syncedCount: synced.changedCount, unmatchedCount: synced.unmatchedCount},
+    }, 201);
+  }
   const result = await commitFile({
     path: dataset.path,
     content,
@@ -564,6 +586,54 @@ async function saveDataset(request) {
     message: body.message || `数据：通过控制台${body.operation === 'append' ? '新增' : '更新'} ${dataset.label}`,
   });
   return json({success: true, data: {...result, count: records.length}}, 201);
+}
+
+function musicCompanionDataset(dataset) {
+  if (dataset === DATASETS.music_hq) return DATASETS.music_sq;
+  if (dataset === DATASETS.music_sq) return DATASETS.music_hq;
+  return null;
+}
+
+function normalizedMusicList(record, label) {
+  const mid = Number(record?.mid);
+  if (!Number.isInteger(mid) || mid < 0) throw requestError(`${label} 存在无效曲目编号。`);
+  if (!Array.isArray(record.list)) throw requestError(`${label} 的曲目 ${mid} 未提供 list 数组。`);
+  const seen = new Set();
+  const list = [];
+  record.list.forEach((value) => {
+    const tagId = Number(value);
+    if (!Number.isInteger(tagId) || tagId < 0) throw requestError(`${label} 的曲目 ${mid} 包含无效标签编号。`);
+    if (!seen.has(tagId)) {
+      seen.add(tagId);
+      list.push(tagId);
+    }
+  });
+  return {mid, list};
+}
+
+function synchronizeMusicLists(sourceRecords, targetRecords, sourceLabel, targetLabel) {
+  const sourceLists = new Map();
+  sourceRecords.forEach((record) => {
+    const {mid, list} = normalizedMusicList(record, sourceLabel);
+    if (sourceLists.has(mid)) throw requestError(`${sourceLabel} 中的曲目编号 ${mid} 重复。`);
+    sourceLists.set(mid, list);
+  });
+  const targetIds = new Set();
+  let changedCount = 0;
+  const records = targetRecords.map((record) => {
+    const {mid, list} = normalizedMusicList(record, targetLabel);
+    if (targetIds.has(mid)) throw requestError(`${targetLabel} 中的曲目编号 ${mid} 重复。`);
+    targetIds.add(mid);
+    const next = sourceLists.get(mid);
+    if (!next || JSON.stringify(list) === JSON.stringify(next)) return record;
+    changedCount += 1;
+    return {...record, list: next.slice()};
+  });
+  let unmatchedCount = 0;
+  sourceLists.forEach((_, mid) => {
+    if (!targetIds.has(mid)) unmatchedCount += 1;
+  });
+  return {records, changedCount, unmatchedCount};
 }
 
 function normalizeMusicTagIds(value, tagRecords) {
