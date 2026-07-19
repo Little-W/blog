@@ -164,9 +164,10 @@ var music_hf_probe_promise = null;
 var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
 var MUSIC_AUDIO_FILE_RE = /\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i;
 var MUSIC_COVER_FILE_RE = /\.(avif|bmp|gif|jpe?g|png|webp)$/i;
+var MUSIC_LYRIC_FILE_RE = /\.lrc$/i;
 var MUSIC_SOURCE_TIMEOUT_MS = 5 * 1000;
 var MUSIC_SOURCE_RETRIES_PER_MIRROR = 1;
-var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 3500;
+var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 2500;
 var MUSIC_COVER_TIMEOUT_MS = 12 * 1000;
 
 function music_hf_dataset_path(value, filePattern) {
@@ -192,6 +193,10 @@ function music_hf_source_path(value) {
 
 function music_hf_cover_path(value) {
   return music_hf_dataset_path(value, MUSIC_COVER_FILE_RE);
+}
+
+function music_hf_lyric_path(value) {
+  return music_hf_dataset_path(value, MUSIC_LYRIC_FILE_RE);
 }
 
 function music_hf_urls(path, download) {
@@ -222,33 +227,47 @@ function prioritise_music_hf_urls(urls, preferredHost) {
   });
 }
 
-function prime_music_hf_mirrors(sampleSource) {
-  if (music_hf_probe_promise) return music_hf_probe_promise;
-  var samplePath = music_hf_source_path(sampleSource);
-  var candidates = music_hf_urls(samplePath, false);
-  if (!candidates || !candidates.length || typeof window.fetch !== 'function') return Promise.resolve();
+function probe_music_hf_resource(url) {
+  var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+  var startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  var timeoutId = controller ? window.setTimeout(function() { controller.abort(); }, MUSIC_SOURCE_PROBE_TIMEOUT_MS) : 0;
+  var options = {
+    method: 'HEAD',
+    mode: 'no-cors',
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'follow',
+  };
+  if (controller) options.signal = controller.signal;
+  return window.fetch(url, options).then(function() {
+    if (timeoutId) window.clearTimeout(timeoutId);
+    return (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt;
+  }, function() {
+    if (timeoutId) window.clearTimeout(timeoutId);
+    return null;
+  });
+}
 
-  // no-cors HEAD 不读取跨域响应内容，只测量连接、重定向与首个响应的耗时；四个
-  // 请求同时启动，不会下载整首音乐。测试使用曲库中真实存在的音频路径，因此
-  // 能反映当前网络到实际媒体节点的可达性。
-  var probes = candidates.map(function(url) {
-    var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
-    var startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    var timeoutId = controller ? window.setTimeout(function() { controller.abort(); }, MUSIC_SOURCE_PROBE_TIMEOUT_MS) : 0;
-    var options = {
-      method: 'HEAD',
-      mode: 'no-cors',
-      credentials: 'omit',
-      cache: 'no-store',
-      redirect: 'follow',
-    };
-    if (controller) options.signal = controller.signal;
-    return window.fetch(url, options).then(function() {
-      if (timeoutId) window.clearTimeout(timeoutId);
-      return {host: music_hf_url_host(url), elapsed: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt};
-    }, function() {
-      if (timeoutId) window.clearTimeout(timeoutId);
-      return null;
+function prime_music_hf_mirrors(sampleSource, sampleCover, sampleLyric) {
+  if (music_hf_probe_promise) return music_hf_probe_promise;
+  var audioCandidates = music_hf_urls(music_hf_source_path(sampleSource), false);
+  var coverCandidates = music_hf_urls(music_hf_cover_path(sampleCover), false);
+  var lyricCandidates = music_hf_urls(music_hf_lyric_path(sampleLyric), false);
+  if (!audioCandidates || !audioCandidates.length || typeof window.fetch !== 'function') return Promise.resolve();
+
+  // 音频、封面与歌词都使用真实资料路径。每个镜像同时发出不下载正文的 HEAD
+  // 请求，只有全部可达才进入优先队列，评分取其中较慢的一项；这样选出的主机
+  // 能同时提供当前曲目的三个资源，而不会落在不同备用源。
+  var probes = MUSIC_HF_SOURCE_HOSTS.map(function(host) {
+    var audioURL = audioCandidates.find(function(url) { return music_hf_url_host(url) === host; });
+    var coverURL = (coverCandidates || []).find(function(url) { return music_hf_url_host(url) === host; });
+    var lyricURL = (lyricCandidates || []).find(function(url) { return music_hf_url_host(url) === host; });
+    var requests = [probe_music_hf_resource(audioURL)];
+    if (coverURL) requests.push(probe_music_hf_resource(coverURL));
+    if (lyricURL) requests.push(probe_music_hf_resource(lyricURL));
+    return Promise.all(requests).then(function(results) {
+      if (results.some(function(elapsed) { return elapsed === null; })) return null;
+      return {host: host, elapsed: Math.max.apply(Math, results)};
     });
   });
 
@@ -276,6 +295,10 @@ function music_cover_urls(value) {
   return music_hf_urls(music_hf_cover_path(value), false);
 }
 
+function music_lyric_urls(value) {
+  return music_hf_urls(music_hf_lyric_path(value), false);
+}
+
 function apply_music_source_urls(library) {
   if (!Array.isArray(library)) return library;
   library.forEach(function(song) {
@@ -289,13 +312,22 @@ function apply_music_source_urls(library) {
 
     var originalCover = song.cover_source || song.pic_source || song.cover || song.pic;
     var coverCandidates = music_cover_urls(originalCover);
-    if (!coverCandidates || !coverCandidates.length) return;
-    song.cover_source = originalCover;
-    song.pic_source = originalCover;
-    song.cover_candidates = coverCandidates;
-    song.pic_candidates = coverCandidates;
-    song.cover = coverCandidates[0];
-    song.pic = coverCandidates[0];
+    if (coverCandidates && coverCandidates.length) {
+      song.cover_source = originalCover;
+      song.pic_source = originalCover;
+      song.cover_candidates = coverCandidates;
+      song.pic_candidates = coverCandidates;
+      song.cover = coverCandidates[0];
+      song.pic = coverCandidates[0];
+    }
+
+    var originalLyric = song.lyric_source || song.lrc;
+    var lyricCandidates = music_lyric_urls(originalLyric);
+    if (lyricCandidates && lyricCandidates.length) {
+      song.lyric_source = originalLyric;
+      song.lyric_candidates = lyricCandidates;
+      song.lrc = lyricCandidates[0];
+    }
   });
   return library;
 }
@@ -315,6 +347,16 @@ function music_cover_candidates(song) {
   if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return prioritise_music_hf_urls(song.pic_candidates, preferredHost);
   var source = song.cover_source || song.pic_source || song.cover || song.pic;
   return music_cover_urls(source) || (source ? [source] : []);
+}
+
+function music_lyric_candidates(song) {
+  if (!song) return [];
+  var preferredHost = song.__musicSourceHost || '';
+  if (Array.isArray(song.lyric_candidates) && song.lyric_candidates.length) {
+    return prioritise_music_hf_urls(song.lyric_candidates, preferredHost);
+  }
+  var source = song.lyric_source || song.lrc;
+  return music_lyric_urls(source) || (source ? [source] : []);
 }
 
 function load_music_cover(candidates, onSuccess, onFailure) {
@@ -541,7 +583,7 @@ function ensure_music_quality(nextQuality) {
     var hfSample = library.find(function(song) {
       return song && music_hf_source_path(song.url);
     });
-    if (hfSample) prime_music_hf_mirrors(hfSample.url);
+    if (hfSample) prime_music_hf_mirrors(hfSample.url, hfSample.cover || hfSample.pic, hfSample.lyric_source || hfSample.lrc);
     apply_music_tag_overrides(library);
     apply_music_source_urls(library);
     if (normalizedQuality === 0) music_all_hq = library;
@@ -2992,7 +3034,7 @@ function set_quality() {
   function updatePlayerTrack(player, index, nextTrack) {
     if (!player || !player.list || !player.list.audios || !player.list.audios[index] || !nextTrack) return;
     var currentTrack = player.list.audios[index];
-    ['source_url', 'source_candidates', 'cover_source', 'pic_source', 'cover_candidates', 'pic_candidates', 'cover', 'pic']
+    ['source_url', 'source_candidates', 'cover_source', 'pic_source', 'cover_candidates', 'pic_candidates', 'cover', 'pic', 'lyric_source', 'lyric_candidates', 'lrc']
       .forEach(function(key) { currentTrack[key] = nextTrack[key]; });
     var candidates = music_source_candidates(currentTrack);
     if (candidates.length) {
@@ -3313,15 +3355,15 @@ function render_bilingual_lyrics(player) {
  * hf-mirror 的 308 跳转后会落到 Hugging Face。前一个 308 响应没有 CORS
  * 响应头，浏览器会把这次请求判定为网络错误；直接在地址栏打开却没有问题。
  *
- * 新导入的歌词统一经过同源的 /api/music-lyrics 读取。该端点只转发本曲库的
- * .lrc 文件，服务端可以正常跟随镜像跳转。函数短暂不可用时，再退回允许 CORS
- * 的 huggingface.co 原始地址。失败不写入 parsed 缓存，下一次切回同一首歌
- * 会重新请求，而不是永久显示“不可用”。
+ * 歌词会先使用当前曲目音频选中的同一镜像主机，再按启动测速排序选择备用主机。
+ * 请求通过同源的 /api/music-lyrics 读取，以规避部分镜像重定向响应缺少 CORS
+ * 头的问题；该函数只代理很小的 LRC 文本，不传输音频或封面数据。失败不写入
+ * parsed 缓存，下一次切回同一首歌会重新请求，而不是永久显示“不可用”。
  */
 var music_lyric_text_cache = Object.create(null);
 var music_lyric_pending_cache = Object.create(null);
 var MUSIC_LYRIC_TIMEOUT_MS = 8000;
-var MUSIC_LYRIC_PROXY_ATTEMPTS = 3;
+var MUSIC_LYRIC_PROXY_ATTEMPTS = 1;
 
 function music_lyric_error(message, status) {
   var error = new Error(message);
@@ -3347,23 +3389,19 @@ function music_lyric_proxy_url(source) {
   return "/api/music-lyrics?source=" + encodeURIComponent(source);
 }
 
-function music_lyric_fetch_targets(source) {
+function music_lyric_fetch_targets(source, song) {
   var upstream = normalise_music_lyric_source(source);
   if (!upstream) return [];
   var targets = [];
-  var hostname = upstream.hostname.toLowerCase();
-  var is_yusen_hf_dataset = (hostname === "hf-mirror.com" || hostname === "huggingface.co") &&
-    upstream.pathname.indexOf("/datasets/Yusen/music/resolve/main/") === 0;
+  var is_yusen_hf_dataset = Boolean(music_hf_lyric_path(upstream.href));
 
   if (is_yusen_hf_dataset) {
-    // 与静态数据保持 hf-mirror 地址不变；仅歌词请求走同源 Function，避免镜像
-    // 重定向响应缺少 CORS 头。第二个目标供本地开发或 Function 临时失效时使用。
-    targets.push({url: music_lyric_proxy_url(upstream.href), sameOrigin: true, attempts: MUSIC_LYRIC_PROXY_ATTEMPTS});
-    var direct = new URL(upstream.href);
-    direct.protocol = "https:";
-    direct.hostname = "huggingface.co";
-    direct.port = "";
-    targets.push({url: direct.href, sameOrigin: false, attempts: 1});
+    // 先请求与当前音频相同的主机；镜像不可用时按同一测速顺序快速尝试下一项。
+    var candidates = music_lyric_candidates(song);
+    if (!candidates.length) candidates = [upstream.href];
+    candidates.forEach(function(candidate) {
+      targets.push({url: music_lyric_proxy_url(candidate), sameOrigin: true, attempts: MUSIC_LYRIC_PROXY_ATTEMPTS});
+    });
   } else {
     targets.push({url: upstream.href, sameOrigin: upstream.origin === window.location.origin, attempts: 2});
   }
@@ -3413,14 +3451,14 @@ function request_music_lyric_target(target, attempt) {
   });
 }
 
-function request_music_lyric_text(source) {
-  var key = String(source || "");
+function request_music_lyric_text(source, song) {
+  var key = String(song && song.lyric_source || source || "");
   if (Object.prototype.hasOwnProperty.call(music_lyric_text_cache, key)) {
     return Promise.resolve(music_lyric_text_cache[key]);
   }
   if (music_lyric_pending_cache[key]) return music_lyric_pending_cache[key];
 
-  var targets = music_lyric_fetch_targets(key);
+  var targets = music_lyric_fetch_targets(source, song);
   if (!targets.length) return Promise.reject(music_lyric_error("歌词地址无效", 400));
   var next_target = function(index) {
     if (index >= targets.length) return Promise.reject(music_lyric_error("歌词暂时无法载入", 0));
@@ -3477,7 +3515,7 @@ function install_resilient_lyric_loader(player) {
     }
 
     write_music_lyric_lines(this, [[0, "歌词加载中…"]]);
-    request_music_lyric_text(source).then(function(text) {
+    request_music_lyric_text(source, audio).then(function(text) {
       var parsed = currentLyric.parse(text);
       if (!Array.isArray(parsed) || !parsed.length) throw music_lyric_error("歌词格式无有效时间标签", 422);
       currentLyric.parsed[activeIndex] = parsed;
@@ -3594,9 +3632,9 @@ function aplayer0() {
     lrcType: 3,
     audio: ap0_list,
   });
+  install_music_source_fallback(window.ap0);
   install_bilingual_lyrics(window.ap0);
   install_stable_queue_switch(window.ap0);
-  install_music_source_fallback(window.ap0);
   set_player_cover(window.ap0, window.ap0.list && window.ap0.list.audios[window.ap0.list.index]);
   bind_music_player_settings(window.ap0);
 

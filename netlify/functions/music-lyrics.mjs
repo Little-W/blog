@@ -1,7 +1,12 @@
 const MAX_LYRIC_BYTES = 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 10_000;
 const DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
-const ALLOWED_HOSTS = new Set(['hf-mirror.com', 'huggingface.co']);
+const ALLOWED_HOSTS = new Set([
+  'hf-cdn.sufy.com',
+  'aifasthub.com',
+  'hf-mirror.com',
+  'huggingface.co',
+]);
 
 export const config = {
   path: '/api/music-lyrics',
