@@ -67,6 +67,7 @@ var target_x_list = new Array();
 var current_page = 0;
 var is_mobile = false;
 var subdiv;
+var rendered_playlist_columns = 0;
 var music_list_display_limit = parseInt(localStorage.getItem('music-list-display-limit') || '12', 10);
 
 function apply_music_list_display_limit(value) {
@@ -1513,10 +1514,25 @@ function init_custom_list_mv() {
       // 菜单就绪前统一拦截操作并给出明确状态，下一帧再开放播放器。
       mv_player.addClass("vjs-mv-preparing");
       var requestedPlaybackWhilePreparing = false;
+      var queuedQualityCode = "";
       // 遮罩期间的点击不交给 Video.js（否则会与首个 source 初始化竞争），但记录
       // 用户的明确播放意图，菜单就绪后自动继续，不需要再点一次。
       mv_player.el().addEventListener("click", function(event) {
         if (!mv_player || mv_player.isDisposed() || !mv_player.hasClass("vjs-mv-preparing")) return;
+        var qualityContainer = event.target.closest && event.target.closest(".vjs-quality-container");
+        if (qualityContainer) {
+          var qualityItem = event.target.closest(".vjs-quality-dropdown li[data-code]");
+          // 可用画质在开始缓冲前就可以展开查看；若此时直接选档，记住选择，待
+          // 首个元数据到达后再切源，避免 qualityselector 与 VHS 并发重设 source。
+          if (qualityItem) {
+            queuedQualityCode = qualityItem.dataset.code || "";
+            var dropdown = qualityContainer.querySelector(".vjs-quality-dropdown");
+            if (dropdown) dropdown.classList.remove("show");
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+          return;
+        }
         requestedPlaybackWhilePreparing = true;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -1526,6 +1542,28 @@ function init_custom_list_mv() {
         update_player_settings('mv', { volume: mv_player.volume() });
       });
       var qualitySelectorReady = false;
+      function closeQualityDropdownOnOutsideClick(event) {
+        if (!mv_player || mv_player.isDisposed()) return;
+        var qualityContainer = mv_player.el().querySelector(".vjs-quality-container");
+        if (!qualityContainer || qualityContainer.contains(event.target)) return;
+        var dropdown = qualityContainer.querySelector(".vjs-quality-dropdown");
+        if (dropdown) dropdown.classList.remove("show");
+      }
+      document.addEventListener("pointerdown", closeQualityDropdownOnOutsideClick, true);
+      mv_player.one("dispose", function() {
+        document.removeEventListener("pointerdown", closeQualityDropdownOnOutsideClick, true);
+      });
+
+      function syncQualitySelectorUI(option) {
+        var qualityContainer = mv_player.el().querySelector(".vjs-quality-container");
+        if (!qualityContainer) return;
+        var label = qualityContainer.querySelector(".vjs-brand-quality-link");
+        if (label) label.innerText = option.label;
+        Array.prototype.forEach.call(qualityContainer.querySelectorAll(".vjs-quality-dropdown li[data-code]"), function(entry) {
+          entry.classList.toggle("current", entry.dataset.code === option.code);
+        });
+      }
+
       function setupQualitySelector() {
         if (qualitySelectorReady || typeof mv_player?.qualityselector !== "function") return false;
         qualitySelectorReady = true;
@@ -1550,16 +1588,36 @@ function init_custom_list_mv() {
           }
         });
         window.requestAnimationFrame(function() {
-          if (!destroyed && mv_player && !mv_player.isDisposed()) {
-            mv_player.removeClass("vjs-mv-preparing");
-            if (requestedPlaybackWhilePreparing) mv_player.play().catch(function() {});
-          }
+          if (!destroyed && mv_player && !mv_player.isDisposed()) syncQualitySelectorUI(selectedQuality);
         });
         return true;
       }
-      // qualityselector 初始化时会主动重设一次 source。等待首个 DASH 元数据进入
-      // MediaSource 后再挂载，避免与首次加载并发取消首段 Range 请求而一直卡在 0:00。
-      mv_player.one("loadedmetadata", setupQualitySelector);
+      function unlockPreparedPlayer() {
+        if (destroyed || !mv_player || mv_player.isDisposed()) return;
+        mv_player.removeClass("vjs-mv-preparing");
+        var queuedQuality = qualityOptions.find(function(option) {
+          return option.code === queuedQualityCode;
+        });
+        if (queuedQuality) {
+          selectedQuality = queuedQuality;
+          update_player_settings('mv', { qualityCode: queuedQuality.code });
+          syncQualitySelectorUI(queuedQuality);
+          if (queuedQuality.code !== initialSource.format) switchVideoJsQuality(queuedQuality);
+          if (requestedPlaybackWhilePreparing) {
+            if (queuedQuality.code !== initialSource.format) {
+              mv_player.one("loadedmetadata", function() { mv_player.play().catch(function() {}); });
+            } else {
+              mv_player.play().catch(function() {});
+            }
+          }
+          return;
+        }
+        if (requestedPlaybackWhilePreparing) mv_player.play().catch(function() {});
+      }
+      // 画质清单已随 resolve 响应返回，不必等待 DASH 首段。先建立菜单，用户能
+      // 立即看到可选档位；仍在首个元数据后才解锁播放和实际切源。
+      setupQualitySelector();
+      mv_player.one("loadedmetadata", unlockPreparedPlayer);
       applyPlayerTheme(savedTheme);
       mv_player.on("error", function() {
         var failedSource = activePlaybackSource;
@@ -1715,7 +1773,9 @@ function init_custom_list_mv() {
     var prefetchTimer = null;
     card.addEventListener("pointerenter", function(event) {
       if (event.pointerType && event.pointerType !== "mouse") return;
-      prefetchTimer = window.setTimeout(function() { prefetchMv(item); }, 180);
+      // 悬停极短时间就开始解析；多数桌面点击会在按下前复用同一个 Promise，
+      // 把画质清单的网络等待移到用户浏览卡片的间隙里。
+      prefetchTimer = window.setTimeout(function() { prefetchMv(item); }, 80);
     });
     card.addEventListener("pointerleave", function() {
       if (prefetchTimer) window.clearTimeout(prefetchTimer);
@@ -2547,6 +2607,12 @@ function load_music_lists()
 }
 
 /* Render the original playlist controls from local exported tags. */
+function playlist_columns_for_viewport() {
+  if (window.matchMedia('(max-width: 520px)').matches) return 3;
+  if (window.matchMedia('(max-width: 760px)').matches) return 4;
+  return 5;
+}
+
 load_music_lists = function() {
   var div = document.getElementById('aplayer_list');
   if (!div) return;
@@ -2557,15 +2623,39 @@ load_music_lists = function() {
   div.innerHTML = '';
   subdiv = document.createElement('div');
   subdiv.setAttribute('id', 'aplayer_list_sub');
-  music_tags.forEach(function(tag) {
+  rendered_playlist_columns = playlist_columns_for_viewport();
+  var tagsPerGroup = rendered_playlist_columns * 3;
+
+  function createTagButton(tag) {
     list_count = Math.max(list_count, tag.tag_id);
     var button = document.createElement('button');
     button.setAttribute('class', 'sytle-button' + (current_list === tag.tag_id ? ' --activated' : ''));
     button.setAttribute('id', 'ap_list' + tag.tag_id);
     button.tag_id = tag.tag_id;
     button.innerText = tag.tag_name;
-    subdiv.appendChild(button);
-  });
+    return button;
+  }
+
+  // 每个横向分页组都固定为三行。行内标签保留自身宽度，以 space-between 对齐
+  // 两端；分页/滚动只移动完整的标签组，不会把一行标签切在中间。
+  for (var start = 0; start < music_tags.length; start += tagsPerGroup) {
+    var group = document.createElement('div');
+    group.setAttribute('class', 'playlist-tag-group');
+    var groupTags = music_tags.slice(start, start + tagsPerGroup);
+    var baseCount = Math.floor(groupTags.length / 3);
+    var extraCount = groupTags.length % 3;
+    var tagIndex = 0;
+    for (var rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+      var row = document.createElement('div');
+      row.setAttribute('class', 'playlist-tag-row');
+      var rowSize = baseCount + (rowIndex < extraCount ? 1 : 0);
+      for (var index = 0; index < rowSize; index += 1) {
+        row.appendChild(createTagButton(groupTags[tagIndex++]));
+      }
+      group.appendChild(row);
+    }
+    subdiv.appendChild(group);
+  }
   div.appendChild(subdiv);
   var initialTag = music_tags.find(function(tag) { return tag.tag_id === current_list; });
   var playlistName = document.getElementById('current_playlist_name');
@@ -2627,6 +2717,11 @@ load_music_lists = function() {
 $(window).resize(function() {
   if(page_loaded)
   {
+    // 仅在跨越响应式列数阈值时重建横向组，保持每一页始终是完整三行。
+    if (rendered_playlist_columns !== playlist_columns_for_viewport()) {
+      load_music_lists();
+      return;
+    }
     target_x_list = new Array();
     target_x_list[0] = 0;
     current_page = 0;
