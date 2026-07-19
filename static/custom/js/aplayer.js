@@ -1245,17 +1245,12 @@ function init_custom_list_mv() {
     var selectedQuality = null;
     var qualityOptions = [];
     var qualitySources = [];
-    var manifestObjectUrls = [];
     var activeResolved = null;
     var activePlaybackSource = null;
     var fastSwitchToken = 0;
     var destroyed = false;
     activeMvCleanup = function() {
       destroyed = true;
-      manifestObjectUrls.forEach(function(sourceUrl) {
-        try { window.URL.revokeObjectURL(sourceUrl); } catch (error) {}
-      });
-      manifestObjectUrls = [];
     };
 
     function setPlaceholder(titleText, statusText) {
@@ -1312,10 +1307,11 @@ function init_custom_list_mv() {
     }
 
     function dashObjectURL(manifest) {
-      if (!manifest || !window.URL || typeof window.URL.createObjectURL !== "function") return "";
-      var sourceUrl = window.URL.createObjectURL(new Blob([manifest], { type: "application/dash+xml" }));
-      manifestObjectUrls.push(sourceUrl);
-      return sourceUrl;
+      if (!manifest) return "";
+      // VHS 会以主清单 URL 解析 DASH 轨道。blob: URL 不能作为相对路径的基准，
+      // 会在部分 Video.js 版本中抛出 “Invalid URL”；data: 清单会回退至页面 URL，
+      // 同时保留 MPD 内的绝对 B 站 BaseURL。
+      return "data:application/dash+xml;charset=utf-8," + encodeURIComponent(manifest);
     }
 
     function usesBiliAnalysisFastPath(option) {
