@@ -16,6 +16,9 @@ let music_all_hq_sql = new Array();
 let music_all_sq_sql = new Array();
 var static_data_promises = {};
 var music_quality_promises = {};
+// 静态资料曾以 stale-while-revalidate 缓存，数据表发布后浏览器仍可能先拿到
+// 上一版歌单。此版本参数只用于淘汰该旧缓存；后续由 Netlify 的 ETag 重新校验。
+var MUSIC_DATA_CACHE_VERSION = '20260719-acg101';
 var music_quality_switching = false;
 var music_tag_overrides = {};
 var music_admin_state = { authenticated: false, checked: false, loading: false, promise: null };
@@ -136,7 +139,8 @@ function init_with_database()
 
 function load_static_data(name) {
   if (static_data_promises[name]) return static_data_promises[name];
-  var request = fetch('/data/' + name + '.0.jsonl').then(function(response) {
+  var dataUrl = '/data/' + name + '.0.jsonl?revision=' + encodeURIComponent(MUSIC_DATA_CACHE_VERSION);
+  var request = fetch(dataUrl, {cache: 'no-store'}).then(function(response) {
     if (!response.ok) throw new Error(response.status + ' ' + name);
     return response.text();
   }).then(function(text) {
