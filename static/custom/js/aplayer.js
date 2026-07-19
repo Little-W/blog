@@ -1511,7 +1511,9 @@ function init_custom_list_mv() {
       qualitySources = qualityOptions.map(function(option) {
         var sourceUrl = dashObjectURL(option.manifest) || option.url;
         var fallbackSourceUrl = dashObjectURL(fallbackManifest(option));
-        return { format: option.code, src: sourceUrl, fallbackSrc: fallbackSourceUrl, type: option.type };
+        // 内联 MPD 必须以 DASH MIME 交给 VHS；后端保留的 video/mp4 是单条
+        // 轨道的原始类型，若沿用它，Video.js 会把 data: MPD 误作 MP4 并直接报错。
+        return { format: option.code, src: sourceUrl, fallbackSrc: fallbackSourceUrl, type: option.manifest ? "application/dash+xml" : option.type };
       });
       var dashSource = dashSourceFor(selectedQuality);
       if (!dashSource) {
