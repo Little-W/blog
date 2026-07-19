@@ -41,8 +41,8 @@ DEFAULT_ASSET_REPO = Path('/media/6/旧项目/网站/music')
 DEFAULT_RAW_URL = 'https://hf-mirror.com/datasets/Yusen/music/resolve/main'
 
 # New playlist records are intentionally limited to collection and singer
-# groups. OP/ED singles remain in the existing ACG group instead of creating a
-# large number of one-album playlist entries.
+# groups. The ACG group is reserved for vocal theme releases, such as OP/ED
+# singles. Soundtrack and collection tracks stay only in their own collection.
 TAG_DEFINITIONS = (
     (62, 161, 'Girls und Panzer Music Collection'),
     (63, 162, '秽翼的尤斯蒂娅OST'),
@@ -51,12 +51,37 @@ TAG_DEFINITIONS = (
 )
 DEFAULT_TAGS = (1,)
 ACG_TAGS = (1, 3)
-GUP_TAGS = (1, 3, 62)
-EUSTIA_TAGS = (1, 3, 63)
+GUP_TAGS = (1, 62)
+GUP_ACG_TAGS = (1, 3, 62)
+EUSTIA_TAGS = (1, 63)
+EUSTIA_ACG_TAGS = (1, 3, 63)
 CHOUCHO_TAGS = (1, 64)
 ISEKAI_JOUCHO_TAGS = (1, 65)
 YAMA_NO_SUSUME_ARTIST = 'あおい（井口裕香）＆ひなた（阿澄佳奈）'
 OFF_VOCAL_RE = re.compile(r'off[\s._-]*vocal', re.IGNORECASE)
+INSTRUMENTAL_RE = re.compile(r'(?:\(|（|\[|\s)(?:instrumental|inst\.?)(?:\)|）|\]|\s|$)', re.IGNORECASE)
+THEME_RELEASE_RE = re.compile(r'(?:主題歌|(?<![A-Za-z])(?:OP|ED)(?:テーマ|曲|[「『（(）)\s]|$))', re.IGNORECASE)
+THEME_SINGLE_RE = re.compile(r'(?:^|/)(?:OP|ED)\s+Single(?:/|$)', re.IGNORECASE)
+
+
+def belongs_to_acg_vocal_releases(track: Track) -> bool:
+    """Return whether a track is a vocal theme or separate singer release.
+
+    Soundtrack tracks are deliberately excluded even when their metadata has a
+    performer name.  An instrumental accompaniment is not a vocal release.
+    """
+    source = track.source_relative.as_posix()
+    album = track.album or ''
+    title = track.title or ''
+    if INSTRUMENTAL_RE.search(title):
+        return False
+    if THEME_RELEASE_RE.search(source) or THEME_SINGLE_RE.search(source):
+        return True
+    if 'original charactersong series' in album.casefold():
+        return True
+    # 「Grand symphony」is a separate singer single; the file name itself does
+    # not carry an OP/ED marker.
+    return Path(source).parts[0].startswith('「Grand symphony」') and album.casefold() == 'grand symphony'
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -106,16 +131,15 @@ def classify_track(track: Track) -> None:
         or 'ガールズ&パンツァー' in track.source_relative.as_posix()
         or 'grand symphony' in source_text
     ):
-        track.tag_ids = GUP_TAGS
+        track.tag_ids = GUP_ACG_TAGS if belongs_to_acg_vocal_releases(track) else GUP_TAGS
     elif '秽翼的尤斯蒂娅' in track.source_relative.as_posix() or '穢翼のユースティア' in track.source_relative.as_posix():
-        track.tag_ids = EUSTIA_TAGS
+        track.tag_ids = EUSTIA_ACG_TAGS if belongs_to_acg_vocal_releases(track) else EUSTIA_TAGS
     elif 'secretgarden' in source_text:
         track.tag_ids = CHOUCHO_TAGS
     elif 'ヰ世界情緒' in track.source_relative.as_posix() or '世界情緒' in track.source_relative.as_posix():
         track.tag_ids = ISEKAI_JOUCHO_TAGS
     else:
-        # Theme-song and soundtrack folders use the established ACG grouping.
-        track.tag_ids = ACG_TAGS if any(token in source_text for token in ('主題歌', 'op', 'ed', 'ost', 'フラグタイム')) else DEFAULT_TAGS
+        track.tag_ids = ACG_TAGS if belongs_to_acg_vocal_releases(track) else DEFAULT_TAGS
 
 
 def exclude_off_vocal_tracks(tracks: list[Track]) -> tuple[list[Track], list[dict[str, str]]]:
