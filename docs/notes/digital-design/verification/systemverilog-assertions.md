@@ -1,6 +1,7 @@
 ---
 title: SystemVerilog Assertion：从时序描述到可维护的断言
-sidebar_position: 2
+sidebar_position: 1
+slug: /notes/digital-design/systemverilog-assertions
 ---
 
 # SystemVerilog Assertion：从时序描述到可维护的断言

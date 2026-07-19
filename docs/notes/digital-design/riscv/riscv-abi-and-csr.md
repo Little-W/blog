@@ -1,6 +1,7 @@
 ---
 title: RISC-V：整数寄存器、ABI、CSR 与 trap 处理
-sidebar_position: 6
+sidebar_position: 1
+slug: /notes/digital-design/riscv-abi-and-csr
 ---
 
 # RISC-V：整数寄存器、ABI、CSR 与 trap 处理
@@ -289,7 +290,7 @@ trap 进入 M-mode 时，硬件执行等效状态更新：`MPIE ← MIE`、`MIE 
 | `mcause` | `Interrupt = mcause[XLEN-1]`，其余位为原因码 | 最高位区分异步中断与同步异常。 |
 | `mtval` | 原因相关值 | 地址异常时通常保存错误地址；非法指令时可保存指令位；没有附加信息时为 0。 |
 
-`mepc` 是否需要增加 2 或 4 取决于异常类型和指令长度。中断返回通常使用原 `mepc`；`ecall`、断点或软件已处理的非法指令需要由 handler 按目标语义决定后续 PC，不能统一执行固定增量。
+`mepc` 是否需要增加 2 或 4 取决于异常类型和指令长度。中断返回通常使用原 `mepc`；`ecall`、断点或软件已处理的非法指令需要由 handler 按预期处理行为决定后续 PC，不能统一执行固定增量。
 
 ### `mie` 与 `mip` 的标准中断位
 
@@ -345,7 +346,7 @@ trap_entry:
 
 完整入口还要处理所有被修改的 GPR、嵌套 trap、每 hart 栈、RV32/RV64 宽度、浮点与向量上下文、地址转换状态以及返回前的中断恢复顺序。若 handler 调用遵循 C ABI 的函数，入口必须先把调用者保存寄存器中属于被中断程序的值保存到上下文结构，因为 C 函数可以修改这些寄存器。
 
-## RTL 实现中的关键语义
+## RTL 实现中的关键规则
 
 - CSR 解码同时检查地址是否存在、当前特权级、只读属性和扩展使能状态。
 - `CSRRS`/`CSRRC` 的源寄存器为 `x0` 时不产生写访问，这一点会影响只读 CSR 和写副作用判断。

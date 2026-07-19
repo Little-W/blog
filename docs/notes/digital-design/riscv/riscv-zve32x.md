@@ -1,6 +1,7 @@
 ---
 title: RISC-V Zve32x：嵌入式整数向量扩展
-sidebar_position: 7
+sidebar_position: 2
+slug: /notes/digital-design/riscv-zve32x
 ---
 
 # RISC-V Zve32x：嵌入式整数向量扩展
@@ -308,7 +309,7 @@ Zve32x 要求精确 trap。向量指令在元素 `k` 处中断时，实现可以
 
 操作系统保存向量上下文时需要处理 `v0`–`v31`、`vtype`、`vl`、`vstart`、`vxrm` 和 `vxsat`。`vlenb` 给出单个寄存器的字节数，可用于计算每个线程所需的保存区。整寄存器 load/store 指令允许在不知道原 SEW 和 LMUL 的情况下复制寄存器位模式。
 
-## RTL 结构与实现语义
+## RTL 结构与实现要求
 
 最小 `VLEN=32` 的 Zve32x 实现仍必须提供 32 个架构向量寄存器和完整的 `vl/vtype/vstart` 行为。实现可以采用 32 位数据通路逐元素执行，也可以采用多 lane 并行结构；两者对软件呈现相同的架构状态。
 

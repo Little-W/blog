@@ -1,0 +1,9 @@
+{
+  "label": "RISC-V 处理器架构",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "slug": "/notes/digital-design/riscv",
+    "description": "RISC-V 整数 ABI、特权状态、Zve32x 向量扩展和 F 单精度浮点扩展。"
+  }
+}

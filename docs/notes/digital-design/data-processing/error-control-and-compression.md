@@ -1,6 +1,7 @@
 ---
 title: CRC、汉明码与游程编码：检错、纠错和压缩的适用范围
-sidebar_position: 4
+sidebar_position: 1
+slug: /notes/digital-design/error-control-and-compression
 ---
 
 # CRC、汉明码与游程编码：检错、纠错和压缩的适用范围

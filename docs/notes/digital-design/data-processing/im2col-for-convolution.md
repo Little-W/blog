@@ -1,6 +1,7 @@
 ---
 title: im2col：把卷积变成矩阵乘法时的数据布局
-sidebar_position: 5
+sidebar_position: 2
+slug: /notes/digital-design/im2col-for-convolution
 ---
 
 # im2col：把卷积变成矩阵乘法时的数据布局

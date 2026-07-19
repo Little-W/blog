@@ -1,16 +1,20 @@
 ---
-title: 数字设计与端侧推理
+title: 数字 IC 设计
 sidebar_position: 1
 ---
 
-# 数字设计与端侧推理
+# 数字 IC 设计
 
-文章目录：
+本组文章按设计对象分为三类。
 
-- SystemVerilog Assertion 的时序表达与常用模板；
-- 从约束、断言到覆盖率的形式验证工作流；
-- CRC、汉明码与游程编码的定位和适用范围；
-- 将卷积转换为 GEMM 时的 im2col 数据布局与整数编码注意事项。
-- RISC-V 的整数 ABI、CSR 与 trap 处理；
-- RISC-V Zve32x 嵌入式整数向量扩展；
-- RISC-V F 单精度浮点扩展。
+## [RTL 与形式验证](/docs/notes/digital-design/rtl-verification)
+
+介绍 SystemVerilog Assertion 的时序表达，以及从环境约束、断言到覆盖率的功能形式验证方法。
+
+## [数据编码与矩阵计算](/docs/notes/digital-design/data-processing)
+
+介绍 CRC、汉明码、游程编码的能力范围，以及将卷积转换为 GEMM 时的 im2col 数据布局。
+
+## [RISC-V 处理器架构](/docs/notes/digital-design/riscv)
+
+介绍整数寄存器与 ABI、CSR 与 trap 处理、Zve32x 嵌入式整数向量扩展，以及 F 单精度浮点扩展。

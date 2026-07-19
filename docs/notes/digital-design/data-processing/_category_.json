@@ -1,0 +1,9 @@
+{
+  "label": "数据编码与矩阵计算",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "slug": "/notes/digital-design/data-processing",
+    "description": "检错纠错编码、无损压缩和卷积矩阵化的数据组织方法。"
+  }
+}

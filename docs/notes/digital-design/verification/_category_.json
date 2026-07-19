@@ -1,0 +1,9 @@
+{
+  "label": "RTL 与形式验证",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "slug": "/notes/digital-design/rtl-verification",
+    "description": "SystemVerilog Assertion 和功能形式验证的建模、时序检查与调试方法。"
+  }
+}
