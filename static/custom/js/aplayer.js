@@ -2636,8 +2636,8 @@ load_music_lists = function() {
     return button;
   }
 
-  // 每个横向分页组都固定为三行。行内标签保留自身宽度，以 space-between 对齐
-  // 两端；分页/滚动只移动完整的标签组，不会把一行标签切在中间。
+  // 每个横向分页组都固定为三行。沿用旧版的紧凑填充方式：标签按内容宽度
+  // 连续排列，分页/滚动只移动完整的标签组，不会把一行标签切在中间。
   for (var start = 0; start < music_tags.length; start += tagsPerGroup) {
     var group = document.createElement('div');
     group.setAttribute('class', 'playlist-tag-group');
