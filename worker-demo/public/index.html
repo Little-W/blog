@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>本地 Worker 流式媒体代理演示</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <span class="eyebrow">LOCAL CLOUDFLARE WORKER DEMO</span>
+        <h1>受控媒体流代理</h1>
+        <p>ArtPlayer 从本地 workerd 读取视频；Worker 在服务器侧补充虚构凭据，并原样透传 Range 响应流。</p>
+      </header>
+
+      <section class="panel player-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="status-dot" aria-hidden="true"></span>
+            <strong>ArtPlayer</strong>
+          </div>
+          <code>/media/demo.mp4</code>
+        </div>
+        <div id="artplayer"></div>
+      </section>
+
+      <section class="details-grid">
+        <article class="panel">
+          <span class="label">浏览器请求</span>
+          <strong>不携带第三方 Cookie</strong>
+          <p>播放器只访问同源的 Worker 路径，真实或完整网站 Cookie 不进入页面。</p>
+        </article>
+        <article class="panel">
+          <span class="label">Worker 子请求</span>
+          <strong>本地虚构凭据</strong>
+          <p><code>demo_session=local-authorized-test</code> 只发往固定的本地模拟源站。</p>
+        </article>
+        <article class="panel">
+          <span class="label">传输方式</span>
+          <strong>ReadableStream + Range</strong>
+          <p>响应体不转成 ArrayBuffer，视频数据以流的形式继续传给播放器。</p>
+        </article>
+      </section>
+
+      <section class="panel diagnostics">
+        <div>
+          <span class="label">运行状态</span>
+          <strong id="health-text">正在检查 Worker…</strong>
+        </div>
+        <button id="reload-player" type="button">重新加载视频</button>
+      </section>
+
+      <section class="panel reference-panel">
+        <div class="reference-copy">
+          <span class="label">BILI-PARSE SAFE ADAPTATION</span>
+          <h2>BV / av 与分 P 识别</h2>
+          <p>参考本地 MIT 项目 <code>bili-parse</code> 的输入流程，仅生成 B 站官方嵌入播放器地址，不请求视频直链，也不转发 Cookie 或伪造 Referer。</p>
+        </div>
+        <form id="bili-reference-form">
+          <label>
+            <span>视频链接或编号</span>
+            <input id="bili-reference-input" type="text" value="BV183411G7cN" placeholder="BV183411G7cN 或 bilibili.com/video/..." maxlength="512" autocomplete="off">
+          </label>
+          <label class="page-input">
+            <span>分 P</span>
+            <input id="bili-reference-page" type="number" value="1" min="1" max="1000" inputmode="numeric">
+          </label>
+          <button type="submit">站内嵌入</button>
+        </form>
+        <p id="bili-reference-status" class="reference-status" aria-live="polite">等待输入</p>
+        <div id="bili-reference-player" class="reference-player" hidden></div>
+      </section>
+
+      <p class="boundary">此演示仅连接 <code>127.0.0.1</code> 的自有模拟源站，不可配置第三方站点，也不接收用户登录 Cookie。</p>
+    </main>
+    <script src="/vendor/artplayer.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

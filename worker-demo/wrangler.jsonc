@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "local-authorized-media-proxy-demo",
+  "main": "./src/worker.js",
+  "compatibility_date": "2026-07-18",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/media/*", "/api/*", "/health"]
+  },
+  "vars": {
+    "DEMO_ORIGIN": "http://127.0.0.1:8791",
+    "DEMO_REFERER": "https://local-worker-demo.invalid/player/",
+    "ALLOWED_SITE_ORIGIN": "http://127.0.0.1:8787"
+  },
+  "secrets": {
+    "required": ["DEMO_ORIGIN_COOKIE"]
+  }
+}

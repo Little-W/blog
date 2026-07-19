@@ -1,0 +1,2 @@
+# Local-only synthetic credential. Never put a real website Cookie here.
+DEMO_ORIGIN_COOKIE="demo_session=local-authorized-test"
