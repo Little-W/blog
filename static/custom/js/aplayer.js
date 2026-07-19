@@ -159,7 +159,9 @@ function load_static_data(name) {
 // 流量由资料源直接发给
 // 浏览器，不经过博客的 Netlify Function。
 var MUSIC_HF_SOURCE_HOSTS = ['hf-cdn.sufy.com', 'aifasthub.com', 'hf-mirror.com', 'huggingface.co'];
-var music_hf_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
+var MUSIC_HF_SOURCE_PRIORITY_STORAGE_KEY = 'music-hf-source-priority-v1';
+var MUSIC_HF_SOURCE_PRIORITY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+var music_hf_host_priority = read_music_hf_source_priority();
 var music_hf_probe_promise = null;
 var music_hf_cover_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
 var music_hf_cover_probe_promise = null;
@@ -171,6 +173,44 @@ var MUSIC_SOURCE_RETRIES_PER_MIRROR = 1;
 var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 3500;
 var MUSIC_COVER_PROBE_TIMEOUT_MS = 2500;
 var MUSIC_COVER_TIMEOUT_MS = 12 * 1000;
+
+function normalize_music_hf_host_priority(hosts) {
+  var priority = [];
+  (Array.isArray(hosts) ? hosts : []).forEach(function(host) {
+    if (MUSIC_HF_SOURCE_HOSTS.indexOf(host) !== -1 && priority.indexOf(host) === -1) priority.push(host);
+  });
+  MUSIC_HF_SOURCE_HOSTS.forEach(function(host) {
+    if (priority.indexOf(host) === -1) priority.push(host);
+  });
+  return priority;
+}
+
+function read_music_hf_source_priority() {
+  try {
+    var stored = JSON.parse(window.localStorage.getItem(MUSIC_HF_SOURCE_PRIORITY_STORAGE_KEY) || 'null');
+    if (!stored || !Array.isArray(stored.hosts) || !Number.isFinite(stored.updatedAt)) return MUSIC_HF_SOURCE_HOSTS.slice();
+    if (Date.now() - stored.updatedAt > MUSIC_HF_SOURCE_PRIORITY_MAX_AGE_MS) return MUSIC_HF_SOURCE_HOSTS.slice();
+    return normalize_music_hf_host_priority(stored.hosts);
+  } catch (error) {
+    return MUSIC_HF_SOURCE_HOSTS.slice();
+  }
+}
+
+function update_music_hf_source_priority(hosts) {
+  music_hf_host_priority = normalize_music_hf_host_priority(hosts);
+  try {
+    window.localStorage.setItem(MUSIC_HF_SOURCE_PRIORITY_STORAGE_KEY, JSON.stringify({
+      hosts: music_hf_host_priority,
+      updatedAt: Date.now(),
+    }));
+  } catch (error) {}
+  return music_hf_host_priority;
+}
+
+function promote_music_hf_source_host(host) {
+  if (MUSIC_HF_SOURCE_HOSTS.indexOf(host) === -1 || music_hf_host_priority[0] === host) return;
+  update_music_hf_source_priority([host].concat(music_hf_host_priority));
+}
 
 function music_hf_dataset_path(value, filePattern) {
   try {
@@ -263,7 +303,7 @@ function prime_music_hf_mirrors(sampleSource) {
       MUSIC_HF_SOURCE_HOSTS.forEach(function(host) {
         if (nextPriority.indexOf(host) === -1) nextPriority.push(host);
       });
-      music_hf_host_priority = nextPriority;
+      update_music_hf_source_priority(nextPriority);
     }
     return music_hf_host_priority.slice();
   }).catch(function() {
@@ -543,7 +583,11 @@ function install_music_source_fallback(player) {
   player.audio.addEventListener('waiting', scheduleSourceTimeout);
   player.audio.addEventListener('stalled', scheduleSourceTimeout);
   player.audio.addEventListener('loadedmetadata', clearSourceTimeout);
-  player.audio.addEventListener('canplay', clearSourceTimeout);
+  player.audio.addEventListener('canplay', function() {
+    clearSourceTimeout();
+    var song = activeSong();
+    if (song) promote_music_hf_source_host(song.__musicSourceHost || music_hf_url_host(player.audio.currentSrc));
+  });
   player.audio.addEventListener('playing', clearSourceTimeout);
   player.audio.addEventListener('pause', function() {
     if (player.audio.paused) clearSourceTimeout();
@@ -3230,6 +3274,20 @@ function clear_player_cover_transition(picture) {
   if (layer) layer.remove();
 }
 
+function normalize_player_cover_source(source) {
+  try {
+    var resolvedSource = new URL(String(source), window.location.href).href;
+    return {
+      resolvedSource: resolvedSource,
+      cssSource: resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
+        return encodeURIComponent(character);
+      }),
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 function show_player_cover(picture, cssSource, resolvedSource, requestId) {
   if (!picture || picture.dataset.coverRequest !== requestId) return;
 
@@ -3241,41 +3299,18 @@ function show_player_cover(picture, cssSource, resolvedSource, requestId) {
   }
 
   clear_player_cover_transition(picture);
-  var previousBackground = picture.style.backgroundImage;
-  // 新图预读完成后从透明覆盖层淡入，旧图不会在新图已经显示后重新出现。动画
-  // 结束时先替换底图、下一帧才移除覆盖层，避免两张图交接的一帧闪出背景色。
+  // 直接替换为新封面，不把旧封面作为临时覆盖层保留。这样在网络回调和快速
+  // 连续切歌时，不会出现新曲标题已经显示、封面又短暂回到上一首的现象。
   picture.classList.remove('aplayer-pic--fallback');
-  if (!previousBackground) {
-    picture.style.backgroundImage = 'url("' + cssSource + '")';
-    picture.dataset.coverSource = resolvedSource;
-    return;
-  }
-
-  var layer = document.createElement('span');
-  layer.className = 'music-player-cover-transition';
-  layer.style.backgroundImage = 'url("' + cssSource + '")';
-  picture.appendChild(layer);
-
-  var completed = false;
-  function finish() {
-    if (completed) return;
-    completed = true;
-    if (picture.dataset.coverRequest !== requestId || layer.parentNode !== picture) {
-      if (layer.parentNode) layer.remove();
-      return;
-    }
-    picture.style.backgroundImage = 'url("' + cssSource + '")';
-    picture.dataset.coverSource = resolvedSource;
-    var nextFrame = window.requestAnimationFrame || function(callback) { return window.setTimeout(callback, 0); };
-    nextFrame(function() {
-      nextFrame(function() {
-        if (layer.parentNode) layer.remove();
-      });
-    });
-  }
-  layer.addEventListener('animationend', finish, {once: true});
-  // 浏览器在页面切到后台时可能暂停 CSS 动画，不能让临时层永久留在 DOM 中。
-  window.setTimeout(finish, 450);
+  picture.style.backgroundImage = 'url("' + cssSource + '")';
+  picture.dataset.coverSource = resolvedSource;
+  picture.classList.remove('music-player-cover-changing');
+  // 强制分开两次样式计算，确保同一元素连续切歌时每次都有平滑的新图出现效果。
+  void picture.offsetWidth;
+  picture.classList.add('music-player-cover-changing');
+  window.setTimeout(function() {
+    picture.classList.remove('music-player-cover-changing');
+  }, 220);
 }
 
 function set_player_cover(player, audio) {
@@ -3293,25 +3328,17 @@ function set_player_cover(player, audio) {
     return;
   }
 
+  // 切歌时先将优先镜像写入播放器背景。浏览器会立刻开始取图，界面不会继续
+  // 显示上一首封面；预读流程只负责确认该来源是否可用，以及失败后的备用源。
+  var initialCover = normalize_player_cover_source(candidates[0]);
+  if (initialCover) show_player_cover(picture, initialCover.cssSource, initialCover.resolvedSource, requestId);
+
   // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
-  // 没有响应时会继续尝试下一镜像。旧封面在新图成功前继续显示，从而保留切歌
-  // 时的淡入淡出，而不是先出现一帧空白占位图。
+  // 没有响应时会继续尝试下一镜像。
   load_music_cover(candidates, function(source) {
     if (picture.dataset.coverRequest === requestId) {
-      var resolvedSource;
-      try {
-        // 曲库中的文件名可以包含日文、空格和单引号。APlayer 原先使用
-        // url('...') 直接拼接，像 IT'S A PERFECT BLUE 这样的目录会提前结束
-        // CSS 字符串，从而只剩下纯色封面。使用规范化 URL 和双引号可避免此类字符
-        // 破坏 background-image 声明。
-        resolvedSource = new URL(String(source), window.location.href).href;
-      } catch (error) {
-        return;
-      }
-      var cssSource = resolvedSource.replace(/["\\\n\r\f]/g, function(character) {
-        return encodeURIComponent(character);
-      });
-      show_player_cover(picture, cssSource, resolvedSource, requestId);
+      var resolvedCover = normalize_player_cover_source(source);
+      if (resolvedCover) show_player_cover(picture, resolvedCover.cssSource, resolvedCover.resolvedSource, requestId);
     }
   }, function() {
     if (picture.dataset.coverRequest === requestId) {
