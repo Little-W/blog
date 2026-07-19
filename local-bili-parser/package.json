@@ -1,0 +1,17 @@
+{
+  "name": "my-website-local-bili-parser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Loopback-only, logged-in Bilibili media resolver for my-website's music page.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
