@@ -1082,6 +1082,7 @@ function init_custom_list_mv() {
   var searchQuery = "";
   var viewMode = mv_settings.view === "list" || (!mv_settings.view && localStorage.getItem("mv-view-mode") === "list") ? "list" : "grid";
   var activeMvCleanup = function() {};
+  var activePlayingCard = null;
   var mvResolveCache = new Map();
   var MV_RESOLVE_CACHE_TTL_MS = 2 * 60 * 1000;
   var mvFastSourceCache = new Map();
@@ -1090,6 +1091,10 @@ function init_custom_list_mv() {
   // 用于应对国内 CDN 与函数网络的短暂抖动。
   var MV_API_REQUEST_RETRIES = 3;
   var MV_PLAYBACK_RECOVERY_RETRIES = 3;
+  // 同一 DASH 清单的重复 setSource 不会改变浏览器已缓存的失败状态；一次短暂
+  // 重试足够，随后应尽快切到 MP4、备用 CDN 或重新向 B 站取签名。
+  var MV_SAME_LINK_RETRIES = 1;
+  var MV_SOURCE_LOAD_TIMEOUT_MS = 9000;
 
   var listParent = document.createElement("div");
   listParent.setAttribute("id", "mv-list-ol-parent");
@@ -1119,6 +1124,11 @@ function init_custom_list_mv() {
   }
 
   function clearPlayingCard() {
+    if (activePlayingCard) {
+      activePlayingCard.classList.remove("is-playing");
+      activePlayingCard.removeAttribute("aria-current");
+      activePlayingCard = null;
+    }
     listDiv.querySelectorAll(".mv_list_div.is-playing").forEach(function(card) {
       card.classList.remove("is-playing");
       card.removeAttribute("aria-current");
@@ -1233,6 +1243,7 @@ function init_custom_list_mv() {
     if (card) {
       card.classList.add("is-playing");
       card.setAttribute("aria-current", "true");
+      activePlayingCard = card;
     }
     if (!playerStage) return;
     var usingRemoteParser = getBiliParserMode() === "remote";
@@ -1288,6 +1299,7 @@ function init_custom_list_mv() {
     var recoveryPending = false;
     var mediaRetryPending = false;
     var resumePlaybackAfterRecovery = false;
+    var mediaLoadTimer = 0;
     activeMvCleanup = function() {
       destroyed = true;
     };
@@ -1304,6 +1316,8 @@ function init_custom_list_mv() {
     }
 
     function disposeCurrentVideoPlayer() {
+      if (mediaLoadTimer) window.clearTimeout(mediaLoadTimer);
+      mediaLoadTimer = 0;
       if (mv_player && typeof mv_player.dispose === "function" && !(typeof mv_player.isDisposed === "function" && mv_player.isDisposed())) {
         mv_player.dispose();
       }
@@ -1520,8 +1534,15 @@ function init_custom_list_mv() {
     }
 
     function sameLinkRetry(source) {
-      if (!source || (source.requestRetryCount || 0) >= 3) return null;
-      return Object.assign({}, source, { requestRetryCount: (source.requestRetryCount || 0) + 1 });
+      if (!source || (source.requestRetryCount || 0) >= MV_SAME_LINK_RETRIES) return null;
+      var retryCount = (source.requestRetryCount || 0) + 1;
+      var retrySource = Object.assign({}, source, { requestRetryCount: retryCount });
+      // Video.js/VHS 会记住相同 data: 清单的失败结果；添加仅用于播放器实例的
+      // fragment 使它重新建立 manifest loader，MPD 内容及 B 站签名均不变。
+      if (retrySource.type === "application/dash+xml" && /^data:/i.test(String(retrySource.src || ""))) {
+        retrySource.src += "#mv-retry=" + Date.now().toString(36) + "-" + retryCount;
+      }
+      return retrySource;
     }
 
     function nextLinkRetry(source) {
@@ -1538,27 +1559,86 @@ function init_custom_list_mv() {
 
     function setVideoJsSource(source) {
       if (!source || !mv_player) return;
+      if (mediaLoadTimer) window.clearTimeout(mediaLoadTimer);
+      mediaLoadTimer = 0;
       mediaRetryPending = false;
       activePlaybackSource = source;
       var resumeAt = mv_player.currentTime() || 0;
       var shouldPlay = !mv_player.paused();
       mv_player.one("loadedmetadata", function() {
+        if (mediaLoadTimer) window.clearTimeout(mediaLoadTimer);
+        mediaLoadTimer = 0;
         try {
           mv_player.currentTime(Math.min(resumeAt, mv_player.duration() || resumeAt));
         } catch (error) {}
         if (shouldPlay) mv_player.play().catch(function() {});
       });
       mv_player.src({ src: source.src, type: source.type });
+      // 某些 UPOS 节点会永远保持 pending，既不触发 error 也不会取得 metadata。
+      // 这种情况以前会令“重新尝试”停在同一播放器状态；统一按一次失败处理。
+      mediaLoadTimer = window.setTimeout(function() {
+        if (destroyed || !mv_player || mv_player.isDisposed() || activePlaybackSource !== source) return;
+        if (typeof mv_player.readyState === "function" && mv_player.readyState() >= 1) return;
+        recoverMediaSource(source);
+      }, MV_SOURCE_LOAD_TIMEOUT_MS);
     }
 
-    function scheduleMediaSourceRetry(failedSource, nextSource) {
+    function scheduleMediaSourceRetry(failedSource, nextSource, activeSource) {
       if (!failedSource || !nextSource || destroyed || mediaRetryPending) return;
       mediaRetryPending = true;
       var retryNumber = Math.max(1, Number(nextSource.requestRetryCount) || 1);
       window.setTimeout(function() {
-        if (destroyed || activePlaybackSource !== failedSource) return;
+        if (destroyed || activePlaybackSource !== (activeSource || failedSource)) return;
         setVideoJsSource(nextSource);
       }, mediaRetryDelay(retryNumber - 1));
+    }
+
+    function retryNextDashSource(dashSource, activeSource) {
+      var nextSource = nextLinkRetry(dashSource);
+      if (nextSource) {
+        scheduleMediaSourceRetry(dashSource, nextSource, activeSource);
+        return;
+      }
+      scheduleFreshResolve();
+    }
+
+    function recoverMediaSource(failedSource) {
+      if (!failedSource || destroyed || mediaRetryPending) return;
+      if (mediaLoadTimer) window.clearTimeout(mediaLoadTimer);
+      mediaLoadTimer = 0;
+
+      var retriedSource = sameLinkRetry(failedSource);
+      if (retriedSource) {
+        scheduleMediaSourceRetry(failedSource, retriedSource);
+        return;
+      }
+
+      // 低/中画质的 BiliAnalysis MP4 在部分国内网络下比 DASH 更容易取得首帧。
+      // 它现在在一次 DASH 重试后立刻参与恢复，而不是等待所有 DASH 备用节点逐一
+      // 超时；MP4 不可用时再继续原有 DASH 候选，画质与可靠性都不被牺牲。
+      if (failedSource.biliAnalysisOption && !failedSource.triedBiliAnalysis) {
+        failedSource.triedBiliAnalysis = true;
+        mediaRetryPending = true;
+        fastSourceFor(failedSource.biliAnalysisOption).then(function(source) {
+          mediaRetryPending = false;
+          if (destroyed || activePlaybackSource !== failedSource) return;
+          source.dashFallbackSource = Object.assign({}, failedSource, { triedBiliAnalysis: true, requestRetryCount: 0 });
+          setVideoJsSource(source);
+        }).catch(function() {
+          mediaRetryPending = false;
+          if (destroyed || activePlaybackSource !== failedSource) return;
+          retryNextDashSource(failedSource);
+        });
+        return;
+      }
+
+      // MP4 自身及其备用链接都失败时，回到尚未尝试的 DASH CDN，而非直接把本次
+      // 解析判为失败。这样快速路径只是一条额外线路，不会遮蔽高画质 DASH。
+      if (failedSource.dashFallbackSource) {
+        retryNextDashSource(failedSource.dashFallbackSource, failedSource);
+        return;
+      }
+      retryNextDashSource(failedSource);
     }
 
     function switchVideoJsQuality(nextQuality) {
@@ -1713,37 +1793,7 @@ function init_custom_list_mv() {
         });
       }
       mv_player.on("error", function() {
-        var failedSource = activePlaybackSource;
-        if (!failedSource || mediaRetryPending) return;
-        // 同一个节点做退避重试，再依次轮换解析接口给出的备用 CDN 链接。
-        // 两者均耗尽才请求 BiliAnalysis，避免瞬断直接退回较慢的后备链路。
-        var retriedSource = sameLinkRetry(failedSource);
-        if (retriedSource) {
-          scheduleMediaSourceRetry(failedSource, retriedSource);
-          return;
-        }
-        var nextSource = nextLinkRetry(failedSource);
-        if (nextSource) {
-          scheduleMediaSourceRetry(failedSource, nextSource);
-          return;
-        }
-        if (failedSource?.biliAnalysisOption && !failedSource.triedBiliAnalysis) {
-          // 仅在优先的 DASH 源报错后请求 BiliAnalysis；避免初始播放额外等待一次
-          // 渐进式直链解析，也避免低画质直链失败拖慢正常的 DASH 播放。
-          failedSource.triedBiliAnalysis = true;
-          mediaRetryPending = true;
-          fastSourceFor(failedSource.biliAnalysisOption).then(function(source) {
-            mediaRetryPending = false;
-            if (destroyed || activePlaybackSource !== failedSource) return;
-            setVideoJsSource(source);
-          }).catch(function() {
-            mediaRetryPending = false;
-            if (destroyed || activePlaybackSource !== failedSource) return;
-            scheduleFreshResolve();
-          });
-          return;
-        }
-        scheduleFreshResolve();
+        recoverMediaSource(activePlaybackSource);
       });
       // 先让 Video.js 建立技术层，再通过统一入口设置首个 source。直接把 DASH
       // source 传入构造器会与 qualityselector/VHS 的初始化竞争，首段请求可能被
@@ -1895,7 +1945,53 @@ function init_custom_list_mv() {
   }
 
   var renderedMvCount = 0;
+  var renderedMvItems = [];
   var mvSearchRenderFrame = 0;
+  var mvVirtualMeasureFrame = 0;
+  var mvVirtualScrollFrame = 0;
+  var mvRenderVersion = 0;
+  var mvCardNodeCache = new Map();
+  var mvVirtual = { active: false, columns: 1, itemHeight: 0, rowGap: 0, startRow: -1, endRow: -1, containerWidth: 0 };
+
+  function mvCardKey(item) {
+    return [item.mv_id, item.bilibili_bvid, item.bilibili_page || 1].join(":");
+  }
+
+  function cachedMvCard(item) {
+    var key = mvCardKey(item);
+    var card = mvCardNodeCache.get(key);
+    if (!card) {
+      card = createCard(item);
+      mvCardNodeCache.set(key, card);
+    }
+    return card;
+  }
+
+  function resetMvCardLayout(card) {
+    card.style.removeProperty("height");
+    card.style.removeProperty("width");
+  }
+
+  function mvColumnCount() {
+    if (viewMode !== "grid") return 1;
+    var tracks = String(window.getComputedStyle(ol).gridTemplateColumns || "").trim().split(/\s+/).filter(function(track) {
+      return track && track !== "none";
+    });
+    return Math.max(1, tracks.length);
+  }
+
+  function mvRowGap() {
+    var style = window.getComputedStyle(ol);
+    return parseFloat(style.rowGap || style.gap) || 0;
+  }
+
+  function createVirtualSpacer(height, position) {
+    var spacer = document.createElement("li");
+    spacer.setAttribute("class", "mv-virtual-spacer mv-virtual-spacer--" + position);
+    spacer.setAttribute("aria-hidden", "true");
+    spacer.style.height = Math.max(0, Math.ceil(height)) + "px";
+    return spacer;
+  }
 
   function syncMvListHeight() {
     var firstCard = ol.querySelector(".mv_list_div");
@@ -1904,24 +2000,13 @@ function init_custom_list_mv() {
       listParent.style.maxHeight = "none";
       return;
     }
-    // 旧实现会对全部 MV 卡片逐一 getBoundingClientRect；476 张卡片在缩略图加载
-    // 或滚动时会反复触发强制布局。网格每行等高，只读取首卡和网格列数即可精确
-    // 计算两行高度，布局读取由 O(N) 降为 O(1)。
-    var style = window.getComputedStyle(ol);
-    var isGrid = viewMode === "grid";
-    var columns = 1;
-    if (isGrid) {
-      var tracks = String(style.gridTemplateColumns || "").trim().split(/\s+/).filter(function(track) {
-        return track && track !== "none";
-      });
-      columns = Math.max(1, tracks.length);
-    }
-    var rowGap = parseFloat(style.rowGap || style.gap) || 0;
+    var columns = mvVirtual.active ? mvVirtual.columns : mvColumnCount();
+    var rowGap = mvVirtual.active ? mvVirtual.rowGap : mvRowGap();
     var visibleRows = Math.min(2, Math.ceil(renderedMvCount / columns));
-    var listTop = ol.getBoundingClientRect().top;
-    var cardRect = firstCard.getBoundingClientRect();
-    var topInset = Math.max(0, cardRect.top - listTop);
-    var targetHeight = Math.ceil(topInset + cardRect.height * visibleRows + rowGap * Math.max(0, visibleRows - 1) + 2);
+    var cardHeight = mvVirtual.active ? mvVirtual.itemHeight : firstCard.getBoundingClientRect().height;
+    // 虚拟列表在滚动后首卡前面会有占位行；这时不再读取其实际 y 坐标，始终以
+    // 已量得的单行高度固定两行视口，避免滚动过程中触发布局同步。
+    var targetHeight = Math.ceil(cardHeight * visibleRows + rowGap * Math.max(0, visibleRows - 1) + 4);
     listParent.style.height = targetHeight + "px";
     listParent.style.maxHeight = targetHeight + "px";
   }
@@ -1940,22 +2025,105 @@ function init_custom_list_mv() {
     });
   }
 
-  function renderCards() {
+  function renderVirtualRange(force) {
+    if (!mvVirtual.active || !renderedMvItems.length) return;
+    var totalRows = Math.ceil(renderedMvItems.length / mvVirtual.columns);
+    var rowPitch = mvVirtual.itemHeight + mvVirtual.rowGap;
+    var viewportRows = Math.max(2, Math.ceil(listParent.clientHeight / Math.max(1, rowPitch)));
+    var firstVisibleRow = Math.max(0, Math.floor(listParent.scrollTop / Math.max(1, rowPitch)));
+    var startRow = Math.max(0, firstVisibleRow - 3);
+    var endRow = Math.min(totalRows, firstVisibleRow + viewportRows + 3);
+    if (!force && startRow === mvVirtual.startRow && endRow === mvVirtual.endRow) return;
+
+    mvVirtual.startRow = startRow;
+    mvVirtual.endRow = endRow;
+    ol.classList.add("is-virtualized");
     ol.innerHTML = "";
-    var items = filteredItems();
-    renderedMvCount = items.length;
     var fragment = document.createDocumentFragment();
-    items.forEach(function(item) { fragment.appendChild(createCard(item)); });
+    if (startRow > 0) fragment.appendChild(createVirtualSpacer(startRow * rowPitch - mvVirtual.rowGap, "before"));
+    var startIndex = startRow * mvVirtual.columns;
+    var endIndex = Math.min(renderedMvItems.length, endRow * mvVirtual.columns);
+    for (var index = startIndex; index < endIndex; index += 1) {
+      var card = cachedMvCard(renderedMvItems[index]);
+      card.style.height = Math.ceil(mvVirtual.itemHeight) + "px";
+      fragment.appendChild(card);
+    }
+    var remainingRows = totalRows - endRow;
+    if (remainingRows > 0) fragment.appendChild(createVirtualSpacer(remainingRows * rowPitch - mvVirtual.rowGap, "after"));
+    ol.appendChild(fragment);
+  }
+
+  function scheduleVirtualRange() {
+    if (!mvVirtual.active || mvVirtualScrollFrame) return;
+    mvVirtualScrollFrame = window.requestAnimationFrame(function() {
+      mvVirtualScrollFrame = 0;
+      renderVirtualRange(false);
+    });
+  }
+
+  function activateVirtualList(version) {
+    if (version !== mvRenderVersion || !renderedMvItems.length) return;
+    var firstCard = ol.querySelector(".mv_list_div");
+    var itemHeight = firstCard && firstCard.getBoundingClientRect().height;
+    if (!(itemHeight > 0)) {
+      scheduleMvListHeight();
+      return;
+    }
+    mvVirtual = {
+      active: true,
+      columns: mvColumnCount(),
+      itemHeight: Math.ceil(itemHeight),
+      rowGap: mvRowGap(),
+      startRow: -1,
+      endRow: -1,
+      containerWidth: listParent.clientWidth
+    };
+    renderVirtualRange(true);
+    scheduleMvListHeight();
+  }
+
+  function renderCards() {
+    var items = filteredItems();
+    renderedMvItems = items;
+    renderedMvCount = items.length;
+    mvRenderVersion += 1;
+    var version = mvRenderVersion;
+    mvVirtual.active = false;
+    mvVirtual.startRow = -1;
+    mvVirtual.endRow = -1;
+    if (mvVirtualMeasureFrame) window.cancelAnimationFrame(mvVirtualMeasureFrame);
+    listParent.scrollTop = 0;
+    ol.classList.remove("is-virtualized");
+    ol.innerHTML = "";
+    var fragment = document.createDocumentFragment();
     if (!items.length) {
       var empty = document.createElement("li");
       empty.setAttribute("class", "mv-empty-state");
       empty.innerHTML = "<strong>没有找到匹配的 MV</strong><span>试试其他关键词或组合。</span>";
       fragment.appendChild(empty);
+    } else if (items.length <= 36) {
+      items.forEach(function(item) {
+        var card = cachedMvCard(item);
+        resetMvCardLayout(card);
+        fragment.appendChild(card);
+      });
+    } else {
+      // 只先放入一张测量卡。过去每次初始化都会把 477 张卡片、图片和监听器
+      // 同时交给布局引擎；这里量取实际行高后仅保留可视两行及前后缓冲行。
+      var measureCard = cachedMvCard(items[0]);
+      resetMvCardLayout(measureCard);
+      fragment.appendChild(measureCard);
     }
     ol.appendChild(fragment);
     if (resultCount) resultCount.innerText = items.length;
     if (currentFilterLabel) currentFilterLabel.innerText = activeGroup === "全部" ? "全部组合" : activeGroup;
     scheduleMvListHeight();
+    if (items.length > 36) {
+      mvVirtualMeasureFrame = window.requestAnimationFrame(function() {
+        mvVirtualMeasureFrame = 0;
+        activateVirtualList(version);
+      });
+    }
   }
 
   function renderFilters() {
@@ -2009,21 +2177,31 @@ function init_custom_list_mv() {
     update_player_settings('mv', { view: viewMode });
     localStorage.setItem("mv-view-mode", viewMode);
     applyViewMode();
+    renderCards();
   };
   if (listButton) listButton.onclick = function() {
     viewMode = "list";
     update_player_settings('mv', { view: viewMode });
     localStorage.setItem("mv-view-mode", viewMode);
     applyViewMode();
+    renderCards();
   };
+  listParent.addEventListener("scroll", scheduleVirtualRange, { passive: true });
+  function handleMvListLayoutChange() {
+    if (mvVirtual.active && Math.abs(mvVirtual.containerWidth - listParent.clientWidth) > 1) {
+      renderCards();
+      return;
+    }
+    scheduleMvListHeight();
+  }
   if (window.__yusenMvListResizeHandler) window.removeEventListener("resize", window.__yusenMvListResizeHandler);
-  window.__yusenMvListResizeHandler = scheduleMvListHeight;
+  window.__yusenMvListResizeHandler = handleMvListLayoutChange;
   window.addEventListener("resize", window.__yusenMvListResizeHandler);
   if (window.__yusenMvListResizeObserver) window.__yusenMvListResizeObserver.disconnect();
   if (typeof window.ResizeObserver === "function") {
     // 只观察容器尺寸变化（主要是窗口宽度变化），不再因每张懒加载封面完成而
     // 重新扫描全部卡片。
-    window.__yusenMvListResizeObserver = new window.ResizeObserver(scheduleMvListHeight);
+    window.__yusenMvListResizeObserver = new window.ResizeObserver(handleMvListLayoutChange);
     window.__yusenMvListResizeObserver.observe(listDiv);
   }
   renderFilters();
@@ -2271,6 +2449,39 @@ function bind_music_player_settings(player) {
   }
 }
 
+function install_stable_queue_switch(player) {
+  if (!player || !player.list || player.list.__yusenStableSwitch) return;
+  var list = player.list;
+  // APlayer 1.10.1 每次切歌都会启动一个 500ms 的 scrollTop 动画，且动画无法
+  // 取消。用户先手动滚动队列再连续点歌时，旧动画会把列表拉回上一首，随后新动画
+  // 又拉到新歌。改为一次无动画定位，队列只会朝本次选中的歌曲移动。
+  list.switch = function(index) {
+    if (index === undefined || !this.audios[index]) return;
+    this.player.events.trigger("listswitch", { index: index });
+    this.index = index;
+    var audio = this.audios[index];
+    this.player.template.pic.style.backgroundImage = audio.cover ? "url('" + audio.cover + "')" : "";
+    this.player.theme(audio.theme || this.player.options.theme, index, false);
+    this.player.template.title.innerHTML = audio.name;
+    this.player.template.author.innerHTML = audio.artist ? " - " + audio.artist : "";
+    var previous = this.player.container.getElementsByClassName("aplayer-list-light")[0];
+    if (previous) previous.classList.remove("aplayer-list-light");
+    var entries = this.player.container.querySelectorAll(".aplayer-list li");
+    var entry = entries[index];
+    if (entry) {
+      entry.classList.add("aplayer-list-light");
+      var queue = this.player.template.listOl;
+      var target = entry.offsetTop - Math.max(0, (queue.clientHeight - entry.offsetHeight) / 2);
+      queue.scrollTop = Math.max(0, Math.min(target, queue.scrollHeight - queue.clientHeight));
+    }
+    this.player.setAudio(audio);
+    if (this.player.lrc) this.player.lrc.switch(index);
+    if (this.player.lrc) this.player.lrc.update(0);
+    if (this.player.duration !== 1) this.player.template.dtime.innerHTML = "00:00";
+  };
+  list.__yusenStableSwitch = true;
+}
+
 function aplayer0() {
   try {
     window.ap0.destroy();
@@ -2290,6 +2501,7 @@ function aplayer0() {
     lrcType: 3,
     audio: ap0_list,
   });
+  install_stable_queue_switch(window.ap0);
   bind_music_player_settings(window.ap0);
 
   window.ap0.on('pause', function () {
@@ -2846,9 +3058,10 @@ load_music_lists = function() {
     button.remove();
     return width;
   });
+  // 最终分页组受分页间距与保留滚动条影响会比临时量尺窄约 8px；提前扣除这部分
+  // 宽度和子像素边框余量，保证最右标签仍贴齐栏内边缘而不会被裁掉。
+  var availableWidth = Math.max(1, Math.floor(measurementRow.clientWidth) - 8);
   measurementGroup.remove();
-
-  var availableWidth = Math.max(1, Math.floor(subdiv.clientWidth));
   rendered_playlist_width = availableWidth;
   var rowGap = 9;
   var group;
