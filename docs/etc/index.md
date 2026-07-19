@@ -2,5 +2,6 @@
 title: 杂项
 ---
 
-## 存一些乱七八糟的东西
-#### 按标签分类点[这里](https://yusen.netlify.app/docs/tags/)。
+## 其他文章
+
+按标签浏览请前往[标签页](/docs/tags/)。

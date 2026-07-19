@@ -55,23 +55,10 @@ const config = {
               to: 'docs/notes/Japanese',
             },
 			{
-              label: '嵌入式',
-              to: 'docs/notes/embedded_programing',
-            },
-			{
               label: '数字设计',
               to: 'docs/notes/digital-design',
             },
-			{
-              label: '前端',
-              to: 'docs/notes/web',
-            },
           ],
-        },
-		{
-            label: '历史博文',
-			position: 'right',
-            to: 'archive',
         },
 		 {
               label: '其他文章',
@@ -81,7 +68,7 @@ const config = {
         {
               label: '标签',
               position: 'right',
-              to: 'tags',
+              to: 'docs/tags',
         },
 		{
           label: '网址导航',
@@ -108,8 +95,8 @@ const config = {
           title: '博客',
           items: [
            {
-              label: '全部',
-              to: 'archive',
+              label: '首页',
+              to: '/',
           },
 		 {
               label: '笔记',
@@ -121,7 +108,7 @@ const config = {
           },
            {
               label: '标签',
-              to: 'tags',
+              to: 'docs/tags',
           },
  
 
