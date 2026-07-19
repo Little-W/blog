@@ -12,10 +12,10 @@
 | `src/pages/settings/` | 主题、特效开关及特效帧率上限；设置保存在浏览器本地。 |
 | `static/data/` | 音乐、歌单、MV、组合和 B 站来源目录。 |
 | `local-bili-parser/` | 默认仅监听 `127.0.0.1` 的本地扫码登录/解析服务。 |
-| `cloudflare-bili-worker/` | 可与静态资源一体部署的 Cloudflare Worker 解析后端。 |
+| `../blog_static/netlify/functions/` | 生产环境的 Netlify Function：B 站会话保存、受限 MV 解析和目录白名单。 |
 | `scripts/` | B 站合集导入、解析器允许目录和 Live2D 运行时构建脚本。 |
 
-完整的架构、播放策略、数据更新、Netlify/Cloudflare/本地三种运行方式、密钥管理和验收清单见 [音乐与 MV 系统说明](docs/etc/music-mv-player.md)。
+完整的架构、播放策略、数据更新、Netlify/本地运行方式、密钥管理和验收清单见 [音乐与 MV 系统说明](docs/etc/music-mv-player.md)。另见[解析 B 站视频直链并嵌入博客的方法](docs/etc/bilibili-direct-url-embed.md)。
 
 ### 本地启动
 
@@ -33,7 +33,7 @@ npm install
 npm start
 ```
 
-默认页面会请求 `http://127.0.0.1:19180/api`。生产构建必须改为同源的 `/api`，并部署对应的 Netlify Function 或 Cloudflare Worker；不要把登录 Cookie 或管理员令牌写入本仓库。
+默认页面会请求 `http://127.0.0.1:19180/api`。生产构建必须改为同源的 `/api`，并由 `blog_static` 中的 Netlify Function 提供解析；不要把登录 Cookie 或管理员令牌写入本仓库。
 
 ### Installation
 

@@ -242,8 +242,8 @@ const config = {
       return {
         name: 'native-site-assets',
         injectHtmlTags() {
-          // 默认继续走本机解析器；Cloudflare Worker 一体化部署时由构建环境
-          // 覆盖为 /api 和 cloudflare，使静态页面不会暴露管理员令牌。
+          // 开发环境使用本机解析器；生产构建设置为 /api 和 netlify，
+          // 静态页面仅取得同源接口地址，不包含管理员令牌。
           const biliParserApi = process.env.BILI_PARSER_API || 'http://127.0.0.1:19180/api';
           const biliParserMode = process.env.BILI_PARSER_MODE || 'local';
           const files = [
