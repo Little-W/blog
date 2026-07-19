@@ -159,11 +159,14 @@ function load_static_data(name) {
 // 流量由资料源直接发给
 // 浏览器，不经过博客的 Netlify Function。
 var MUSIC_HF_SOURCE_HOSTS = ['hf-cdn.sufy.com', 'aifasthub.com', 'hf-mirror.com', 'huggingface.co'];
+var music_hf_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
+var music_hf_probe_promise = null;
 var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
 var MUSIC_AUDIO_FILE_RE = /\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i;
 var MUSIC_COVER_FILE_RE = /\.(avif|bmp|gif|jpe?g|png|webp)$/i;
-var MUSIC_SOURCE_TIMEOUT_MS = 12 * 1000;
-var MUSIC_SOURCE_RETRIES_PER_MIRROR = 2;
+var MUSIC_SOURCE_TIMEOUT_MS = 5 * 1000;
+var MUSIC_SOURCE_RETRIES_PER_MIRROR = 1;
+var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 3500;
 var MUSIC_COVER_TIMEOUT_MS = 12 * 1000;
 
 function music_hf_dataset_path(value, filePattern) {
@@ -193,11 +196,70 @@ function music_hf_cover_path(value) {
 
 function music_hf_urls(path, download) {
   if (!path) return null;
-  return MUSIC_HF_SOURCE_HOSTS.map(function(host) {
+  return music_hf_host_priority.map(function(host) {
     var url = new URL('https://' + host + path.pathname + path.search);
     if (download) url.searchParams.set('download', 'true');
     return url.toString();
   });
+}
+
+function music_hf_url_host(url) {
+  try { return new URL(url).hostname.toLowerCase(); } catch (error) { return ''; }
+}
+
+function prioritise_music_hf_urls(urls) {
+  return (Array.isArray(urls) ? urls : []).slice().sort(function(left, right) {
+    var leftIndex = music_hf_host_priority.indexOf(music_hf_url_host(left));
+    var rightIndex = music_hf_host_priority.indexOf(music_hf_url_host(right));
+    return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+      (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+  });
+}
+
+function prime_music_hf_mirrors(sampleSource) {
+  if (music_hf_probe_promise) return music_hf_probe_promise;
+  var samplePath = music_hf_source_path(sampleSource);
+  var candidates = music_hf_urls(samplePath, false);
+  if (!candidates || !candidates.length || typeof window.fetch !== 'function') return Promise.resolve();
+
+  // no-cors HEAD 不读取跨域响应内容，只测量连接、重定向与首个响应的耗时；四个
+  // 请求同时启动，不会下载整首音乐。测试使用曲库中真实存在的音频路径，因此
+  // 能反映当前网络到实际媒体节点的可达性。
+  var probes = candidates.map(function(url) {
+    var controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+    var startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    var timeoutId = controller ? window.setTimeout(function() { controller.abort(); }, MUSIC_SOURCE_PROBE_TIMEOUT_MS) : 0;
+    var options = {
+      method: 'HEAD',
+      mode: 'no-cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'follow',
+    };
+    if (controller) options.signal = controller.signal;
+    return window.fetch(url, options).then(function() {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      return {host: music_hf_url_host(url), elapsed: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt};
+    }, function() {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      return null;
+    });
+  });
+
+  music_hf_probe_promise = Promise.all(probes).then(function(results) {
+    var reachable = results.filter(Boolean).sort(function(left, right) { return left.elapsed - right.elapsed; });
+    if (reachable.length) {
+      var nextPriority = reachable.map(function(result) { return result.host; });
+      MUSIC_HF_SOURCE_HOSTS.forEach(function(host) {
+        if (nextPriority.indexOf(host) === -1) nextPriority.push(host);
+      });
+      music_hf_host_priority = nextPriority;
+    }
+    return music_hf_host_priority.slice();
+  }).catch(function() {
+    return music_hf_host_priority.slice();
+  });
+  return music_hf_probe_promise;
 }
 
 function music_source_urls(value, download) {
@@ -235,15 +297,15 @@ function apply_music_source_urls(library) {
 function music_source_candidates(song) {
   if (!song) return [];
   if (Array.isArray(song.source_candidates) && song.source_candidates.length) {
-    return song.source_candidates.slice();
+    return prioritise_music_hf_urls(song.source_candidates);
   }
   return music_source_urls(song.source_url || song.url, false) || [];
 }
 
 function music_cover_candidates(song) {
   if (!song) return [];
-  if (Array.isArray(song.cover_candidates) && song.cover_candidates.length) return song.cover_candidates.slice();
-  if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return song.pic_candidates.slice();
+  if (Array.isArray(song.cover_candidates) && song.cover_candidates.length) return prioritise_music_hf_urls(song.cover_candidates);
+  if (Array.isArray(song.pic_candidates) && song.pic_candidates.length) return prioritise_music_hf_urls(song.pic_candidates);
   var source = song.cover_source || song.pic_source || song.cover || song.pic;
   return music_cover_urls(source) || (source ? [source] : []);
 }
@@ -355,14 +417,18 @@ function install_music_source_fallback(player) {
     if (!song || !candidates.length || sourceIndex >= candidates.length) return false;
 
     var retries = Number(song.__musicSourceRetries) || 0;
-    if (retries < MUSIC_SOURCE_RETRIES_PER_MIRROR) {
-      song.__musicSourceRetries = retries + 1;
-      player.notice(reason === 'timeout' ? '音乐源响应超时，正在重试…' : '音乐源暂时不可用，正在重试…', 2200);
-    } else if (sourceIndex + 1 < candidates.length) {
+    // 已在进入音乐页时并发测速并动态排列镜像。发生错误时先立即跳到下一个
+    // 已测速来源，不再对同一故障来源连续等待两次；全部来源都试过后才重试。
+    if (sourceIndex + 1 < candidates.length) {
       sourceIndex += 1;
       song.__musicSourceIndex = sourceIndex;
       song.__musicSourceRetries = 0;
-      player.notice('正在切换备用音乐源…', 2200);
+      player.notice(reason === 'timeout' ? '音乐源响应较慢，正在切换最快备用源…' : '音乐源不可用，正在切换备用源…', 2200);
+    } else if (retries < MUSIC_SOURCE_RETRIES_PER_MIRROR) {
+      sourceIndex = 0;
+      song.__musicSourceIndex = sourceIndex;
+      song.__musicSourceRetries = retries + 1;
+      player.notice('正在重新测试音乐源…', 2200);
     } else {
       return false;
     }
@@ -460,6 +526,10 @@ function ensure_music_quality(nextQuality) {
   var dataName = normalizedQuality === 1 ? 'music_sq' : 'music_hq';
   music_quality_promises[normalizedQuality] = load_static_data(dataName).then(function(records) {
     var library = records.sort(objectSort('mid'));
+    var hfSample = library.find(function(song) {
+      return song && music_hf_source_path(song.url);
+    });
+    if (hfSample) prime_music_hf_mirrors(hfSample.url);
     apply_music_tag_overrides(library);
     apply_music_source_urls(library);
     if (normalizedQuality === 0) music_all_hq = library;
