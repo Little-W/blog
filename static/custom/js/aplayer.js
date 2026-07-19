@@ -67,7 +67,7 @@ var target_x_list = new Array();
 var current_page = 0;
 var is_mobile = false;
 var subdiv;
-var rendered_playlist_columns = 0;
+var rendered_playlist_width = 0;
 var music_list_display_limit = parseInt(localStorage.getItem('music-list-display-limit') || '12', 10);
 
 function apply_music_list_display_limit(value) {
@@ -2607,12 +2607,6 @@ function load_music_lists()
 }
 
 /* Render the original playlist controls from local exported tags. */
-function playlist_columns_for_viewport() {
-  if (window.matchMedia('(max-width: 520px)').matches) return 3;
-  if (window.matchMedia('(max-width: 760px)').matches) return 4;
-  return 5;
-}
-
 load_music_lists = function() {
   var div = document.getElementById('aplayer_list');
   if (!div) return;
@@ -2623,8 +2617,6 @@ load_music_lists = function() {
   div.innerHTML = '';
   subdiv = document.createElement('div');
   subdiv.setAttribute('id', 'aplayer_list_sub');
-  rendered_playlist_columns = playlist_columns_for_viewport();
-  var tagsPerGroup = rendered_playlist_columns * 3;
 
   function createTagButton(tag) {
     list_count = Math.max(list_count, tag.tag_id);
@@ -2636,27 +2628,60 @@ load_music_lists = function() {
     return button;
   }
 
-  // 每个横向分页组都固定为三行。沿用旧版的紧凑填充方式：标签按内容宽度
-  // 连续排列，分页/滚动只移动完整的标签组，不会把一行标签切在中间。
-  for (var start = 0; start < music_tags.length; start += tagsPerGroup) {
+  function createTagGroup(className) {
     var group = document.createElement('div');
-    group.setAttribute('class', 'playlist-tag-group');
-    var groupTags = music_tags.slice(start, start + tagsPerGroup);
-    var baseCount = Math.floor(groupTags.length / 3);
-    var extraCount = groupTags.length % 3;
-    var tagIndex = 0;
+    group.setAttribute('class', 'playlist-tag-group' + (className ? ' ' + className : ''));
     for (var rowIndex = 0; rowIndex < 3; rowIndex += 1) {
       var row = document.createElement('div');
       row.setAttribute('class', 'playlist-tag-row');
-      var rowSize = baseCount + (rowIndex < extraCount ? 1 : 0);
-      for (var index = 0; index < rowSize; index += 1) {
-        row.appendChild(createTagButton(groupTags[tagIndex++]));
-      }
       group.appendChild(row);
     }
+    return group;
+  }
+
+  // 先挂载容器再量取可用宽度。标签不再按固定的 5 列硬分组，而是按它们的
+  // 实际文字宽度连续填满三行；这样宽标签完整可见，短标签也不会留下大片空白。
+  div.appendChild(subdiv);
+  var measurementGroup = createTagGroup('playlist-tag-group--measure');
+  subdiv.appendChild(measurementGroup);
+  var measurementRow = measurementGroup.firstElementChild;
+  var tagWidths = music_tags.map(function(tag) {
+    var button = createTagButton(tag);
+    measurementRow.appendChild(button);
+    var width = Math.ceil(button.getBoundingClientRect().width);
+    button.remove();
+    return width;
+  });
+  measurementGroup.remove();
+
+  var availableWidth = Math.max(1, Math.floor(subdiv.clientWidth));
+  rendered_playlist_width = availableWidth;
+  var rowGap = 9;
+  var group;
+  var rows;
+  var rowWidths;
+  var rowIndex;
+  function startTagGroup() {
+    group = createTagGroup();
+    rows = Array.prototype.slice.call(group.children);
+    rowWidths = [0, 0, 0];
+    rowIndex = 0;
     subdiv.appendChild(group);
   }
-  div.appendChild(subdiv);
+
+  startTagGroup();
+  music_tags.forEach(function(tag, index) {
+    var tagWidth = tagWidths[index];
+    // 当前行只在已经有标签时才换行，单个很长的名称仍然保持完整显示。
+    if (rows[rowIndex].children.length && rowWidths[rowIndex] + rowGap + tagWidth > availableWidth) {
+      rowIndex += 1;
+    }
+    if (rowIndex >= rows.length) {
+      startTagGroup();
+    }
+    rows[rowIndex].appendChild(createTagButton(tag));
+    rowWidths[rowIndex] += (rowWidths[rowIndex] ? rowGap : 0) + tagWidth;
+  });
   var initialTag = music_tags.find(function(tag) { return tag.tag_id === current_list; });
   var playlistName = document.getElementById('current_playlist_name');
   if (initialTag && playlistName) playlistName.innerText = initialTag.tag_name;
@@ -2726,8 +2751,8 @@ load_music_lists = function() {
 $(window).resize(function() {
   if(page_loaded)
   {
-    // 仅在跨越响应式列数阈值时重建横向组，保持每一页始终是完整三行。
-    if (rendered_playlist_columns !== playlist_columns_for_viewport()) {
+    // 容器宽度变化后重新按真实文字宽度填充，避免在桌面宽屏留下稀疏空行。
+    if (subdiv && Math.abs(rendered_playlist_width - Math.floor(subdiv.clientWidth)) > 1) {
       load_music_lists();
       return;
     }
