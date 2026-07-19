@@ -89,6 +89,11 @@ const config = {
           position: 'left',
           to: 'music',
         },
+        {
+          label: '显示设置',
+          position: 'left',
+          to: 'settings',
+        },
 
       ],
     },
@@ -227,6 +232,31 @@ const config = {
   ],
   // themes: ['@docusaurus/theme-live-codeblock'],
   plugins: [
+    function nativeSiteAssetsPlugin() {
+      return {
+        name: 'native-site-assets',
+        injectHtmlTags() {
+          // 默认继续走本机解析器；Cloudflare Worker 一体化部署时由构建环境
+          // 覆盖为 /api 和 cloudflare，使静态页面不会暴露管理员令牌。
+          const biliParserApi = process.env.BILI_PARSER_API || 'http://127.0.0.1:19180/api';
+          const biliParserMode = process.env.BILI_PARSER_MODE || 'local';
+          const files = [
+            'theme-transition.js', 'jquery.min.js', 'jsrender.min.js', 'video.min.js',
+            'videojs-qualityselector.min.js', 'aplayer.js', 'animate.js',
+          ];
+          return {
+            postBodyTags: [
+              {
+                tagName: 'script',
+                innerHTML: `window.MY_WEBSITE_BILI_PARSER_API=${JSON.stringify(biliParserApi)};window.MY_WEBSITE_BILI_PARSER_MODE=${JSON.stringify(biliParserMode)};`,
+              },
+            ].concat(files.map((src) => ({tagName: 'script', attributes: {src: `/custom/js/${src}`}}))).concat([
+              {tagName: 'script', attributes: {src: '/custom/js/effects-manager.js'}},
+            ]),
+          };
+        },
+      };
+    },
     'docusaurus-plugin-image-zoom',
     'docusaurus-plugin-sass',
     path.resolve(__dirname, './src/plugin/plugin-baidu-tongji'),
@@ -273,7 +303,9 @@ const config = {
       },
     ],
   ],
-  stylesheets: [],
+  stylesheets: [
+    { href: '/custom/css/custom.css' },
+  ],
   i18n: {
     defaultLocale: 'zh',
     locales: ['zh'],

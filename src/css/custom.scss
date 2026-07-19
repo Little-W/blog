@@ -81,6 +81,47 @@ html {
   color: hsl(214deg 37% 25%);
 }
 
+/* Keep legacy player decorations from widening the Docusaurus layout on phones. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+img,
+video,
+iframe {
+  max-width: 100%;
+}
+
+@media (max-width: 996px) {
+  .container {
+    max-width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .main-wrapper,
+  .theme-doc-markdown,
+  .markdown {
+    min-width: 0;
+  }
+
+  #aplayer,
+  #aplayer0,
+  #aplayer_list_parent,
+  #aplayer_list-current-list,
+  #aplayer_list_active,
+  #mv_player_div {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .aplayer {
+    max-width: 100%;
+  }
+}
+
 html :is(h1, h2, h3, h4, h5, h6) {
   --ifm-heading-color: hsl(214deg 78% 17%);
 }

@@ -1,111 +1,113 @@
-import React from "react";
+import React from 'react';
+import {PageMetadata} from '@docusaurus/theme-common';
+import Layout from '@theme/Layout';
+import './music.css';
 
-import { PageMetadata } from "@docusaurus/theme-common";
-import Layout from "@theme/Layout";
-import Admonition from '@theme/Admonition';
+const MusicIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h6V3h-8Z"/></svg>;
+const SearchIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="m21 21-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>;
+const GridIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 3h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm10 0h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1ZM4 13h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Zm10 0h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z"/></svg>;
+const ListIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5ZM4 11h2v2H4v-2Zm4 0h12v2H8v-2ZM4 17h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>;
 
-function Page() {
-	return (
-		<div>
-			<h1>音乐</h1>
-				<Admonition type="info">
-					<p>本站音乐为本人自购或来自互联网。</p>
-				</Admonition>
-					
-			<p>
-			　　于我而言，音乐是永远的避风港。戴上耳机，就能抛开周遭的嘈杂，进入一个只有自己的小世界。屏幕前的你又喜欢什么样的音乐呢？
-			</p>
-			<h4>　　以下是我个人收藏的音乐，以 ACG 为主，希望你也能喜欢～ </h4>
-			<div className="markdown" style={{ marginBottom: "15px" }}>
-				<h2>歌单切换</h2>
-			</div>
-			<div id="aplayer_list_parent">
-				<div id="aplayer_list"></div>
-			</div>
-			<div className="markdown" style={{ marginBottom: "15px" }}>
-				<h2>自定义播放列表</h2>
-			</div>
-			{" "}
-			<Admonition type="tip">
-					<p>
-						播放列表内歌曲的顺序为选择歌曲时的顺序。关于搜索：要回到进行搜索之前的歌单，可以手动清空搜索框，或者按
-						Delete 键清空搜索框，然后点击其他位置。
-					</p>
-			</Admonition>
-			<div id="aplayer_list-current-list">
-				<button id="ap_list0" className="sytle-button-current-list">
-					&lt;当前播放列表&gt;
-				</button>
-			</div>
-			<div id="ap_list_button">
-				<div id="ap_list_button_sub">
-					<button id="ap_list_remove">清空播放列表</button>
-					<button id="ap_list_select_all">全选</button>
-					<button id="ap_list_random_select">随机选几首</button>
-				</div>
-			</div>
-			<div id="aplayer_list_active"></div>
-			<div className="markdown" style={{ marginBottom: "15px" }}>
-				<h2>音乐播放器</h2>
-			</div>
-			{" "}
-			<Admonition type="info">
-					<p>
-						音质默认为 HQ，即 320K 的
-						MP3，因为使用无损音质时播放的流畅度受网络环境影响很大。歌曲文件未加载完全时无法调节进度条，无损音质下大概率无法调节进度条。
-						播放器使用
-						<a
-							href="https://github.com/DIYgod/APlayer"
-							target="_blank"
-							rel="noopener noreferrer"
-						>
-							APlayer
-						</a>
-						，本页的播放器在播放中切换到别的页面时，需要通过
-						<font color="#dd0000">播放左下角迷你播放器里面的音乐</font>来暂停。
-					</p>
-			</Admonition>
-			<div id="aplayer_ctr">
-				<div id="aplayer_qua">
-					<button id="ap_qua1" className="sytle-qua-button">
-						SQ & Hires
-					</button>
-					<button id="ap_qua2" className="sytle-qua-button">
-						HQ
-					</button>
-				</div>
-			</div>
-			<div id="aplayer0">
-				<div id="aplayer0-button">
-					<button id="ap_load" className="sytle-ap-button">
-						点击加载播放器
-					</button>
-				</div>
-			</div>
-			<div className="markdown" style={{ marginBottom: "15px" }}>
-				<h2>MV</h2>
-			</div>
-			<div id="mv_player_div" style={{ marginBottom: "50px" }}></div>
-		</div>
-	);
+function Page(): JSX.Element {
+  return <div className="music-page">
+    <header className="music-hero">
+      <div className="music-hero__art"><MusicIcon /><span className="music-hero__pulse" /></div>
+      <div className="music-hero__copy">
+        <span className="music-eyebrow">PERSONAL MUSIC LIBRARY</span>
+        <h1>音乐收藏</h1>
+        <p>戴上耳机，从嘈杂中暂时抽离。这里收藏了我喜欢的 ACG、日语、纯音乐与更多声音。</p>
+        <div className="music-hero__meta">
+          <span><b id="music-library-count">—</b> 首曲目</span><i />
+          <span>HQ / SQ / Hi-Res</span>
+        </div>
+      </div>
+    </header>
+
+    <div className="music-notice"><span>i</span><p>本站音乐为本人自购或来自互联网，仅供个人欣赏。</p></div>
+
+    <section className="music-section music-playlists">
+      <div className="music-section__heading">
+        <div><span className="music-eyebrow">YOUR MOODS</span><h2>选择歌单</h2></div>
+        <p>使用两侧按钮浏览分类</p>
+      </div>
+      <div id="aplayer_list_parent"><div id="aplayer_list" /></div>
+    </section>
+
+    <section className="music-section music-library">
+      <div className="music-section__heading music-library__heading">
+        <div><span className="music-eyebrow">TRACKS</span><h2 id="current_playlist_name">默认歌单</h2></div>
+        <span className="music-result-count"><b id="music-list-result-count">—</b> 首</span>
+      </div>
+
+      <div className="music-library__toolbar">
+        <button id="ap_list0" className="sytle-button-current-list"><span>✓</span> 当前播放列表</button>
+        <div id="ap_list_button"><div id="ap_list_button_sub">
+          <button id="ap_list_remove">清空</button>
+          <button id="ap_list_select_all">全选</button>
+          <button id="ap_list_random_select">随机选几首</button>
+          <label id="ap_list_display_limit_label" htmlFor="ap_list_display_limit">显示上限
+            <select id="ap_list_display_limit" defaultValue="12">
+              <option value="8">8 项</option><option value="12">12 项</option><option value="20">20 项</option><option value="30">30 项</option><option value="0">全部</option>
+            </select>
+          </label>
+        </div></div>
+      </div>
+
+      <div className="music-track-head"><span>#</span><span>歌曲</span><span>加入播放列表</span></div>
+      <div id="aplayer_list_active" />
+      <p className="music-library__hint">可通过上方设置调整列表显示高度；点击曲目即可加入或移出播放列表。</p>
+    </section>
+
+    <section className="music-section music-player-section">
+      <div className="music-section__heading">
+        <div><span className="music-eyebrow">NOW PLAYING</span><h2>音乐播放器</h2></div>
+        <div id="aplayer_qua" className="music-quality-switch">
+          <button id="ap_qua1" className="sytle-qua-button">SQ &amp; Hi-Res</button>
+          <button id="ap_qua2" className="sytle-qua-button">HQ</button>
+        </div>
+      </div>
+      <div className="music-player-note"><MusicIcon /><p>默认使用 HQ 以获得更流畅的体验。切换至 SQ / Hi-Res 后，播放和拖动进度可能更依赖网络状况。</p></div>
+      <div id="aplayer_ctr" />
+      <div id="aplayer0"><div id="aplayer0-button"><button id="ap_load" className="sytle-ap-button">点击加载播放器</button></div></div>
+    </section>
+
+    <section className="music-section music-mv-section">
+      <div className="music-section__heading">
+        <div><span className="music-eyebrow">PROJECT SEKAI VIDEO LIBRARY</span><h2>プロセカ MV</h2></div>
+        <p>按组合筛选，选择想看的歌</p>
+      </div>
+
+      <div className="mv-source-banner">
+        <div className="mv-source-banner__mark">B</div>
+        <div className="mv-source-banner__copy">
+          <strong>MV 视频来源</strong>
+          <span>视频来自 B 站 UP 主「Project_SEKAI资讯站」</span>
+        </div>
+      </div>
+
+      <div id="mv-player-stage" className="mv-player-stage" hidden />
+
+      <div className="mv-toolbar">
+        <label className="mv-search" htmlFor="mv-search-input">
+          <SearchIcon />
+          <input id="mv-search-input" type="search" placeholder="搜索歌名或组合" autoComplete="off" />
+        </label>
+        <div className="mv-view-switch" role="group" aria-label="MV 显示方式">
+          <button id="mv-view-grid" type="button" aria-label="卡片视图" aria-pressed="true"><GridIcon /></button>
+          <button id="mv-view-list" type="button" aria-label="列表视图" aria-pressed="false"><ListIcon /></button>
+        </div>
+      </div>
+
+      <div id="mv-group-filters" className="mv-group-filters" aria-label="按组合筛选" />
+      <div className="mv-result-bar">
+        <span><b id="mv-result-count">—</b> 部视频</span>
+        <span id="mv-current-filter">全部组合</span>
+      </div>
+      <div id="mv_player_div" />
+    </section>
+  </div>;
 }
 
-export default function music() {
-	const title = "音乐";
-	const description = "Yusenの音乐库";
-
-	return (
-		<>
-			<PageMetadata title={title} description={description} />
-			<Layout>
-				<div className="container margin-top--md">
-					<div>
-						<main className="col col--11" style={{ display : "flex"}}>
-							<Page />
-						</main>
-					</div>
-				</div>
-			</Layout>
-		</>
-	);
+export default function Music(): JSX.Element {
+  return <><PageMetadata title="音乐" description="Yusenの音乐库" /><Layout><main className="container margin-vert--lg"><Page /></main></Layout></>;
 }
