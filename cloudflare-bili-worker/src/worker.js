@@ -280,15 +280,15 @@ async function resolveVideo(request, env, url) {
   const pageInfo = view?.pages?.[page - 1];
   if (!pageInfo?.cid) return error('该视频没有指定的分 P。', 'PAGE_NOT_FOUND', 404, corsHeaders(request, env));
   const playURL = new URL(`${BILI_API}/x/player/playurl`);
+  // 对齐 bilidown：由已登录帐号的权限决定可请求的最高档位，而不是固定
+  // qn=127。后者在部分大会员会话中会被 B 站降为 1080P，导致 1080P60/2K/4K
+  // 轨道没有出现在 DASH 返回值中。
   playURL.search = new URLSearchParams({
     bvid,
     cid: String(pageInfo.cid),
-    qn: '127',
     fnval: '4048',
     fnver: '0',
-    fourk: '1',
-    high_quality: '1',
-    platform: 'html5'
+    fourk: '1'
   }).toString();
   const playInfo = await biliJSON(playURL, session);
   const audio = selectAudio(playInfo?.dash?.audio || []);

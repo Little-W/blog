@@ -1054,6 +1054,7 @@ function init_custom_list_mv() {
   var listButton = document.getElementById("mv-view-list");
   var resultCount = document.getElementById("mv-result-count");
   var currentFilterLabel = document.getElementById("mv-current-filter");
+  var sourceBiliLink = document.getElementById("mv-source-bili-link");
   if (!listDiv) return;
 
   if (mv_player && typeof mv_player.dispose === "function") {
@@ -1183,6 +1184,10 @@ function init_custom_list_mv() {
 
   function renderMv(item, card) {
     if (!item.bilibili_bvid) return;
+    if (sourceBiliLink) {
+      sourceBiliLink.href = "https://www.bilibili.com/video/" + encodeURIComponent(item.bilibili_bvid) + (Number(item.bilibili_page || 1) > 1 ? "?p=" + encodeURIComponent(item.bilibili_page) : "");
+      sourceBiliLink.setAttribute("aria-label", "跳转到 B 站播放 " + item.title);
+    }
     activeMvCleanup();
     activeMvCleanup = function() {};
     if (mv_player && typeof mv_player.dispose === "function") {
@@ -1223,23 +1228,6 @@ function init_custom_list_mv() {
     copy.setAttribute("class", "mv-player-copy");
     var title = document.createElement("h3");
     title.innerText = item.title;
-    var sourcePanel = document.createElement("aside");
-    sourcePanel.setAttribute("class", "mv-player-source-panel");
-    var sourceLabel = document.createElement("span");
-    sourceLabel.setAttribute("class", "mv-player-source-panel__label");
-    sourceLabel.innerText = "MV 视频来源";
-    var sourceMeta = document.createElement("p");
-    sourceMeta.setAttribute("class", "mv-player-source");
-    sourceMeta.innerText = "视频来自 B 站 UP 主「加载中」";
-    var biliLink = document.createElement("a");
-    biliLink.setAttribute("class", "mv-player-bili-link");
-    biliLink.href = "https://www.bilibili.com/video/" + encodeURIComponent(item.bilibili_bvid) + (Number(item.bilibili_page || 1) > 1 ? "?p=" + encodeURIComponent(item.bilibili_page) : "");
-    biliLink.target = "_blank";
-    biliLink.rel = "noopener noreferrer";
-    biliLink.setAttribute("aria-label", "跳转到 B 站播放 " + item.title);
-    biliLink.innerText = "跳转到 B 站";
-    var sourceBody = document.createElement("div");
-    sourceBody.setAttribute("class", "mv-player-source-panel__body");
     var playerTags = document.createElement("div");
     playerTags.setAttribute("class", "mv-card-tags");
     addTags(playerTags, item);
@@ -1250,12 +1238,7 @@ function init_custom_list_mv() {
       copy.appendChild(author);
     }
     copy.appendChild(playerTags);
-    sourcePanel.appendChild(sourceLabel);
-    sourceBody.appendChild(sourceMeta);
-    sourceBody.appendChild(biliLink);
-    sourcePanel.appendChild(sourceBody);
     info.appendChild(copy);
-    info.appendChild(sourcePanel);
     shell.appendChild(info);
     playerStage.appendChild(shell);
 
@@ -1499,8 +1482,6 @@ function init_custom_list_mv() {
     function startVideo(resolved) {
       if (destroyed) return;
       activeResolved = resolved;
-      var ownerName = String(resolved?.owner?.name || "").trim();
-      sourceMeta.innerText = ownerName ? "视频来自 B 站 UP 主「" + ownerName + "」" : "视频来自 B 站";
       qualityOptions = resolved.sources.map(function(source) {
         return { code: source.code, label: source.label, qn: source.qn, url: source.url, manifest: source.manifest, candidates: source.candidates || {}, type: source.type || "video/mp4", resolution: source.resolution || "", fastProgressive: Boolean(source.fastProgressive) };
       });

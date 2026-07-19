@@ -83,6 +83,7 @@ function Page(): JSX.Element {
           <strong>MV 视频来源</strong>
           <span>视频来自 B 站 UP 主「Project_SEKAI资讯站」</span>
         </div>
+        <a id="mv-source-bili-link" className="mv-source-banner__link" href="https://space.bilibili.com/13148307/lists/1547037?type=season" target="_blank" rel="noopener noreferrer">跳转到 B 站</a>
       </div>
 
       <div id="mv-player-stage" className="mv-player-stage" hidden />
