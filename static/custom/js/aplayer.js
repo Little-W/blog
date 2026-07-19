@@ -2173,8 +2173,8 @@ function aplayer0() {
     order: read_player_settings().music.order,
     preload: "none",
     volume: read_player_settings().music.volume,
-    listFolded: false,
-    listMaxHeight: "300px",
+    listFolded: true,
+    listMaxHeight: "260px",
     lrcType: 3,
     audio: ap0_list,
   });
@@ -2233,14 +2233,15 @@ function aplayer0() {
     pause_or_paly_div.appendChild(childSVG);
   });
   var aplayer_ctr_div = document.getElementById("aplayer_ctr");
+  if (!aplayer_ctr_div) return;
+  aplayer_ctr_div.innerHTML = "";
   var ctr_panel = document.createElement("div");
   ctr_panel.setAttribute("id", "ctr_panel_div");
-  var last_song_parent = document.createElement("div");
-  last_song_parent.setAttribute("id", "last_song_parent_div");
-  last_song_parent.setAttribute("class", "song_ctr_button_parent");
-  var last_song = document.createElement("div");
+  var last_song = document.createElement("button");
+  last_song.setAttribute("type", "button");
   last_song.setAttribute("id", "last_song_div");
   last_song.setAttribute("class", "song_ctr_button");
+  last_song.setAttribute("aria-label", "上一首");
   var childSVG = _createSvg("svg", {
     version: "1.1",
     xmlns: "http://www.w3.org/2000/svg",
@@ -2258,12 +2259,11 @@ function aplayer0() {
   ctr_panel.appendChild(last_song);
   aplayer_ctr_div.appendChild(ctr_panel);
   
-  var pause_or_paly_parent = document.createElement("div");
-  pause_or_paly_parent.setAttribute("id", "pause_or_paly_parent_div");
-  pause_or_paly_parent.setAttribute("class", "song_ctr_button_parent");
-  var pause_or_paly = document.createElement("div");
+  var pause_or_paly = document.createElement("button");
+  pause_or_paly.setAttribute("type", "button");
   pause_or_paly.setAttribute("id", "pause_or_paly_div");
   pause_or_paly.setAttribute("class", "song_ctr_button");
+  pause_or_paly.setAttribute("aria-label", "播放或暂停");
   childSVG = _createSvg("svg", {
     version: "1.1",
     xmlns: "http://www.w3.org/2000/svg",
@@ -2282,12 +2282,11 @@ function aplayer0() {
   ctr_panel.appendChild(pause_or_paly);
   aplayer_ctr_div.appendChild(ctr_panel);
 
-  var next_song_parent = document.createElement("div");
-  next_song_parent.setAttribute("id", "next_song_parent_div");
-  next_song_parent.setAttribute("class", "song_ctr_button_parent");
-  var next_song = document.createElement("div");
+  var next_song = document.createElement("button");
+  next_song.setAttribute("type", "button");
   next_song.setAttribute("id", "next_song_div");
   next_song.setAttribute("class", "song_ctr_button");
+  next_song.setAttribute("aria-label", "下一首");
   childSVG = _createSvg("svg", {
     version: "1.1",
     xmlns: "http://www.w3.org/2000/svg",
@@ -2301,9 +2300,50 @@ function aplayer0() {
   });
   childSVG.appendChild(path1);
   next_song.appendChild(childSVG);
- // next_song_parent.appendChild(next_song);
+  // next_song_parent.appendChild(next_song);
   ctr_panel.appendChild(next_song);
+
+  var queue_toggle = document.createElement("button");
+  queue_toggle.setAttribute("type", "button");
+  queue_toggle.setAttribute("id", "player_queue_toggle");
+  queue_toggle.setAttribute("class", "player-queue-toggle");
+  queue_toggle.setAttribute("aria-label", "显示播放队列");
+  queue_toggle.setAttribute("aria-pressed", "false");
+  var queue_icon = _createSvg("svg", {
+    version: "1.1",
+    xmlns: "http://www.w3.org/2000/svg",
+    width: "20",
+    height: "20",
+    viewBox: "0 0 24 24",
+    "aria-hidden": "true",
+  });
+  queue_icon.appendChild(_createSvg("path", {
+    fill: "currentColor",
+    d: "M4 6h12v2H4zm0 5h12v2H4zm0 5h8v2H4zm14-5 3 2.5-3 2.5z",
+  }));
+  queue_toggle.appendChild(queue_icon);
+  var queue_label = document.createElement("span");
+  queue_label.innerText = "播放队列";
+  queue_toggle.appendChild(queue_label);
+  queue_toggle.addEventListener("click", function() {
+    if (window.ap0 && window.ap0.list) window.ap0.list.toggle();
+  });
+  ctr_panel.appendChild(queue_toggle);
   aplayer_ctr_div.appendChild(ctr_panel);
+
+  function sync_queue_toggle() {
+    var is_open = window.ap0 && window.ap0.template && window.ap0.template.list &&
+      !window.ap0.template.list.classList.contains("aplayer-list-hide");
+    queue_toggle.setAttribute("aria-pressed", is_open ? "true" : "false");
+    queue_toggle.setAttribute("aria-label", is_open ? "收起播放队列" : "显示播放队列");
+    var shell = aplayer_ctr_div.closest(".music-player-shell");
+    if (shell) shell.classList.toggle("music-player-shell--queue-open", Boolean(is_open));
+  }
+  // APlayer 在触发 listshow/listhide 事件后才修改 class，延迟到下一帧读取
+  // 才能让辅助按钮与实际队列展开状态保持一致。
+  window.ap0.on("listshow", function() { window.setTimeout(sync_queue_toggle, 0); });
+  window.ap0.on("listhide", function() { window.setTimeout(sync_queue_toggle, 0); });
+  sync_queue_toggle();
 }
 
 

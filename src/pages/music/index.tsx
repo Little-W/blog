@@ -67,8 +67,11 @@ function Page(): JSX.Element {
         </div>
       </div>
       <div className="music-player-note"><MusicIcon /><p>默认使用 HQ 以获得更流畅的体验。切换至 SQ / Hi-Res 后，播放和拖动进度可能更依赖网络状况。</p></div>
-      <div id="aplayer_ctr" />
-      <div id="aplayer0"><div id="aplayer0-button"><button id="ap_load" className="sytle-ap-button">点击加载播放器</button></div></div>
+      <div className="music-player-shell">
+        <div className="music-player-shell__glow" aria-hidden="true" />
+        <div id="aplayer0"><div id="aplayer0-button"><button id="ap_load" className="sytle-ap-button">正在准备播放器</button></div></div>
+        <div id="aplayer_ctr" aria-label="播放控制" />
+      </div>
     </section>
 
     <section className="music-section music-mv-section">
