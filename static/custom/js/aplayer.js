@@ -3369,13 +3369,9 @@ function set_player_cover(player, audio) {
     return;
   }
 
-  // 切歌时先将优先镜像写入播放器背景。浏览器会立刻开始取图，界面不会继续
-  // 显示上一首封面；预读流程只负责确认该来源是否可用，以及失败后的备用源。
-  var initialCover = normalize_player_cover_source(candidates[0]);
-  if (initialCover) show_player_cover(picture, initialCover.cssSource, initialCover.resolvedSource, requestId, false);
-
   // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
-  // 没有响应时会继续尝试下一镜像。
+  // 没有响应时会继续尝试下一镜像。预读完成以前保留旧图，不能提前把未解码的
+  // background-image 写入容器，否则会露出蓝色占位底色。
   load_music_cover(candidates, function(source) {
     if (picture.dataset.coverRequest === requestId) {
       var resolvedCover = normalize_player_cover_source(source);
