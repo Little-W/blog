@@ -12,5 +12,5 @@ sidebar_position: 1
 - CRC、汉明码与游程编码的定位和适用范围；
 - 将卷积转换为 GEMM 时的 im2col 数据布局与整数编码注意事项。
 - RISC-V 的整数 ABI、CSR 与 trap 处理；
-- RISC-V Vector（RVV）的 `vl` 配置与分段处理；
+- RISC-V Zve32x 嵌入式整数向量扩展；
 - RISC-V F 单精度浮点扩展。
