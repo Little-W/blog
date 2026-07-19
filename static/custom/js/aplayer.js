@@ -1223,21 +1223,35 @@ function init_custom_list_mv() {
     copy.setAttribute("class", "mv-player-copy");
     var title = document.createElement("h3");
     title.innerText = item.title;
+    var sourcePanel = document.createElement("aside");
+    sourcePanel.setAttribute("class", "mv-player-source-panel");
+    var sourceLabel = document.createElement("span");
+    sourceLabel.setAttribute("class", "mv-player-source-panel__label");
+    sourceLabel.innerText = "MV 视频来源";
     var sourceMeta = document.createElement("p");
     sourceMeta.setAttribute("class", "mv-player-source");
-    sourceMeta.innerText = "视频来源：哔哩哔哩 · UP主：加载中";
+    sourceMeta.innerText = "哔哩哔哩 · UP主：加载中";
+    var biliLink = document.createElement("a");
+    biliLink.setAttribute("class", "mv-player-bili-link");
+    biliLink.href = "https://www.bilibili.com/video/" + encodeURIComponent(item.bilibili_bvid) + (Number(item.bilibili_page || 1) > 1 ? "?p=" + encodeURIComponent(item.bilibili_page) : "");
+    biliLink.target = "_blank";
+    biliLink.rel = "noopener noreferrer";
+    biliLink.innerText = "在 B 站打开";
     var playerTags = document.createElement("div");
     playerTags.setAttribute("class", "mv-card-tags");
     addTags(playerTags, item);
     copy.appendChild(title);
-    copy.appendChild(sourceMeta);
     if (item.author) {
       var author = document.createElement("p");
       author.innerText = item.author;
       copy.appendChild(author);
     }
     copy.appendChild(playerTags);
+    sourcePanel.appendChild(sourceLabel);
+    sourcePanel.appendChild(sourceMeta);
+    sourcePanel.appendChild(biliLink);
     info.appendChild(copy);
+    info.appendChild(sourcePanel);
     shell.appendChild(info);
     playerStage.appendChild(shell);
 
@@ -1247,7 +1261,6 @@ function init_custom_list_mv() {
     var qualitySources = [];
     var activeResolved = null;
     var activePlaybackSource = null;
-    var fastSwitchToken = 0;
     var destroyed = false;
     activeMvCleanup = function() {
       destroyed = true;
@@ -1340,6 +1353,25 @@ function init_custom_list_mv() {
       return entry.promise;
     }
 
+    function directDashSource(option, dashSource) {
+      if (!dashSource) return null;
+      // 直连 DASH 已由解析服务按国内可用节点排序。它能同时提供视频、音频和完整
+      // 的来源画质；BiliAnalysis 的渐进式 MP4 仅在直连失败时再启用。
+      return {
+        format: dashSource.format,
+        src: dashSource.src,
+        fallbackSrc: dashSource.fallbackSrc,
+        type: dashSource.type,
+        biliAnalysisOption: usesBiliAnalysisFastPath(option) ? option : null,
+        triedBiliAnalysis: false
+      };
+    }
+
+    function originalDashFallback(source) {
+      if (!source?.fallbackSrc) return null;
+      return { format: source.format, src: source.fallbackSrc, type: source.type };
+    }
+
     function setVideoJsSource(source) {
       if (!source || !mv_player) return;
       activePlaybackSource = source;
@@ -1356,21 +1388,8 @@ function init_custom_list_mv() {
 
     function switchVideoJsQuality(nextQuality) {
       var fallbackSource = dashSourceFor(nextQuality);
-      var switchToken = ++fastSwitchToken;
       if (!fallbackSource || !mv_player) return;
-      if (!usesBiliAnalysisFastPath(nextQuality)) {
-        setVideoJsSource(fallbackSource);
-        return;
-      }
-      fastSourceFor(nextQuality).then(function(source) {
-        if (!destroyed && switchToken === fastSwitchToken && selectedQuality === nextQuality) {
-          source.recoverySource = fallbackSource;
-          setVideoJsSource(source);
-        }
-      }).catch(function() {
-        // 部分视频的低画质会被 B 站拆成多段，保留 DASH 回退以确保仍可播放。
-        if (!destroyed && switchToken === fastSwitchToken && selectedQuality === nextQuality) setVideoJsSource(fallbackSource);
-      });
+      setVideoJsSource(directDashSource(nextQuality, fallbackSource));
     }
 
     function createVideoPlayer(initialSource) {
@@ -1408,8 +1427,10 @@ function init_custom_list_mv() {
       mv_player.on("volumechange", function() {
         update_player_settings('mv', { volume: mv_player.volume() });
       });
-      applyPlayerTheme(savedTheme);
-      if (typeof mv_player.qualityselector === "function") {
+      var qualitySelectorReady = false;
+      function setupQualitySelector() {
+        if (qualitySelectorReady || typeof mv_player?.qualityselector !== "function") return;
+        qualitySelectorReady = true;
         mv_player.qualityselector({
           text: selectedQuality.label,
           sources: qualitySources,
@@ -1431,8 +1452,28 @@ function init_custom_list_mv() {
           }
         });
       }
+      // qualityselector 初始化时会主动重设一次 source。等待首个 DASH 元数据进入
+      // MediaSource 后再挂载，避免与首次加载并发取消首段 Range 请求而一直卡在 0:00。
+      mv_player.one("loadedmetadata", setupQualitySelector);
+      applyPlayerTheme(savedTheme);
       mv_player.on("error", function() {
         var failedSource = activePlaybackSource;
+        if (failedSource?.biliAnalysisOption && !failedSource.triedBiliAnalysis) {
+          // 仅在优先的 DASH 源报错后请求 BiliAnalysis；避免初始播放额外等待一次
+          // 渐进式直链解析，也避免低画质直链失败拖慢正常的 DASH 播放。
+          failedSource.triedBiliAnalysis = true;
+          var dashFallback = originalDashFallback(failedSource);
+          fastSourceFor(failedSource.biliAnalysisOption).then(function(source) {
+            if (destroyed || activePlaybackSource !== failedSource) return;
+            source.recoverySource = dashFallback;
+            setVideoJsSource(source);
+          }).catch(function() {
+            if (destroyed || activePlaybackSource !== failedSource) return;
+            if (dashFallback) setVideoJsSource(dashFallback);
+            else setPlaceholder("视频暂不可播放", "当前画质暂不可用，请切换其他画质后重试。");
+          });
+          return;
+        }
         if (failedSource?.recoverySource) {
           // 快速 MP4 的预检与真实播放之间仍可能出现短时失效；此时先恢复同画质
           // 的国内 DASH 源，再由其自身处理原始 B 站节点的回退。
@@ -1453,7 +1494,7 @@ function init_custom_list_mv() {
       if (destroyed) return;
       activeResolved = resolved;
       var ownerName = String(resolved?.owner?.name || "").trim();
-      sourceMeta.innerText = "视频来源：哔哩哔哩" + (ownerName ? " · UP主：" + ownerName : "");
+      sourceMeta.innerText = "哔哩哔哩" + (ownerName ? " · UP主：" + ownerName : "");
       qualityOptions = resolved.sources.map(function(source) {
         return { code: source.code, label: source.label, qn: source.qn, url: source.url, manifest: source.manifest, candidates: source.candidates || {}, type: source.type || "video/mp4", resolution: source.resolution || "", fastProgressive: Boolean(source.fastProgressive) };
       });
@@ -1477,19 +1518,7 @@ function init_custom_list_mv() {
         showResolveError(new Error("解析服务未返回所选画质。"));
         return;
       }
-      if (!usesBiliAnalysisFastPath(selectedQuality)) {
-        createVideoPlayer(dashSource);
-        return;
-      }
-      setPlaceholder("正在加载视频", "正在准备快速直链…");
-      fastSourceFor(selectedQuality).then(function(source) {
-        if (!destroyed) {
-          source.recoverySource = dashSource;
-          createVideoPlayer(source);
-        }
-      }).catch(function() {
-        if (!destroyed) createVideoPlayer(dashSource);
-      });
+      createVideoPlayer(directDashSource(selectedQuality, dashSource));
     }
 
     function resolveCurrentMv() {
