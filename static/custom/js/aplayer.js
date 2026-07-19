@@ -2690,19 +2690,28 @@ load_music_lists = function() {
     });
     current_page = Math.min(current_page, target_x_list.length - 1);
   }
+  function scrollTagPage(page) {
+    var targetX = target_x_list[page] || 0;
+    var before = subdiv.scrollLeft;
+    subdiv.scrollTo({left: targetX, behavior: 'smooth'});
+    // 旧版的平滑分页体验保留；个别浏览器在 scroll-snap 下会吞掉 smooth
+    // 定位，短暂等待后才用立即定位兜底，避免出现“页码变了但列表不动”。
+    window.setTimeout(function() {
+      if (Math.abs(subdiv.scrollLeft - targetX) > 2 && Math.abs(subdiv.scrollLeft - before) < 2) {
+        subdiv.scrollTo({left: targetX, behavior: 'auto'});
+      }
+    }, 520);
+  }
   setTimeout(rebuildTagPages, 0);
   formerPage.addEventListener('click', function() {
     rebuildTagPages();
     if (current_page > 0) current_page--;
-    // 网格启用 scroll-snap 后，部分浏览器会吞掉程序触发的 smooth 滚动，导致
-    // 页码改变但视觉上仍停在原页。分页按钮使用确定的立即定位，确保每次都
-    // 跳到完整的三行标签页。
-    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'auto'});
+    scrollTagPage(current_page);
   });
   nextPage.addEventListener('click', function() {
     rebuildTagPages();
     if (current_page < target_x_list.length - 1) current_page++;
-    subdiv.scrollTo({left: target_x_list[current_page] || 0, behavior: 'auto'});
+    scrollTagPage(current_page);
   });
   setup_music_lists();
   init_custom_list();
