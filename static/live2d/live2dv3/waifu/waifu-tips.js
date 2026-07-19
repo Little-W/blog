@@ -48,6 +48,17 @@ function showMessage(text, timeout){
 	if (timeout === null) timeout = 5000;
 	hideMessage(timeout);
 }
+function showQueuedWaifuTip(detail){
+	if(!detail || typeof detail.text !== 'string' || !detail.text) return;
+	showMessage(detail.text, typeof detail.timeout === 'number' ? detail.timeout : 3600);
+}
+window.addEventListener('yusen:waifu-tip', function(event){
+	showQueuedWaifuTip(event && event.detail);
+});
+if(Array.isArray(window.__yusenWaifuTipQueue)){
+	var queuedWaifuTips = window.__yusenWaifuTipQueue.splice(0);
+	if(queuedWaifuTips.length) showQueuedWaifuTip(queuedWaifuTips[queuedWaifuTips.length - 1]);
+}
 function showHitokoto(){
 	if(!live2dTipsEnabled()) return;
 	if(sessionStorage.getItem("Onblur")!=="1"){
