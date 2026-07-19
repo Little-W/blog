@@ -1,7 +1,6 @@
 import React from 'react';
 import Translate from '@docusaurus/Translate';
 import Link from '@docusaurus/Link';
-import Image from '@theme/IdealImage';
 import clsx from 'clsx';
 
 const Playgrounds = [
@@ -44,7 +43,7 @@ function PlaygroundCard({name, image, url, description}) {
       <div className={clsx('card')}>
         <div className={clsx('card__image')}>
           <Link to={url}>
-            <Image img={image} alt={`${name}'s image`} />
+            <img src={image} alt={`${name}'s image`} />
           </Link>
         </div>
         <div className="card__body">

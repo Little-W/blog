@@ -249,11 +249,6 @@ const config = {
       }
     ],
     [
-      '@docusaurus/plugin-ideal-image', {
-        disableInDev: false,
-      }
-    ],
-    [
       '@docusaurus/plugin-pwa',
       {
         debug: true,

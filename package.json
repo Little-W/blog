@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
+    "build:live2d": "node scripts/build-live2d-runtime.cjs",
+    "import:bili-season": "node scripts/import-bilibili-season.mjs",
+    "build:bili-catalog": "node scripts/build-bili-parser-catalog.mjs --out ../blog_static/netlify/functions/catalog.mjs",
+    "prestart": "npm run build:live2d",
+    "prebuild": "npm run build:live2d",
     "start": "docusaurus start",
     "start:en": "docusaurus start --locale en",
     "build": "docusaurus build",
@@ -15,19 +20,19 @@
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.3.1",
-    "@docusaurus/plugin-debug": "^2.3.1",
-    "@docusaurus/plugin-ideal-image": "^2.3.1",
-    "@docusaurus/plugin-pwa": "^2.3.0",
-    "@docusaurus/preset-classic": "^2.3.0",
-    "@docusaurus/theme-live-codeblock": "^2.3.0",
-    "@docusaurus/theme-search-algolia": "^2.3.0",
+    "@docusaurus/core": "2.3.1",
+    "@docusaurus/plugin-debug": "2.3.1",
+    "@docusaurus/plugin-pwa": "2.3.1",
+    "@docusaurus/preset-classic": "2.3.1",
+    "@docusaurus/theme-live-codeblock": "2.3.1",
+    "@docusaurus/theme-search-algolia": "2.3.1",
     "@emotion/react": "^11.10.5",
     "@emotion/styled": "^11.8.1",
     "@filmgardi/videojs-quality-selector": "^1.1.3",
     "@giscus/react": "^2.2.4",
     "@iconify/react": "^4.0.1",
     "@mdx-js/react": "^1.6.22",
+    "@netlify/blobs": "^10.7.9",
     "@popperjs/core": "^2.11.6",
     "@react-spring/web": "^9.5.5",
     "clsx": "^1.2.1",
@@ -36,7 +41,6 @@
     "docusaurus-plugin-sass": "^0.2.2",
     "formidable": "^2.1.2",
     "giscus": "^1.2.4",
-    "leancloud-storage": "^4.14.0",
     "loadsh": "^0.0.4",
     "plugin-image-zoom": "github:flexanalytics/plugin-image-zoom",
     "prism-react-renderer": "^1.3.5",
@@ -50,7 +54,13 @@
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "2.2.0"
+    "@babel/core": "7.20.12",
+    "@babel/preset-env": "7.20.2",
+    "@babel/preset-typescript": "7.18.6",
+    "@docusaurus/module-type-aliases": "2.3.1",
+    "babel-loader": "8.3.0",
+    "webpack": "5.75.0",
+    "wrangler": "^4.112.0"
   },
   "browserslist": {
     "production": [

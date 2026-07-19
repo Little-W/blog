@@ -1,0 +1,143 @@
+{
+  "Version": 3,
+  "Type": 0,
+  "FileReferences": {
+    "Moc": "yikesi.moc3",
+    "Textures": [
+      "textures/texture_00.png"
+    ],
+    "Physics": "yikesi.physics3.json",
+    "PhysicsV2": {
+      "File": "yikesi.physics3.json"
+    },
+  "Motions": {
+      "": [
+        {
+          "File": "motions/home_a.motion3.json"
+        },
+        {
+          "File": "motions/home_b.motion3.json"
+        },
+        {
+          "File": "motions/idle_a.motion3.json"
+        },
+        {
+          "File": "motions/idle_b.motion3.json"
+        },
+        {
+          "File": "motions/idle_c.motion3.json"
+        },
+        {
+          "File": "motions/login_b.motion3.json"
+        },
+        {
+          "File": "motions/main_a.motion3.json"
+        },
+        {
+          "File": "motions/main_a_1.motion3.json"
+        },
+        {
+          "File": "motions/main_a_2.motion3.json"
+        },
+        {
+          "File": "motions/main_b.motion3.json"
+        },
+        {
+          "File": "motions/main_b_1.motion3.json"
+        },
+        {
+          "File": "motions/main_c.motion3.json"
+        },
+        {
+          "File": "motions/main_c_1.motion3.json"
+        },
+        {
+          "File": "motions/main_c_2.motion3.json"
+        },
+        {
+          "File": "motions/main_c_3.motion3.json"
+        },
+        {
+          "File": "motions/touch_body_a.motion3.json"
+        },
+        {
+          "File": "motions/touch_skirt_a.motion3.json"
+        },
+        {
+          "File": "motions/touch_body_b.motion3.json"
+        },
+        {
+          "File": "motions/touch_body_b_1.motion3.json"
+        },
+        {
+          "File": "motions/touch_skirt_c.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_a.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_a_1.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_a_2.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_b.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_b_1.motion3.json"
+        },
+        {
+          "File": "motions/touch_head_b_2.motion3.json"
+        },
+        {
+          "File": "motions/touch_special_b.motion3.json"
+        }
+      ]
+    }
+  },
+  "Controllers": {
+    "ParamHit": {},
+    "ParamLoop": {},
+    "KeyTrigger": {},
+    "ParamTrigger": {},
+    "AreaTrigger": {},
+    "HandTrigger": {},
+    "EyeBlink": {
+      "MinInterval": 500,
+      "MaxInterval": 6000,
+      "Enabled": true
+    },
+    "LipSync": {
+      "Gain": 5.0
+    },
+    "MouseTracking": {
+      "SmoothTime": 0.15,
+      "Enabled": true
+    },
+    "AutoBreath": {
+      "Enabled": true
+    },
+    "ExtraMotion": {
+      "Enabled": true
+    },
+    "Accelerometer": {
+      "Enabled": true
+    },
+    "Microphone": {},
+    "Transform": {},
+    "FaceTracking": {
+      "Enabled": true
+    },
+    "HandTracking": {},
+    "ParamValue": {},
+    "PartOpacity": {},
+    "ArtmeshOpacity": {},
+    "ArtmeshColor": {},
+    "ArtmeshCulling": {
+      "DefaultMode": 0
+    },
+    "IntimacySystem": {}
+  },
+  "Options": {}
+}
