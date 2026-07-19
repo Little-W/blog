@@ -20,6 +20,7 @@
   var frameRequests = {};
   var lastFrameByCallback = new WeakMap();
   var nextFrameRequestId = 1;
+  var scrollingUntil = 0;
 
   function readSettings() {
     var stored = {};
@@ -42,7 +43,14 @@
   }
 
   function getFrameRate() {
+    // 保留设置中的“无限制”，但用户正在拖动滚动条时临时让背景特效让出主线程。
+    // 停止滚动后立即恢复原帧率，因此不会改变平时的动画观感或保存的设置。
+    if (Date.now() < scrollingUntil) return settings.frameRate ? Math.min(settings.frameRate, 15) : 15;
     return settings.frameRate || 0;
+  }
+
+  function markScrolling() {
+    scrollingUntil = Date.now() + 140;
   }
 
   function requestEffectAnimationFrame(callback) {
@@ -159,6 +167,12 @@
     cancelAnimationFrame: cancelEffectAnimationFrame,
     loaded: loaded
   };
+
+  // capture 可覆盖页面内独立的滚动容器，例如歌单横向栏与 MV 列表；全部采用
+  // passive，不阻塞浏览器自己的滚动处理。
+  window.addEventListener("wheel", markScrolling, { passive: true, capture: true });
+  window.addEventListener("touchmove", markScrolling, { passive: true, capture: true });
+  window.addEventListener("scroll", markScrolling, { passive: true, capture: true });
 
   if (settings.enabled === false) {
     document.documentElement.dataset.effects = "off";

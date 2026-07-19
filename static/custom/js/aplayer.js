@@ -1190,7 +1190,12 @@ function init_custom_list_mv() {
     var cached = mvResolveCache.get(key);
     if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.promise;
     var entry = { expiresAt: Date.now() + MV_RESOLVE_CACHE_TTL_MS, promise: null };
-    entry.promise = biliParserRequest("/resolve?bvid=" + encodeURIComponent(item.bilibili_bvid) + "&p=" + encodeURIComponent(Math.max(1, parseInt(item.bilibili_page, 10) || 1))).catch(function(error) {
+    var requestPath = "/resolve?bvid=" + encodeURIComponent(item.bilibili_bvid) + "&p=" + encodeURIComponent(Math.max(1, parseInt(item.bilibili_page, 10) || 1));
+    // DASH 的签名链接会随网络线路和登录会话变化。解析结果仅由页面内 Map 复用，
+    // 不让浏览器 HTTP 缓存保存它；恢复播放时额外加随机参数，确保不会拿回刚才
+    // 已失效的 90 秒旧响应（这正是刷新页面后偶尔才恢复的根因）。
+    if (forceRefresh) requestPath += "&refresh=" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    entry.promise = biliParserRequest(requestPath, { cache: "no-store" }).catch(function(error) {
       // 失败永远不进入解析缓存，也不影响下次打开或手动重试。
       if (mvResolveCache.get(key) === entry) mvResolveCache.delete(key);
       throw error;
@@ -1318,6 +1323,7 @@ function init_custom_list_mv() {
       retryButton.addEventListener("click", function() {
         playbackRecoveryAttempts = 0;
         resumePlaybackAfterRecovery = false;
+        mvFastSourceCache.clear();
         resolveCurrentMv(true);
       });
       playerPlaceholder.appendChild(retryButton);
@@ -1331,6 +1337,9 @@ function init_custom_list_mv() {
       }
       resumePlaybackAfterRecovery = resumePlaybackAfterRecovery || Boolean(mv_player && typeof mv_player.paused === "function" && !mv_player.paused());
       disposeCurrentVideoPlayer();
+      // 快速 MP4 与 DASH 一样是短签名链接。若刚才该线路已经出错，不能在新
+      // 一轮解析时从内存继续取回同一条旧链接。
+      mvFastSourceCache.clear();
       playbackRecoveryAttempts += 1;
       recoveryPending = true;
       setPlaceholder("正在重新连接", "线路连接不稳定，正在重新获取可用视频源（" + playbackRecoveryAttempts + "/" + MV_PLAYBACK_RECOVERY_RETRIES + "）…");
@@ -1434,7 +1443,8 @@ function init_custom_list_mv() {
         headers: { Range: "bytes=0-0" },
         mode: "cors",
         credentials: "omit",
-        referrerPolicy: "no-referrer"
+        referrerPolicy: "no-referrer",
+        cache: "no-store"
       }).then(function(response) {
         if (response.ok) return url;
         if (retriesLeft > 0 && retryableMediaResponse(response)) {
@@ -1471,7 +1481,7 @@ function init_custom_list_mv() {
       var cached = mvFastSourceCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) return cached.promise;
       var entry = { expiresAt: Date.now() + MV_FAST_SOURCE_CACHE_TTL_MS, promise: null };
-      entry.promise = biliParserRequest("/fast?bvid=" + encodeURIComponent(activeResolved.bvid || item.bilibili_bvid) + "&p=" + encodeURIComponent(activeResolved.page || item.bilibili_page) + "&cid=" + encodeURIComponent(activeResolved.cid) + "&qn=" + encodeURIComponent(option.qn)).then(function(data) {
+      entry.promise = biliParserRequest("/fast?bvid=" + encodeURIComponent(activeResolved.bvid || item.bilibili_bvid) + "&p=" + encodeURIComponent(activeResolved.page || item.bilibili_page) + "&cid=" + encodeURIComponent(activeResolved.cid) + "&qn=" + encodeURIComponent(option.qn), { cache: "no-store" }).then(function(data) {
         if (!data?.url) throw new Error("快速解析未返回 MP4 直链。");
         // B 站偶尔会返回已失效或只对解析机房可用的 durl。先以与播放器相同的
         // 跨域策略读取一个字节；临时网络故障重试一次，节点不可用则轮换备用 URL。
@@ -1804,6 +1814,7 @@ function init_custom_list_mv() {
     image.src = item.bilibili_cover || item.post_small_url || "";
     image.alt = "";
     image.loading = "lazy";
+    image.decoding = "async";
     image.referrerPolicy = "no-referrer";
     image.addEventListener("error", function() {
       image.onerror = null;
@@ -1883,28 +1894,34 @@ function init_custom_list_mv() {
     });
   }
 
+  var renderedMvCount = 0;
+  var mvSearchRenderFrame = 0;
+
   function syncMvListHeight() {
-    var cards = Array.prototype.slice.call(ol.querySelectorAll(".mv_list_div"));
-    if (!cards.length) {
+    var firstCard = ol.querySelector(".mv_list_div");
+    if (!firstCard || !renderedMvCount) {
       listParent.style.height = "auto";
       listParent.style.maxHeight = "none";
       return;
     }
-    var rows = [];
-    cards.forEach(function(card) {
-      var rect = card.getBoundingClientRect();
-      var row = rows.find(function(candidate) { return Math.abs(candidate.top - rect.top) < 2; });
-      if (!row) {
-        row = { top: rect.top, bottom: rect.bottom };
-        rows.push(row);
-      } else {
-        row.bottom = Math.max(row.bottom, rect.bottom);
-      }
-    });
-    rows.sort(function(a, b) { return a.top - b.top; });
-    var visibleRows = Math.min(2, rows.length);
+    // 旧实现会对全部 MV 卡片逐一 getBoundingClientRect；476 张卡片在缩略图加载
+    // 或滚动时会反复触发强制布局。网格每行等高，只读取首卡和网格列数即可精确
+    // 计算两行高度，布局读取由 O(N) 降为 O(1)。
+    var style = window.getComputedStyle(ol);
+    var isGrid = viewMode === "grid";
+    var columns = 1;
+    if (isGrid) {
+      var tracks = String(style.gridTemplateColumns || "").trim().split(/\s+/).filter(function(track) {
+        return track && track !== "none";
+      });
+      columns = Math.max(1, tracks.length);
+    }
+    var rowGap = parseFloat(style.rowGap || style.gap) || 0;
+    var visibleRows = Math.min(2, Math.ceil(renderedMvCount / columns));
     var listTop = ol.getBoundingClientRect().top;
-    var targetHeight = Math.ceil(rows[visibleRows - 1].bottom - listTop + 2);
+    var cardRect = firstCard.getBoundingClientRect();
+    var topInset = Math.max(0, cardRect.top - listTop);
+    var targetHeight = Math.ceil(topInset + cardRect.height * visibleRows + rowGap * Math.max(0, visibleRows - 1) + 2);
     listParent.style.height = targetHeight + "px";
     listParent.style.maxHeight = targetHeight + "px";
   }
@@ -1926,13 +1943,16 @@ function init_custom_list_mv() {
   function renderCards() {
     ol.innerHTML = "";
     var items = filteredItems();
-    items.forEach(function(item) { ol.appendChild(createCard(item)); });
+    renderedMvCount = items.length;
+    var fragment = document.createDocumentFragment();
+    items.forEach(function(item) { fragment.appendChild(createCard(item)); });
     if (!items.length) {
       var empty = document.createElement("li");
       empty.setAttribute("class", "mv-empty-state");
       empty.innerHTML = "<strong>没有找到匹配的 MV</strong><span>试试其他关键词或组合。</span>";
-      ol.appendChild(empty);
+      fragment.appendChild(empty);
     }
+    ol.appendChild(fragment);
     if (resultCount) resultCount.innerText = items.length;
     if (currentFilterLabel) currentFilterLabel.innerText = activeGroup === "全部" ? "全部组合" : activeGroup;
     scheduleMvListHeight();
@@ -1976,7 +1996,12 @@ function init_custom_list_mv() {
     searchInput.value = "";
     searchInput.oninput = function(event) {
       searchQuery = event.target.value.trim().toLocaleLowerCase();
-      renderCards();
+      // 输入法组合与连续键入时合并为一帧渲染，避免每个字符都重建整张 MV 列表。
+      if (mvSearchRenderFrame) window.cancelAnimationFrame(mvSearchRenderFrame);
+      mvSearchRenderFrame = window.requestAnimationFrame(function() {
+        mvSearchRenderFrame = 0;
+        renderCards();
+      });
     };
   }
   if (gridButton) gridButton.onclick = function() {
@@ -1996,10 +2021,10 @@ function init_custom_list_mv() {
   window.addEventListener("resize", window.__yusenMvListResizeHandler);
   if (window.__yusenMvListResizeObserver) window.__yusenMvListResizeObserver.disconnect();
   if (typeof window.ResizeObserver === "function") {
-    // 首次渲染时封面和样式可能稍后才完成布局；观察列表本身，重新测量后始终
-    // 展示完整两排，而不是按初始的临时卡片高度截断第二排。
+    // 只观察容器尺寸变化（主要是窗口宽度变化），不再因每张懒加载封面完成而
+    // 重新扫描全部卡片。
     window.__yusenMvListResizeObserver = new window.ResizeObserver(scheduleMvListHeight);
-    window.__yusenMvListResizeObserver.observe(ol);
+    window.__yusenMvListResizeObserver.observe(listDiv);
   }
   renderFilters();
   applyViewMode();
