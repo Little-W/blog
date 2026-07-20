@@ -4481,29 +4481,6 @@ load_music_lists = function() {
       }
     }, 520);
   }
-  // 旧页面的通用按钮波纹曾让整组标签呈现出范围选择的外观。歌单轨道不依赖
-  // CSS :hover 推断状态，改为在指针移动时明确标记实际命中的一个按钮；因此
-  // 从轨道外部斜向扫入时也不会把经过的项目遗留为悬停状态。
-  var hoveredTagButton = null;
-  function setHoveredTagButton(target) {
-    var nextButton = target && target.closest ? target.closest('.playlist-tag-row .sytle-button') : null;
-    if (nextButton && !subdiv.contains(nextButton)) nextButton = null;
-    if (hoveredTagButton === nextButton) return;
-    if (hoveredTagButton) hoveredTagButton.classList.remove('playlist-tag--hover');
-    hoveredTagButton = nextButton;
-    if (hoveredTagButton) hoveredTagButton.classList.add('playlist-tag--hover');
-  }
-  subdiv.addEventListener('pointermove', function(event) {
-    if (event.pointerType && event.pointerType !== 'mouse') return;
-    setHoveredTagButton(event.target);
-  }, {passive: true});
-  subdiv.addEventListener('pointerleave', function() {
-    setHoveredTagButton(null);
-  }, {passive: true});
-  // 标签是操作控件，不应成为浏览器文本范围选择的起点。
-  subdiv.addEventListener('selectstart', function(event) {
-    if (event.target.closest && event.target.closest('.playlist-tag-row .sytle-button')) event.preventDefault();
-  });
   setTimeout(rebuildTagPages, 0);
   formerPage.addEventListener('click', function() {
     rebuildTagPages();
