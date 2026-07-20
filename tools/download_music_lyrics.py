@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -132,20 +133,25 @@ def prepare_missing_lyric_repairs(data_dir: Path, asset_repo: Path) -> list[tupl
     """
     records = read_jsonl_records(data_dir / 'music_hq.0.jsonl', 'music_hq')
     jobs: list[tuple[int, Track, Path]] = []
+    dated_asset_repo = batch_asset_repo(asset_repo)
     for record in records:
         if record.get('lrc'):
             continue
         mid = record.get('mid')
-        relative = asset_relative_from_url(record.get('url'))
-        if not isinstance(mid, int) or relative is None:
+        url = record.get('url')
+        relative = asset_relative_from_url(url)
+        if not isinstance(mid, int) or not isinstance(url, str) or not url:
             continue
-        source = asset_repo / relative
+        source_relative = relative or Path(unquote(urlsplit(url).path)).name or Path(f'{mid}.mp3')
+        source = asset_repo / relative if relative is not None else Path('/tmp') / f'music-lyrics-{mid}.mp3'
         if not source.is_file():
-            print(f'跳过 mid={mid}：资源仓库中没有音频 {relative}')
-            continue
+            # Older records still point at the retired Bitbucket repositories.
+            # LDDC only needs title/artist metadata, so keep those jobs and
+            # write their newly fetched LRC into the current dated batch.
+            source = Path('/tmp') / f'music-lyrics-{mid}.mp3'
         track = Track(
             source=source,
-            source_relative=relative,
+            source_relative=source_relative,
             title=str(record.get('title') or '').strip(),
             artist=str(record.get('author') or '').strip(),
             album=str(record.get('album') or '').strip(),
@@ -155,7 +161,12 @@ def prepare_missing_lyric_repairs(data_dir: Path, asset_repo: Path) -> list[tupl
         if not track.title or not track.artist:
             print(f'跳过 mid={mid}：缺少歌名或歌手。')
             continue
-        jobs.append((mid, track, source.with_suffix('.lrc')))
+        if relative is not None and source.is_file():
+            target = source.with_suffix('.lrc')
+        else:
+            safe_name = re.sub(r'[^0-9A-Za-z一-龥ぁ-んァ-ヶ._ -]+', '_', track.display_name).strip()[:160]
+            target = dated_asset_repo / 'legacy-lyrics' / f'{mid} - {safe_name}.lrc'
+        jobs.append((mid, track, target))
     return jobs
 
 
