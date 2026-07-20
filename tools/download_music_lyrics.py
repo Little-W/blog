@@ -23,11 +23,13 @@ from import_new_music import (
     DEFAULT_RAW_URL,
     DEFAULT_REFERENCE,
     DEFAULT_SOURCE_DIR,
+    batch_asset_repo,
+    batch_raw_url,
     classify_track,
-    deduplicate_tracks,
-    exclude_off_vocal_tracks,
-    scan_selected_roots,
-    select_new_roots,
+    filter_tracks,
+    load_known_tags,
+    scan_source_tracks,
+    validate_track_tags,
 )
 from music_library_gui import (
     DEFAULT_DATA_DIR,
@@ -57,6 +59,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='通过本地 LDDC 为新导入音乐下载 LRC 歌词。')
     parser.add_argument('--source-dir', type=Path, default=DEFAULT_SOURCE_DIR)
     parser.add_argument('--reference', type=Path, default=DEFAULT_REFERENCE)
+    parser.add_argument('--all-source-files', action='store_true')
     parser.add_argument('--asset-repo', type=Path, default=DEFAULT_ASSET_REPO)
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument('--raw-url', default=DEFAULT_RAW_URL)
@@ -83,13 +86,14 @@ def add_lddc_to_path(lddc_root: Path) -> None:
         sys.path.insert(0, str(lddc_root))
 
 
-def prepare_tracks(source_dir: Path, reference: Path) -> list[Track]:
-    tracks = scan_selected_roots(source_dir, select_new_roots(source_dir, reference))
+def prepare_tracks(source_dir: Path, reference: Path, all_source_files: bool, data_dir: Path) -> tuple[str, list[Path], list[Track]]:
+    source_mode, roots, tracks = scan_source_tracks(source_dir, reference, all_source_files)
+    tag_ids_by_name = load_known_tags(data_dir)
     for track in tracks:
-        classify_track(track)
-    tracks, _ = exclude_off_vocal_tracks(tracks)
-    tracks, _ = deduplicate_tracks(tracks)
-    return tracks
+        classify_track(track, tag_ids_by_name)
+    tracks, _, _ = filter_tracks(tracks)
+    validate_track_tags(tracks, tag_ids_by_name)
+    return source_mode, roots, tracks
 
 
 def lyric_target(track: Track, asset_repo: Path) -> Path:
@@ -231,15 +235,18 @@ def main() -> int:
         print(f'JSONL 中待补歌词：{len(repair_jobs)} 首。')
         tracks = [track for _, track, _ in repair_jobs]
     else:
-        tracks = prepare_tracks(args.source_dir, args.reference)
+        source_mode, roots, tracks = prepare_tracks(args.source_dir, args.reference, args.all_source_files, args.data_dir)
         if args.offset:
             tracks = tracks[args.offset:]
         if args.limit:
             tracks = tracks[:args.limit]
-        print(f'候选曲目：{len(tracks)} 首。')
+        print(f'模式：{source_mode}；候选曲目：{len(tracks)} 首。')
     if not args.apply:
         print('这是预览；确认后增加 --apply 下载歌词。')
         return 0
+
+    dated_asset_repo = batch_asset_repo(args.asset_repo)
+    dated_raw_url = batch_raw_url(args.raw_url)
 
     add_lddc_to_path(args.lddc_root)
     try:
@@ -274,16 +281,16 @@ def main() -> int:
         results.append({'mid': mid, 'source': track.source_relative.as_posix(), 'status': status, 'detail': detail})
 
     if args.repair_missing:
-        hq_count, sq_count = write_repaired_lyrics(args.data_dir, args.asset_repo, args.raw_url, repaired)
+        hq_count, sq_count = write_repaired_lyrics(args.data_dir, dated_asset_repo, dated_raw_url, repaired)
         print(f'已补写歌词资料：HQ {hq_count} 条，SQ {sq_count} 条。')
     else:
         config = LibraryConfig(
             source_dir=args.source_dir,
-            mp3_repo_dir=args.asset_repo,
-            sq_repo_dir=args.asset_repo,
+            mp3_repo_dir=dated_asset_repo,
+            sq_repo_dir=dated_asset_repo,
             data_dir=args.data_dir,
-            mp3_raw_url=args.raw_url,
-            sq_raw_url=args.raw_url,
+            mp3_raw_url=dated_raw_url,
+            sq_raw_url=dated_raw_url,
             list_ids=(1, 3),
             overwrite=False,
         )

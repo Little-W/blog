@@ -270,6 +270,8 @@ class Track:
         if external:
             return external
         if self.embedded_cover_extension:
+            if self.output_directory == Path():
+                return Path(f'{self.display_name}.cover{self.embedded_cover_extension}')
             return self.output_directory / f'cover{self.embedded_cover_extension}'
         return None
 
