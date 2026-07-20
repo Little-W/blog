@@ -44,7 +44,15 @@ function Page(): JSX.Element {
     <section className="music-section music-library">
       <div className="music-section__heading music-library__heading">
         <div><span className="music-eyebrow">TRACKS</span><h2 id="current_playlist_name">默认歌单</h2></div>
-        <span className="music-result-count"><b id="music-list-result-count">—</b> 首</span>
+        <div className="music-library-heading-tools">
+          <div className="music-track-sort-controls" role="group" aria-label="歌曲列表排序">
+            <span>排序</span>
+            <button type="button" data-track-sort="default">默认</button>
+            <button type="button" data-track-sort="name">按名称</button>
+            <button type="button" data-track-sort="id">按 ID</button>
+          </div>
+          <span className="music-result-count"><b id="music-list-result-count">—</b> 首</span>
+        </div>
       </div>
 
       <div className="music-library__toolbar">

@@ -35,7 +35,7 @@ var PLAYER_SETTINGS_KEY = 'yusen-player-settings-v1';
 var DEFAULT_PLAYER_SETTINGS = {
   // playlist 保存的是实际播放队列，而不是界面当前浏览的歌单。这样刷新页面后，
   // 用户仍会回到相同的队列、曲目和播放进度。
-  music: { quality: 0, volume: 0.5, loop: 'all', order: 'list', playlist: null, tagSort: 'default' },
+  music: { quality: 0, volume: 0.5, loop: 'all', order: 'list', playlist: null, tagSort: 'default', trackSort: 'default' },
   mv: { theme: 'sea', volume: 0.6, view: 'grid', group: '全部', qualityCode: 'dash-64' }
 };
 
@@ -81,6 +81,7 @@ var subdiv;
 var rendered_playlist_width = 0;
 var music_list_display_limit = parseInt(localStorage.getItem('music-list-display-limit') || '12', 10);
 var music_tag_sort_mode = ['name', 'id'].indexOf(music_player_settings.tagSort) !== -1 ? music_player_settings.tagSort : 'default';
+var music_track_sort_mode = ['name', 'id'].indexOf(music_player_settings.trackSort) !== -1 ? music_player_settings.trackSort : 'default';
 var music_playlist_restore_state = null;
 var music_playlist_persist_timer = null;
 
@@ -3243,6 +3244,42 @@ function init_custom_list_mv() {
   renderCards();
 }
 
+function get_display_music_ids() {
+  var collator = window.Intl && window.Intl.Collator ? new Intl.Collator('zh-Hans-CN', {numeric: true, sensitivity: 'base'}) : null;
+  return active_list.slice().sort(function(leftId, rightId) {
+    if (music_track_sort_mode === 'id') return Number(leftId) - Number(rightId);
+    if (music_track_sort_mode !== 'name') return 0;
+    var left = get_music_record(leftId) || {};
+    var right = get_music_record(rightId) || {};
+    var leftTitle = String(left.title || left.name || '');
+    var rightTitle = String(right.title || right.name || '');
+    var result = collator ? collator.compare(leftTitle, rightTitle) : leftTitle.localeCompare(rightTitle);
+    return result || Number(leftId) - Number(rightId);
+  });
+}
+
+function sync_music_track_sort_controls() {
+  Array.prototype.forEach.call(document.querySelectorAll('[data-track-sort]'), function(button) {
+    var active = button.dataset.trackSort === music_track_sort_mode;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function bind_music_track_sort_controls() {
+  if (window.__yusenMusicTrackSortBound) return;
+  window.__yusenMusicTrackSortBound = true;
+  document.addEventListener('click', function(event) {
+    var button = event.target && event.target.closest ? event.target.closest('[data-track-sort]') : null;
+    if (!button) return;
+    var mode = button.dataset.trackSort;
+    if (['default', 'name', 'id'].indexOf(mode) === -1 || mode === music_track_sort_mode) return;
+    music_track_sort_mode = mode;
+    update_player_settings('music', { trackSort: music_track_sort_mode });
+    init_custom_list();
+  });
+}
+
 function init_custom_list() {
   var list_div = document.getElementById("aplayer_list_active");
   var list_div_sel = document.querySelector("#aplayer_list_active");
@@ -3260,18 +3297,23 @@ function init_custom_list() {
   ap_list_ptr[1].forEach(function(musicId) {
     selectedMusicIds[Number(musicId)] = true;
   });
+  bind_music_track_sort_controls();
+  sync_music_track_sort_controls();
+  var displayMusicIds = get_display_music_ids();
   //console.log("active_list.length",active_list.length);
 
-  for (var i = 0; i < active_list.length; i++) {
-    var arr = music_all[quality][active_list[i]];
+  for (var i = 0; i < displayMusicIds.length; i++) {
+    var musicId = displayMusicIds[i];
+    var arr = get_music_record(musicId);
+    if (!arr) continue;
     //console.log(arr.author + " - " + arr.title);
     var li = document.createElement("li");
     li.setAttribute("style", "margin-top:0px;");
-    var isSelected = selectedMusicIds[Number(active_list[i])] === true;
+    var isSelected = selectedMusicIds[Number(musicId)] === true;
     li.setAttribute("class", "music-list" + (isSelected ? " is-selected" : ""));
-    li.setAttribute("id", "music-id" + active_list[i]);
-    li.music = active_list[i];
-    li.dataset.musicId = active_list[i];
+    li.setAttribute("id", "music-id" + musicId);
+    li.music = musicId;
+    li.dataset.musicId = musicId;
     li.setAttribute("aria-selected", String(isSelected));
     //li.setAttribute("name","music" + i);
 
@@ -3303,14 +3345,14 @@ function init_custom_list() {
     var list_title = document.createElement("span");
     list_title.setAttribute("id", "music-list-title");
     list_title.setAttribute("class", "music-track-title");
-    list_title.setAttribute("name", "music" + active_list[i]);
+    list_title.setAttribute("name", "music" + musicId);
     list_title.innerText = arr.title;
     meta.appendChild(list_title);
 
     var list_author = document.createElement("span");
     list_author.setAttribute("id", "music-list-author");
     list_author.setAttribute("class", "music-track-author");
-    list_author.setAttribute("name", "music" + active_list[i]);
+    list_author.setAttribute("name", "music" + musicId);
     list_author.innerText = arr.author;
     meta.appendChild(list_author);
     li.appendChild(meta);
@@ -3318,17 +3360,17 @@ function init_custom_list() {
     var checkBox = document.createElement("input");
     checkBox.setAttribute("type", "checkbox");
     checkBox.setAttribute("class", "music-list-checkbox");
-    checkBox.setAttribute("name", "music" + active_list[i]);
+    checkBox.setAttribute("name", "music" + musicId);
     checkBox.setAttribute("aria-label", "切换 " + arr.title);
-    checkBox.music = active_list[i];
-    checkBox.dataset.musicId = active_list[i];
+    checkBox.music = musicId;
+    checkBox.dataset.musicId = musicId;
     checkBox.checked = isSelected;
     var actions = document.createElement('div');
     actions.setAttribute('class', 'music-track-actions');
-    actions.appendChild(create_music_play_next_action(arr, active_list[i]));
+    actions.appendChild(create_music_play_next_action(arr, musicId));
     actions.appendChild(create_music_download_action(arr));
     if (music_admin_state.authenticated) {
-      actions.appendChild(create_music_tag_action(arr, active_list[i]));
+      actions.appendChild(create_music_tag_action(arr, musicId));
     }
     actions.appendChild(checkBox);
     li.appendChild(actions);
