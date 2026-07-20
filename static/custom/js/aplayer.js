@@ -1276,7 +1276,6 @@ function refresh_player_queue_controls(player) {
       button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('class', 'player-queue-remove');
-      button.innerHTML = '&times;';
       entry.appendChild(button);
     }
     button.dataset.musicId = musicId === null ? '' : String(musicId);
@@ -3852,53 +3851,83 @@ function ensure_music_floating_lyric() {
   fontValue.setAttribute('class', 'music-floating-lyric__font-value');
   var larger = createButton('', '放大歌词字体', 'A+');
   var previous = createButton('', '上一首', '‹');
-  var play = createButton('music-floating-lyric__button--play', '播放', '▶');
+  var play = createButton('music-floating-lyric__button--play', '播放', '');
+  var playIcon = _createSvg('svg', {
+    version: '1.1',
+    xmlns: 'http://www.w3.org/2000/svg',
+    viewBox: '0 0 24 24',
+    'aria-hidden': 'true',
+  });
+  var playIconPath = _createSvg('path', {fill: 'currentColor', d: 'M8 5v14l11-7L8 5Z'});
+  playIcon.appendChild(playIconPath);
+  play.appendChild(playIcon);
   var next = createButton('', '下一首', '›');
+  var lock = createButton('music-floating-lyric__button--lock', '锁定浮动歌词', '');
+  var lockIcon = _createSvg('svg', {
+    version: '1.1',
+    xmlns: 'http://www.w3.org/2000/svg',
+    viewBox: '0 0 24 24',
+    'aria-hidden': 'true',
+  });
+  var lockIconPath = _createSvg('path', {fill: 'currentColor', d: 'M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v9h14v-9a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Zm7 11H7v-7h10v7Z'});
+  lockIcon.appendChild(lockIconPath);
+  lock.appendChild(lockIcon);
   var close = createButton('music-floating-lyric__button--close', '关闭浮动歌词', '×');
-  [smaller, fontValue, larger, previous, play, next, close].forEach(function(control) { controls.appendChild(control); });
+  [smaller, fontValue, larger, previous, play, next, lock, close].forEach(function(control) { controls.appendChild(control); });
   toolbar.appendChild(grip);
   toolbar.appendChild(controls);
 
   var lines = document.createElement('div');
   lines.setAttribute('class', 'music-floating-lyric__lines');
-  var current = document.createElement('div');
-  current.setAttribute('class', 'music-floating-lyric__line music-floating-lyric__line--current');
-  var following = document.createElement('div');
-  following.setAttribute('class', 'music-floating-lyric__line music-floating-lyric__line--next');
-  lines.appendChild(current);
-  lines.appendChild(following);
+  var lyricScroll = document.createElement('div');
+  lyricScroll.setAttribute('class', 'music-floating-lyric__scroll');
+  lines.appendChild(lyricScroll);
+  var resizeHandle = document.createElement('button');
+  resizeHandle.type = 'button';
+  resizeHandle.setAttribute('class', 'music-floating-lyric__resize');
+  resizeHandle.setAttribute('aria-label', '调整歌词窗口大小');
+  resizeHandle.setAttribute('title', '拖动调整歌词窗口大小');
   root.appendChild(toolbar);
   root.appendChild(lines);
+  root.appendChild(resizeHandle);
   document.body.appendChild(root);
 
   var state = {
     root: root,
     toolbar: toolbar,
-    current: current,
-    following: following,
+    lines: lines,
+    lyricScroll: lyricScroll,
+    lineElements: [],
+    renderedLyrics: null,
+    currentLineIndex: -1,
     buttons: [],
     players: [],
     activePlayer: null,
     fontSize: Math.max(16, Math.min(34, Number(saved.fontSize) || 22)),
+    locked: saved.locked === true,
     lastLineKey: '',
   };
+  root.classList.toggle('is-locked', state.locked);
   root.style.setProperty('--floating-lyric-size', state.fontSize + 'px');
   fontValue.textContent = state.fontSize + 'px';
+  if (Number.isFinite(saved.width)) root.style.width = Math.max(Math.min(300, window.innerWidth - 16), Math.min(window.innerWidth - 16, saved.width)) + 'px';
+  if (Number.isFinite(saved.height)) root.style.height = Math.max(Math.min(176, window.innerHeight - 16), Math.min(window.innerHeight - 16, saved.height)) + 'px';
   if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
     root.style.left = saved.left + 'px';
     root.style.top = saved.top + 'px';
     root.style.right = 'auto';
     root.style.bottom = 'auto';
     root.style.transform = 'none';
-    root.style.width = Math.min(rect.width, window.innerWidth - 16) + 'px';
   }
 
   function persist() {
-    var payload = {visible: !root.hidden, fontSize: state.fontSize};
+    var payload = {visible: !root.hidden, fontSize: state.fontSize, locked: state.locked};
     if (root.style.top) {
       payload.left = parseFloat(root.style.left);
       payload.top = parseFloat(root.style.top);
     }
+    if (root.style.width) payload.width = parseFloat(root.style.width);
+    if (root.style.height) payload.height = parseFloat(root.style.height);
     try { window.localStorage.setItem(storageKey, JSON.stringify(payload)); } catch (error) {}
   }
   function activePlayer() {
@@ -3908,13 +3937,14 @@ function ensure_music_floating_lyric() {
   function syncButtons() {
     state.buttons = state.buttons.filter(function(button) { return document.contains(button); });
     state.buttons.forEach(function(button) {
-      button.setAttribute('aria-label', root.hidden ? '显示浮动歌词' : '隐藏浮动歌词');
-      button.setAttribute('title', root.hidden ? '显示浮动歌词' : '隐藏浮动歌词');
+      var label = root.hidden ? '显示浮动歌词' : state.locked ? '解锁浮动歌词' : '隐藏浮动歌词';
+      button.setAttribute('aria-label', label);
+      button.setAttribute('title', label);
       button.setAttribute('aria-pressed', root.hidden ? 'false' : 'true');
     });
     var player = activePlayer();
     var isPlaying = player && !player.paused;
-    play.textContent = isPlaying ? 'Ⅱ' : '▶';
+    playIconPath.setAttribute('d', isPlaying ? 'M7 5h4v14H7V5Zm6 0h4v14h-4V5Z' : 'M8 5v14l11-7L8 5Z');
     play.setAttribute('aria-label', isPlaying ? '暂停' : '播放');
     play.setAttribute('title', isPlaying ? '暂停' : '播放');
   }
@@ -3932,10 +3962,35 @@ function ensure_music_floating_lyric() {
       container.appendChild(translation);
     }
   }
+  function rebuildLyrics(lyricLines) {
+    lyricScroll.textContent = '';
+    state.lineElements = [];
+    state.renderedLyrics = lyricLines;
+    state.currentLineIndex = -1;
+    var displayLines = lyricLines.length ? lyricLines : [[0, '歌词加载中…']];
+    displayLines.forEach(function(line) {
+      var lineElement = document.createElement('div');
+      lineElement.setAttribute('class', 'music-floating-lyric__line');
+      renderLine(lineElement, line, '♪');
+      lyricScroll.appendChild(lineElement);
+      state.lineElements.push(lineElement);
+    });
+  }
+  function centerFloatingLyric(index, force) {
+    var lineElement = state.lineElements[index];
+    if (!lineElement || !lines.clientHeight) return;
+    var offset = lineElement.offsetTop + lineElement.offsetHeight / 2 - lines.clientHeight / 2;
+    var transform = 'translate3d(0,' + Math.round(-offset) + 'px,0)';
+    if (force || lyricScroll.style.transform !== transform) lyricScroll.style.transform = transform;
+  }
   function render(force) {
     var player = activePlayer();
     var lyric = player && player.lrc;
     var lyricLines = lyric && Array.isArray(lyric.current) ? lyric.current : [];
+    if (state.renderedLyrics !== lyricLines || state.lineElements.length !== (lyricLines.length || 1)) {
+      rebuildLyrics(lyricLines);
+      force = true;
+    }
     var time = player && player.audio ? Number(player.audio.currentTime) || 0 : 0;
     var index = 0;
     for (var i = 0; i < lyricLines.length; i++) {
@@ -3943,16 +3998,18 @@ function ensure_music_floating_lyric() {
       else break;
     }
     while (index < lyricLines.length - 1 && !lineText(lyricLines[index])) index++;
-    var nextIndex = index + 1;
-    while (nextIndex < lyricLines.length && !lineText(lyricLines[nextIndex])) nextIndex++;
-    var currentLine = lyricLines[index];
-    var nextLine = lyricLines[nextIndex];
     var audio = player && player.list && player.list.audios[player.list.index] || {};
-    var key = [normalize_music_id(audio.mid), index, lineText(currentLine), lineText(nextLine)].join('|');
+    var key = [normalize_music_id(audio.mid), index, lineText(lyricLines[index])].join('|');
     if (!force && state.lastLineKey === key) return;
     state.lastLineKey = key;
-    renderLine(current, currentLine, lyricLines.length ? '♪' : '歌词加载中…');
-    renderLine(following, nextLine, nextIndex >= lyricLines.length ? '—' : '');
+    if (state.currentLineIndex >= 0 && state.lineElements[state.currentLineIndex]) {
+      state.lineElements[state.currentLineIndex].classList.remove('music-floating-lyric__line--current');
+    }
+    state.currentLineIndex = Math.min(index, state.lineElements.length - 1);
+    if (state.lineElements[state.currentLineIndex]) {
+      state.lineElements[state.currentLineIndex].classList.add('music-floating-lyric__line--current');
+    }
+    centerFloatingLyric(state.currentLineIndex, force);
   }
   function setVisible(visible) {
     root.hidden = !visible;
@@ -3960,7 +4017,21 @@ function ensure_music_floating_lyric() {
     syncButtons();
     persist();
   }
+  function setLocked(locked) {
+    state.locked = Boolean(locked);
+    root.classList.toggle('is-locked', state.locked);
+    lockIconPath.setAttribute('d', state.locked
+      ? 'M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v9h14v-9a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Zm7 11H7v-7h10v7Z'
+      : 'M17 8h-7V6a2 2 0 0 1 3.9-.62l1.9-.62A4 4 0 0 0 8 6v2H7a2 2 0 0 0-2 2v9h14v-9a2 2 0 0 0-2-2Zm0 9H7v-7h10v7Z');
+    lock.setAttribute('aria-label', state.locked ? '浮动歌词已锁定' : '锁定浮动歌词');
+    lock.setAttribute('title', state.locked ? '已锁定，请使用播放器中的浮动歌词开关解锁' : '锁定后不再阻挡页面操作');
+    lock.setAttribute('aria-pressed', state.locked ? 'true' : 'false');
+    if (state.locked && document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
+    syncButtons();
+    persist();
+  }
   state.setVisible = setVisible;
+  state.setLocked = setLocked;
   state.render = render;
   state.syncButtons = syncButtons;
 
@@ -3968,17 +4039,20 @@ function ensure_music_floating_lyric() {
     state.fontSize = Math.max(16, state.fontSize - 2);
     root.style.setProperty('--floating-lyric-size', state.fontSize + 'px');
     fontValue.textContent = state.fontSize + 'px';
+    window.requestAnimationFrame(function() { centerFloatingLyric(state.currentLineIndex, true); });
     persist();
   });
   larger.addEventListener('click', function() {
     state.fontSize = Math.min(34, state.fontSize + 2);
     root.style.setProperty('--floating-lyric-size', state.fontSize + 'px');
     fontValue.textContent = state.fontSize + 'px';
+    window.requestAnimationFrame(function() { centerFloatingLyric(state.currentLineIndex, true); });
     persist();
   });
   previous.addEventListener('click', function() { var player = activePlayer(); if (player) player.skipBack(); });
   play.addEventListener('click', function() { var player = activePlayer(); if (player) player.toggle(); });
   next.addEventListener('click', function() { var player = activePlayer(); if (player) player.skipForward(); });
+  lock.addEventListener('click', function() { setLocked(!state.locked); });
   close.addEventListener('click', function() { setVisible(false); });
 
   var drag = null;
@@ -3992,6 +4066,8 @@ function ensure_music_floating_lyric() {
     root.style.right = 'auto';
     root.style.bottom = 'auto';
     root.style.transform = 'none';
+    root.style.width = Math.min(rect.width, window.innerWidth - 16) + 'px';
+    root.style.height = Math.min(rect.height, window.innerHeight - 16) + 'px';
     root.classList.add('is-dragging');
     toolbar.setPointerCapture(event.pointerId);
   });
@@ -4011,14 +4087,66 @@ function ensure_music_floating_lyric() {
   }
   toolbar.addEventListener('pointerup', finishDrag);
   toolbar.addEventListener('pointercancel', finishDrag);
-  window.addEventListener('resize', function() {
-    if (!root.style.top || root.hidden) return;
+
+  var resize = null;
+  var resizeFrame = 0;
+  resizeHandle.addEventListener('pointerdown', function(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
     var rect = root.getBoundingClientRect();
-    root.style.left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, rect.left)) + 'px';
-    root.style.top = Math.max(8, Math.min(window.innerHeight - rect.height - 8, rect.top)) + 'px';
+    resize = {x: event.clientX, y: event.clientY, width: rect.width, height: rect.height};
+    root.style.left = rect.left + 'px';
+    root.style.top = rect.top + 'px';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    root.style.transform = 'none';
+    root.style.width = rect.width + 'px';
+    root.style.height = rect.height + 'px';
+    root.classList.add('is-resizing');
+    resizeHandle.setPointerCapture(event.pointerId);
+  });
+  resizeHandle.addEventListener('pointermove', function(event) {
+    if (!resize) return;
+    var rect = root.getBoundingClientRect();
+    var minWidth = Math.min(300, window.innerWidth - 16);
+    var minHeight = Math.min(176, window.innerHeight - 16);
+    var maxWidth = Math.max(minWidth, window.innerWidth - rect.left - 8);
+    var maxHeight = Math.max(minHeight, window.innerHeight - rect.top - 8);
+    root.style.width = Math.max(minWidth, Math.min(maxWidth, resize.width + event.clientX - resize.x)) + 'px';
+    root.style.height = Math.max(minHeight, Math.min(maxHeight, resize.height + event.clientY - resize.y)) + 'px';
+    if (!resizeFrame) {
+      resizeFrame = window.requestAnimationFrame(function() {
+        resizeFrame = 0;
+        centerFloatingLyric(state.currentLineIndex, true);
+      });
+    }
+  });
+  function finishResize(event) {
+    if (!resize) return;
+    resize = null;
+    root.classList.remove('is-resizing');
+    if (event && resizeHandle.hasPointerCapture(event.pointerId)) resizeHandle.releasePointerCapture(event.pointerId);
+    centerFloatingLyric(state.currentLineIndex, true);
+    persist();
+  }
+  resizeHandle.addEventListener('pointerup', finishResize);
+  resizeHandle.addEventListener('pointercancel', finishResize);
+  window.addEventListener('resize', function() {
+    if (root.hidden) return;
+    var rect = root.getBoundingClientRect();
+    if (rect.width > window.innerWidth - 16) root.style.width = Math.max(160, window.innerWidth - 16) + 'px';
+    if (rect.height > window.innerHeight - 16) root.style.height = Math.max(150, window.innerHeight - 16) + 'px';
+    if (root.style.top) {
+      rect = root.getBoundingClientRect();
+      root.style.left = Math.max(8, Math.min(window.innerWidth - rect.width - 8, rect.left)) + 'px';
+      root.style.top = Math.max(8, Math.min(window.innerHeight - rect.height - 8, rect.top)) + 'px';
+    }
+    centerFloatingLyric(state.currentLineIndex, true);
     persist();
   });
   syncButtons();
+  setLocked(state.locked);
   window.__musicFloatingLyric = state;
   return state;
 }
@@ -4035,7 +4163,8 @@ function register_music_floating_lyric_player(player, button) {
       event.preventDefault();
       event.stopImmediatePropagation();
       floating.activePlayer = player;
-      floating.setVisible(floating.root.hidden);
+      if (!floating.root.hidden && floating.locked) floating.setLocked(false);
+      else floating.setVisible(floating.root.hidden);
     }, true);
   }
   player.on('play', function() {
