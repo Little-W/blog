@@ -3887,9 +3887,14 @@ function ensure_music_floating_lyric() {
   resizeHandle.setAttribute('class', 'music-floating-lyric__resize');
   resizeHandle.setAttribute('aria-label', '调整歌词窗口大小');
   resizeHandle.setAttribute('title', '拖动调整歌词窗口大小');
+  var lockNotice = document.createElement('div');
+  lockNotice.setAttribute('class', 'music-floating-lyric__lock-notice');
+  lockNotice.setAttribute('role', 'status');
+  lockNotice.setAttribute('aria-live', 'polite');
   root.appendChild(toolbar);
   root.appendChild(lines);
   root.appendChild(resizeHandle);
+  root.appendChild(lockNotice);
   document.body.appendChild(root);
 
   var state = {
@@ -3905,6 +3910,7 @@ function ensure_music_floating_lyric() {
     activePlayer: null,
     fontSize: Math.max(16, Math.min(34, Number(saved.fontSize) || 22)),
     locked: saved.locked === true,
+    lockNoticeTimer: 0,
     lastLineKey: '',
   };
   root.classList.toggle('is-locked', state.locked);
@@ -4017,16 +4023,25 @@ function ensure_music_floating_lyric() {
     syncButtons();
     persist();
   }
-  function setLocked(locked) {
+  function setLocked(locked, showNotice) {
     state.locked = Boolean(locked);
     root.classList.toggle('is-locked', state.locked);
     lockIconPath.setAttribute('d', state.locked
       ? 'M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v9h14v-9a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Zm7 11H7v-7h10v7Z'
       : 'M17 8h-7V6a2 2 0 0 1 3.9-.62l1.9-.62A4 4 0 0 0 8 6v2H7a2 2 0 0 0-2 2v9h14v-9a2 2 0 0 0-2-2Zm0 9H7v-7h10v7Z');
     lock.setAttribute('aria-label', state.locked ? '浮动歌词已锁定' : '锁定浮动歌词');
-    lock.setAttribute('title', state.locked ? '已锁定，请使用播放器中的浮动歌词开关解锁' : '锁定后不再阻挡页面操作');
+    lock.setAttribute('title', state.locked ? '需要重新开关歌词才能解锁' : '锁定后不再阻挡页面操作');
     lock.setAttribute('aria-pressed', state.locked ? 'true' : 'false');
     if (state.locked && document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
+    if (state.locked && showNotice) {
+      lockNotice.textContent = '需要重新开关歌词才能解锁';
+      lockNotice.classList.add('is-visible');
+      if (state.lockNoticeTimer) window.clearTimeout(state.lockNoticeTimer);
+      state.lockNoticeTimer = window.setTimeout(function() {
+        lockNotice.classList.remove('is-visible');
+        state.lockNoticeTimer = 0;
+      }, 3200);
+    }
     syncButtons();
     persist();
   }
@@ -4052,7 +4067,7 @@ function ensure_music_floating_lyric() {
   previous.addEventListener('click', function() { var player = activePlayer(); if (player) player.skipBack(); });
   play.addEventListener('click', function() { var player = activePlayer(); if (player) player.toggle(); });
   next.addEventListener('click', function() { var player = activePlayer(); if (player) player.skipForward(); });
-  lock.addEventListener('click', function() { setLocked(!state.locked); });
+  lock.addEventListener('click', function() { setLocked(!state.locked, true); });
   close.addEventListener('click', function() { setVisible(false); });
 
   var drag = null;
