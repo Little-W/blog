@@ -14,8 +14,17 @@ type EffectKey =
   | 'fireworks';
 
 type FrameRate = 0 | 15 | 24 | 30 | 45 | 60;
+type Live2DFrameRate = -1 | FrameRate;
+type LowPowerTimeout = 0 | 30 | 60 | 180 | 300 | 600;
 type Complexity = 'low' | 'balanced' | 'high';
-type EffectSettings = Record<EffectKey, boolean> & {enabled: boolean; frameRate: FrameRate; complexity: Complexity};
+type EffectSettings = Record<EffectKey, boolean> & {
+  enabled: boolean;
+  blur: boolean;
+  frameRate: FrameRate;
+  live2dFrameRate: Live2DFrameRate;
+  lowPowerTimeout: LowPowerTimeout;
+  complexity: Complexity;
+};
 
 const FRAME_RATE_OPTIONS: Array<{value: FrameRate; label: string}> = [
   {value: 0, label: '跟随显示器（垂直同步）'},
@@ -24,6 +33,25 @@ const FRAME_RATE_OPTIONS: Array<{value: FrameRate; label: string}> = [
   {value: 30, label: '30 FPS'},
   {value: 24, label: '24 FPS'},
   {value: 15, label: '15 FPS'},
+];
+
+const LIVE2D_FRAME_RATE_OPTIONS: Array<{value: Live2DFrameRate; label: string}> = [
+  {value: -1, label: '跟随特效帧率上限'},
+  {value: 0, label: '跟随显示器（垂直同步）'},
+  {value: 60, label: '60 FPS'},
+  {value: 45, label: '45 FPS'},
+  {value: 30, label: '30 FPS'},
+  {value: 24, label: '24 FPS'},
+  {value: 15, label: '15 FPS'},
+];
+
+const LOW_POWER_TIMEOUT_OPTIONS: Array<{value: LowPowerTimeout; label: string}> = [
+  {value: 0, label: '不自动进入'},
+  {value: 30, label: '30 秒'},
+  {value: 60, label: '1 分钟'},
+  {value: 180, label: '3 分钟'},
+  {value: 300, label: '5 分钟'},
+  {value: 600, label: '10 分钟'},
 ];
 
 const COMPLEXITY_OPTIONS: Array<{value: Complexity; label: string; description: string}> = [
@@ -40,7 +68,10 @@ const DEFAULT_SETTINGS: EffectSettings = {
   stars: true,
   particles: true,
   fireworks: true,
+  blur: true,
   frameRate: 0,
+  live2dFrameRate: -1,
+  lowPowerTimeout: 0,
   complexity: 'balanced',
 };
 
@@ -56,7 +87,7 @@ const EFFECTS: Array<{
     key: 'live2d',
     icon: '✦',
     title: 'Live2D 看板娘',
-    description: '页面右下角的可交互角色。使用官方 Cubism Web R5、延迟加载和空闲自适应渲染；可受全局帧率上限约束。',
+    description: '页面右下角的可交互角色。使用官方 Cubism Web R5、延迟加载；可单独设置帧率上限。',
     impact: 'high',
     impactLabel: '较高性能影响',
   },
@@ -106,15 +137,24 @@ function readSavedSettings(): EffectSettings {
   try {
     const value = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
     const frameRate = Number(value?.frameRate);
+    const live2dFrameRate = Number(value?.live2dFrameRate);
+    const lowPowerTimeout = Number(value?.lowPowerTimeout);
     const complexity = COMPLEXITY_OPTIONS.some((option) => option.value === value?.complexity)
       ? value.complexity as Complexity
       : DEFAULT_SETTINGS.complexity;
     return {
       ...DEFAULT_SETTINGS,
       ...value,
+      blur: value?.blur !== false,
       frameRate: FRAME_RATE_OPTIONS.some((option) => option.value === frameRate)
         ? frameRate as FrameRate
         : DEFAULT_SETTINGS.frameRate,
+      live2dFrameRate: LIVE2D_FRAME_RATE_OPTIONS.some((option) => option.value === live2dFrameRate)
+        ? live2dFrameRate as Live2DFrameRate
+        : DEFAULT_SETTINGS.live2dFrameRate,
+      lowPowerTimeout: LOW_POWER_TIMEOUT_OPTIONS.some((option) => option.value === lowPowerTimeout)
+        ? lowPowerTimeout as LowPowerTimeout
+        : DEFAULT_SETTINGS.lowPowerTimeout,
       complexity,
     };
   } catch {
@@ -141,12 +181,20 @@ export default function SettingsPage(): JSX.Element {
   );
   const dirty = ready && JSON.stringify(settings) !== savedSnapshot;
 
-  function toggle(key: EffectKey | 'enabled') {
+  function toggle(key: EffectKey | 'enabled' | 'blur') {
     setSettings((current) => ({...current, [key]: !current[key]}));
   }
 
   function setFrameRate(frameRate: FrameRate) {
     setSettings((current) => ({...current, frameRate}));
+  }
+
+  function setLive2DFrameRate(live2dFrameRate: Live2DFrameRate) {
+    setSettings((current) => ({...current, live2dFrameRate}));
+  }
+
+  function setLowPowerTimeout(lowPowerTimeout: LowPowerTimeout) {
+    setSettings((current) => ({...current, lowPowerTimeout}));
   }
 
   function setComplexity(complexity: Complexity) {
@@ -155,6 +203,7 @@ export default function SettingsPage(): JSX.Element {
 
   function saveAndApply() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    window.dispatchEvent(new CustomEvent('yusen:effects-settings-change', {detail: settings}));
     setApplying(true);
     window.setTimeout(() => window.location.reload(), 350);
   }
@@ -168,7 +217,10 @@ export default function SettingsPage(): JSX.Element {
       stars: true,
       particles: false,
       fireworks: true,
+      blur: false,
       frameRate: 30,
+      live2dFrameRate: -1,
+      lowPowerTimeout: 60,
       complexity: 'low',
     });
   }
@@ -248,6 +300,70 @@ export default function SettingsPage(): JSX.Element {
                   <option key={option.value} value={option.value}>{option.label}：{option.description}</option>
                 ))}
               </select>
+            </label>
+          </section>
+
+          <section className={styles.frameRateCard}>
+            <div className={styles.frameRateIcon} aria-hidden="true">◔</div>
+            <div className={styles.frameRateCopy}>
+              <span className={styles.sectionLabel}>LOW POWER TIMEOUT</span>
+              <h2>低功耗模式超时</h2>
+              <p>无交互达到指定时间后，所有已开启特效固定限制为 15 FPS；再次操作页面会立即恢复各自的帧率设置。</p>
+            </div>
+            <label className={styles.frameRateSelect}>
+              <span>无交互后</span>
+              <select
+                value={settings.lowPowerTimeout}
+                onChange={(event) => setLowPowerTimeout(Number(event.target.value) as LowPowerTimeout)}
+                disabled={!ready}
+                aria-label="低功耗模式超时">
+                {LOW_POWER_TIMEOUT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section className={styles.frameRateCard}>
+            <div className={styles.frameRateIcon} aria-hidden="true">◒</div>
+            <div className={styles.frameRateCopy}>
+              <span className={styles.sectionLabel}>LIVE2D FRAME RATE</span>
+              <h2>看板娘帧率上限</h2>
+              <p>可单独限制看板娘的渲染频率；“跟随特效帧率上限”使用上方设置。</p>
+            </div>
+            <label className={styles.frameRateSelect}>
+              <span>当前上限</span>
+              <select
+                value={settings.live2dFrameRate}
+                onChange={(event) => setLive2DFrameRate(Number(event.target.value) as Live2DFrameRate)}
+                disabled={!ready}
+                aria-label="看板娘帧率上限">
+                {LIVE2D_FRAME_RATE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+
+          <section className={styles.frameRateCard}>
+            <div className={styles.frameRateIcon} aria-hidden="true">◌</div>
+            <div className={styles.frameRateCopy}>
+              <span className={styles.sectionLabel}>GLASS EFFECT</span>
+              <h2>半透明模糊</h2>
+              <p>控制半透明卡片、浮动面板与视频控件的背景模糊。关闭后保留透明层与配色，可降低图层合成开销。</p>
+            </div>
+            <label className={`${styles.frameRateSelect} ${styles.blurToggle}`}>
+              <span>{ready && settings.blur ? '已开启' : '已关闭'}</span>
+              <span className={styles.switch}>
+                <input
+                  type="checkbox"
+                  checked={ready && settings.blur}
+                  onChange={() => toggle('blur')}
+                  disabled={!ready}
+                  aria-label={`半透明模糊${settings.blur ? '已开启' : '已关闭'}`}
+                />
+                <span aria-hidden="true" />
+              </span>
             </label>
           </section>
 

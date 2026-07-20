@@ -10,10 +10,16 @@
     stars: true,
     particles: true,
     fireworks: true,
+    blur: true,
     frameRate: 0,
+    live2dFrameRate: -1,
+    lowPowerTimeout: 0,
     complexity: "balanced"
   };
   var FRAME_RATE_OPTIONS = [0, 15, 24, 30, 45, 60];
+  var LIVE2D_FRAME_RATE_OPTIONS = [-1].concat(FRAME_RATE_OPTIONS);
+  var LOW_POWER_TIMEOUT_OPTIONS = [0, 30, 60, 180, 300, 600];
+  var LOW_POWER_FRAME_RATE = 15;
   var COMPLEXITY_OPTIONS = ["low", "balanced", "high"];
   var COMPLEXITY_MULTIPLIERS = { low: 0.5, balanced: 1, high: 1.5 };
   var nativeRequestAnimationFrame = (window.requestAnimationFrame || function (callback) {
@@ -23,6 +29,26 @@
   var frameRequests = {};
   var lastFrameByCallback = new WeakMap();
   var nextFrameRequestId = 1;
+  var lowPowerTimer = 0;
+  var lowPowerModeActive = false;
+  var lastInteractionAt = Date.now();
+
+  function normalizeSettings(stored) {
+    var settings = Object.assign({}, DEFAULTS, stored || {});
+    var frameRate = Number(settings.frameRate);
+    var live2dFrameRate = Number(settings.live2dFrameRate);
+    var lowPowerTimeout = Number(settings.lowPowerTimeout);
+    settings.frameRate = FRAME_RATE_OPTIONS.indexOf(frameRate) === -1 ? 0 : frameRate;
+    settings.live2dFrameRate = LIVE2D_FRAME_RATE_OPTIONS.indexOf(live2dFrameRate) === -1
+      ? DEFAULTS.live2dFrameRate
+      : live2dFrameRate;
+    settings.lowPowerTimeout = LOW_POWER_TIMEOUT_OPTIONS.indexOf(lowPowerTimeout) === -1
+      ? DEFAULTS.lowPowerTimeout
+      : lowPowerTimeout;
+    settings.blur = settings.blur !== false;
+    settings.complexity = COMPLEXITY_OPTIONS.indexOf(settings.complexity) === -1 ? "balanced" : settings.complexity;
+    return settings;
+  }
 
   function readSettings() {
     var stored = {};
@@ -31,11 +57,7 @@
     } catch (error) {
       console.warn("[Effects] Ignoring invalid saved settings.", error);
     }
-    var settings = Object.assign({}, DEFAULTS, stored);
-    var frameRate = Number(settings.frameRate);
-    settings.frameRate = FRAME_RATE_OPTIONS.indexOf(frameRate) === -1 ? 0 : frameRate;
-    settings.complexity = COMPLEXITY_OPTIONS.indexOf(settings.complexity) === -1 ? "balanced" : settings.complexity;
-    return settings;
+    return normalizeSettings(stored);
   }
 
   var settings = readSettings();
@@ -46,7 +68,84 @@
   }
 
   function getFrameRate() {
-    return settings.frameRate || 0;
+    return getEffectiveFrameRate(settings.frameRate || 0);
+  }
+
+  function getLive2DFrameRate() {
+    var frameRate = settings.live2dFrameRate === -1
+      ? getFrameRate()
+      : settings.live2dFrameRate || 0;
+    return getEffectiveFrameRate(frameRate);
+  }
+
+  function getEffectiveFrameRate(frameRate) {
+    if (!lowPowerModeActive) return frameRate || 0;
+    return frameRate ? Math.min(frameRate, LOW_POWER_FRAME_RATE) : LOW_POWER_FRAME_RATE;
+  }
+
+  function getLowPowerTimeout() {
+    return settings.lowPowerTimeout || 0;
+  }
+
+  function setLowPowerMode(active) {
+    active = !!active;
+    if (lowPowerModeActive === active) return;
+    lowPowerModeActive = active;
+    document.documentElement.dataset.yusenLowPower = active ? "on" : "off";
+    window.dispatchEvent(new CustomEvent("yusen:low-power-mode-change", {
+      detail: {active: active, frameRate: active ? LOW_POWER_FRAME_RATE : getFrameRate()}
+    }));
+  }
+
+  function armLowPowerTimer() {
+    window.clearTimeout(lowPowerTimer);
+    lowPowerTimer = 0;
+
+    var timeoutSeconds = getLowPowerTimeout();
+    if (!timeoutSeconds) {
+      setLowPowerMode(false);
+      return;
+    }
+
+    var remaining = timeoutSeconds * 1000 - (Date.now() - lastInteractionAt);
+    if (remaining <= 0) {
+      setLowPowerMode(true);
+      return;
+    }
+
+    lowPowerTimer = window.setTimeout(function () {
+      lowPowerTimer = 0;
+      if (Date.now() - lastInteractionAt >= timeoutSeconds * 1000 - 20) {
+        setLowPowerMode(true);
+      } else {
+        armLowPowerTimer();
+      }
+    }, remaining);
+  }
+
+  function noteUserInteraction(event) {
+    if (!getLowPowerTimeout()) return;
+    var now = Date.now();
+    // 鼠标移动事件频率很高；在未进入低功耗模式时按短间隔合并重置即可。
+    if (event && event.type === "pointermove" && !lowPowerModeActive && now - lastInteractionAt < 750) return;
+    lastInteractionAt = now;
+    setLowPowerMode(false);
+    armLowPowerTimer();
+  }
+
+  function applyBlurPreference() {
+    document.documentElement.dataset.yusenBlur = settings.blur === false ? "off" : "on";
+  }
+
+  function applyRuntimeSettings(nextSettings) {
+    settings = normalizeSettings(nextSettings);
+    if (window.YusenEffects) {
+      window.YusenEffects.settings = Object.assign({}, settings);
+    }
+    applyBlurPreference();
+    lastInteractionAt = Date.now();
+    setLowPowerMode(false);
+    armLowPowerTimer();
   }
 
   function getEffectComplexity(name, baseValue, minimum) {
@@ -168,6 +267,10 @@
     settings: Object.assign({}, settings),
     isEnabled: isEnabled,
     getFrameRate: getFrameRate,
+    getLive2DFrameRate: getLive2DFrameRate,
+    getLowPowerTimeout: getLowPowerTimeout,
+    isLowPowerModeActive: function() { return lowPowerModeActive; },
+    isBlurEnabled: function() { return settings.blur !== false; },
     getComplexity: function() { return settings.complexity; },
     getEffectComplexity: getEffectComplexity,
     requestAnimationFrame: requestEffectAnimationFrame,
@@ -175,11 +278,33 @@
     loaded: loaded
   };
 
+  window.addEventListener("yusen:effects-settings-change", function(event) {
+    if (!event || !event.detail || typeof event.detail !== "object") return;
+    applyRuntimeSettings(event.detail);
+  });
+  window.addEventListener("storage", function(event) {
+    if (event.key !== STORAGE_KEY) return;
+    try {
+      applyRuntimeSettings(JSON.parse(event.newValue || "{}") || {});
+    } catch (error) {
+      console.warn("[Effects] Ignoring invalid synchronized settings.", error);
+    }
+  });
+
+  ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"].forEach(function(type) {
+    window.addEventListener(type, noteUserInteraction, {passive: true});
+  });
+
+  document.documentElement.dataset.yusenLowPower = "off";
+  armLowPowerTimer();
+
   if (settings.enabled === false) {
+    applyBlurPreference();
     document.documentElement.dataset.effects = "off";
     return;
   }
 
+  applyBlurPreference();
   document.documentElement.dataset.effects = "on";
   effects.reduce(function (chain, effect) {
     if (!isEnabled(effect.name)) return chain;

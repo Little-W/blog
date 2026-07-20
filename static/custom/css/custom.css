@@ -2581,6 +2581,15 @@ body{cursor: url(/custom/default.cur),default;}
   
 /*qualityselector*/
 
+/* 关闭半透明模糊时只移除 backdrop-filter；透明度、颜色和层次保持不变。该规则
+   仅在根节点标记为 off 时参与匹配，不会给默认渲染路径增加动画或每帧计算。 */
+html[data-yusen-blur='off'] *,
+html[data-yusen-blur='off'] *::before,
+html[data-yusen-blur='off'] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 .video-js.vjs-qualityselector {
   display: block
 }

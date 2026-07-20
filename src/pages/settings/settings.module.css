@@ -159,6 +159,14 @@
   opacity: 0.58;
 }
 
+.blurToggle {
+  align-items: flex-start;
+}
+
+.blurToggle .switch {
+  margin-top: 2px;
+}
+
 .switch {
   position: relative;
   display: inline-flex;

@@ -487,59 +487,20 @@ function set_music_track_cover_image(image, song) {
   set_music_track_cover_loaded(image, false);
 }
 
-function observe_music_track_cover_images(list) {
+function load_music_track_cover_images(list) {
   if (!list) return;
-  var images = Array.prototype.slice.call(list.querySelectorAll('img[data-cover-pending="true"]'));
-  function start(image) {
-    if (!image || image.dataset.coverPending !== 'true') return;
+  // 封面候选地址会在 resolve_music_cover_source 中按原始封面去重并共享同一
+  // 预加载任务，因此这里可以直接同时启动列表内的请求。浏览器会自行处理网络
+  // 并发上限；切换歌单后仍未完成的探测也会写入缓存，供下一次列表渲染复用。
+  Array.prototype.slice.call(list.querySelectorAll('img[data-cover-pending="true"]')).forEach(function(image) {
     delete image.dataset.coverPending;
     var song = image.__musicCoverSong;
     image.__musicCoverSong = null;
     load_music_track_cover_image(image, song);
-  }
-  if (typeof window.IntersectionObserver !== 'function') {
-    images.forEach(start);
-    return;
-  }
-  var queuedImages = [];
-  var flushTimer = 0;
-  function isNearVisibleRange(image) {
-    if (!image || !image.isConnected) return false;
-    var listRect = list.getBoundingClientRect();
-    var imageRect = image.getBoundingClientRect();
-    return imageRect.bottom >= listRect.top - 320 && imageRect.top <= listRect.bottom + 320;
-  }
-  function flushQueue() {
-    flushTimer = 0;
-    var queue = queuedImages;
-    queuedImages = [];
-    queue.forEach(function(image) {
-      if (isNearVisibleRange(image)) start(image);
-      else if (image && image.isConnected && image.dataset.coverPending === 'true') observer.observe(image);
-    });
-  }
-  function scheduleFlush(delay) {
-    if (flushTimer) window.clearTimeout(flushTimer);
-    flushTimer = window.setTimeout(flushQueue, delay);
-  }
-  var observer = new window.IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (!entry.isIntersecting) return;
-      observer.unobserve(entry.target);
-      if (queuedImages.indexOf(entry.target) === -1) queuedImages.push(entry.target);
-    });
-    if (queuedImages.length) scheduleFlush(32);
-  }, {root: list, rootMargin: '320px 0px'});
-  images.forEach(function(image) { observer.observe(image); });
-  list.addEventListener('scroll', function() {
-    if (queuedImages.length) scheduleFlush(140);
-  }, {passive: true});
-  list.__musicCoverObserver = observer;
-  list.__musicCoverStop = function() {
-    observer.disconnect();
-    if (flushTimer) window.clearTimeout(flushTimer);
-    queuedImages = [];
-  };
+  });
+  // 保留清理入口，兼容列表重建流程。请求结果会先检查图片仍挂载在 DOM 中，
+  // 因而旧列表不会覆盖新列表的封面。
+  list.__musicCoverStop = function() {};
 }
 
 function install_music_source_fallback(player) {
@@ -1525,6 +1486,15 @@ function init_aplayer() {
     var row = e.currentTarget;
     // 下载与标签编辑属于行内独立操作，不能同时切换该歌曲的选中状态。
     if (e.target.closest('.music-track-action')) return;
+    var rowRect = row.getBoundingClientRect();
+    var rippleX = Number.isFinite(e.clientX) ? e.clientX - rowRect.left : rowRect.width / 2;
+    var rippleY = Number.isFinite(e.clientY) ? e.clientY - rowRect.top : rowRect.height / 2;
+    row.style.setProperty('--music-ripple-x', Math.max(0, Math.min(rowRect.width, rippleX)) + 'px');
+    row.style.setProperty('--music-ripple-y', Math.max(0, Math.min(rowRect.height, rippleY)) + 'px');
+    // 强制重启的开销仅发生在点击的单个表项；滚动与悬停路径没有同步布局读取。
+    row.classList.remove('is-rippling');
+    void row.offsetWidth;
+    row.classList.add('is-rippling');
     var musicId = normalize_music_id(row.music !== undefined ? row.music : row.dataset.musicId);
     if (musicId === null) return;
     if (find_selected_music_index(musicId) === -1) {
@@ -3183,7 +3153,6 @@ function init_custom_list() {
   var list_div_sel = document.querySelector("#aplayer_list_active");
   var ol = list_div.querySelector(".music-list-ol");
   if (ol && ol.__musicCoverStop) ol.__musicCoverStop();
-  else if (ol && ol.__musicCoverObserver) ol.__musicCoverObserver.disconnect();
   try {
     list_div_sel.removeChild(ol);
   } catch (err) {
@@ -3220,14 +3189,14 @@ function init_custom_list() {
     cover.setAttribute("class", "music-track-cover");
     if (arr.pic) {
       var coverImage = document.createElement("img");
-      coverImage.loading = "lazy";
+      // 列表内封面与来源探测同时启动；无需等待滚动到可视区域才发起请求。
+      coverImage.loading = "eager";
       coverImage.decoding = "async";
-      coverImage.fetchPriority = "low";
+      coverImage.fetchPriority = "auto";
       coverImage.width = 42;
       coverImage.height = 42;
       coverImage.alt = "";
-      // 列表可能包含数百首曲目。先登记封面资料，挂载列表后再由可视范围
-      // 观察器启动镜像探测，避免切换歌单时立即发出整页封面请求。
+      // 先登记封面资料，列表挂载后统一并行启动镜像探测。
       set_music_track_cover_image(coverImage, arr);
       cover.appendChild(coverImage);
     }
@@ -3272,7 +3241,7 @@ function init_custom_list() {
     ol.appendChild(li);
   }
   list_div.appendChild(ol);
-  observe_music_track_cover_images(ol);
+  load_music_track_cover_images(ol);
   var resultCount = document.getElementById('music-list-result-count');
   if (resultCount) resultCount.innerText = active_list.length;
   apply_music_list_display_limit(music_list_display_limit);
@@ -4548,12 +4517,15 @@ function aplayer0() {
   render_queue_preview();
 
   var order_button = native_controller && native_controller.querySelector(".aplayer-icon-order");
+  var order_list_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h11M5 12h11M5 18h11M18 5v14m0 0-3-3m3 3 3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+  var order_random_icon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h3.4c2.1 0 3.6 1.1 4.8 3l3 4.4c1.1 1.6 2.4 2.6 4.4 2.6H21M18 13l3 3-3 3M4 18h3.4c2.1 0 3.6-1.1 4.8-3l.8-1.2M16.2 6H21M18 3l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
   function sync_order_button_label() {
     if (!order_button) return;
     var is_random = window.ap0.options.order === "random";
     order_button.setAttribute("aria-label", is_random ? "随机播放" : "顺序播放");
     order_button.setAttribute("title", is_random ? "随机播放" : "顺序播放");
-    order_button.setAttribute("aria-pressed", is_random ? "true" : "false");
+    order_button.removeAttribute("aria-pressed");
+    order_button.innerHTML = is_random ? order_random_icon : order_list_icon;
   }
   if (order_button) {
     order_button.addEventListener("click", function() {
@@ -4572,7 +4544,8 @@ function aplayer0() {
     var label = loop_mode === "one" ? "单曲循环" : loop_mode === "all" ? "列表循环" : "循环关闭";
     loop_button.setAttribute("aria-label", label);
     loop_button.setAttribute("title", label);
-    loop_button.setAttribute("aria-pressed", loop_mode === "none" ? "false" : "true");
+    // 循环按钮仅以图标说明当前模式，不提供按下态，避免与歌词开关混淆。
+    loop_button.removeAttribute("aria-pressed");
   }
   if (loop_button) {
     loop_button.addEventListener("click", function() {

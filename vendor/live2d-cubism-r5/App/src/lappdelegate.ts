@@ -81,18 +81,11 @@ export class LAppDelegate {
         return;
       }
 
-      const manager = this.getManager();
-      const active = timestamp < this._highFpsUntil || !!manager?.isMotionActive();
       const frameRateLimit = this.getEffectFrameRateLimit();
-      const activeFps = frameRateLimit
+      const targetFps = frameRateLimit
         ? Math.min(this._activeFps, frameRateLimit)
         : this._activeFps;
-      const idleFps = frameRateLimit
-        ? Math.min(this._idleFps, frameRateLimit)
-        : this._idleFps;
-      const frameInterval = active
-        ? 1000 / activeFps
-        : 1000 / idleFps;
+      const frameInterval = 1000 / targetFps;
       const elapsed = timestamp - this._lastRenderTime;
       if (elapsed + 0.5 < frameInterval) return;
 
@@ -144,10 +137,8 @@ export class LAppDelegate {
   }
 
   public markInteraction(duration = 3000): void {
-    this._highFpsUntil = Math.max(
-      this._highFpsUntil,
-      performance.now() + duration
-    );
+    // 保留公开方法，供控制栏和动作逻辑调用；不再因交互状态改变刷新频率。
+    void duration;
   }
 
   public getStatus(): Record<string, unknown> {
@@ -155,7 +146,6 @@ export class LAppDelegate {
     return {
       renderer: 'Cubism Web SDK R5 / WebGL2',
       activeFps: this._activeFps,
-      idleFps: this._idleFps,
       frameRateLimit: this.getEffectFrameRateLimit(),
       mouseTracking: this._mouseTrackingEnabled,
       idleMotion: this._idleMotionEnabled,
@@ -302,7 +292,6 @@ export class LAppDelegate {
       this._averageFrameCost = this._frameCostTotal / this._frameCostSamples;
       if (this._averageFrameCost > 12 && this._activeFps > 24) {
         this._activeFps = 24;
-        this._idleFps = 12;
       }
       this._frameCostTotal = 0;
       this._frameCostSamples = 0;
@@ -315,7 +304,10 @@ export class LAppDelegate {
   }
 
   private getEffectFrameRateLimit(): number {
-    const frameRate = Number((window as any).YusenEffects?.getFrameRate?.() || 0);
+    const effects = (window as any).YusenEffects;
+    const frameRate = Number(
+      effects?.getLive2DFrameRate?.() ?? effects?.getFrameRate?.() ?? 0
+    );
     return [15, 24, 30, 45, 60].includes(frameRate) ? frameRate : 0;
   }
 
@@ -326,7 +318,6 @@ export class LAppDelegate {
       ((navigator as any).hardwareConcurrency || 8) <= 4 ||
       ((navigator as any).deviceMemory || 8) <= 4;
     this._activeFps = this._lowPowerDevice ? 24 : 30;
-    this._idleFps = this._lowPowerDevice ? 12 : 15;
   }
 
   private _cubismOption: Option;
@@ -342,13 +333,11 @@ export class LAppDelegate {
   private _idleMotionEnabled = true;
   private _frameRequest = 0;
   private _lastRenderTime = 0;
-  private _highFpsUntil = 0;
   private _scrollTimer = 0;
   private _pointerResetTimer = 0;
   private _intersectionObserver: IntersectionObserver = null;
   private _lowPowerDevice: boolean;
   private _activeFps: number;
-  private _idleFps: number;
   private _renderedFrames = 0;
   private _frameCostTotal = 0;
   private _frameCostSamples = 0;

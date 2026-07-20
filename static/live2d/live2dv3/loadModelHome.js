@@ -63,13 +63,9 @@ var live2dEnvironmentPaused = false;
 var live2dContextPaused = false;
 var live2dScrollPaused = false;
 var live2dInViewport = true;
-var live2dHighFpsUntil = performance.now() + 5000;
 var live2dLowPowerDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
     (navigator.deviceMemory && navigator.deviceMemory <= 4);
 var live2dActiveFps = live2dLowPowerDevice ? 24 : 30;
-var live2dIdleFps = live2dLowPowerDevice ? 12 : 15;
-var live2dActiveFrameInterval = 1000 / live2dActiveFps;
-var live2dIdleFrameInterval = 1000 / live2dIdleFps;
 var live2dFrameCost = 0;
 var live2dFrameSamples = 0;
 var live2dSlowSamples = 0;
@@ -82,9 +78,26 @@ var live2dIdleMotionEnabled = live2dControlState.idleMotion !== false;
 var live2dDisplayScale = Number(live2dControlState.scale) || 1;
 var live2dCurrentModel = null;
 var live2dCurrentMotions = null;
+
+function getLive2dFrameRateLimit() {
+    var effects = window.YusenEffects || {};
+    var frameRate = Number(
+        typeof effects.getLive2DFrameRate === "function"
+            ? effects.getLive2DFrameRate()
+            : (typeof effects.getFrameRate === "function" ? effects.getFrameRate() : 0)
+    );
+    return [15, 24, 30, 45, 60].indexOf(frameRate) !== -1 ? frameRate : 0;
+}
+
+function getLive2dFrameInterval() {
+    var frameRateLimit = getLive2dFrameRateLimit();
+    var targetFps = live2dActiveFps;
+    if (frameRateLimit) targetFps = Math.min(targetFps, frameRateLimit);
+    return 1000 / targetFps;
+}
+
 window.__live2dPerformance = {
     activeFps: live2dActiveFps,
-    idleFps: live2dIdleFps,
     maxWidth: 240,
     motionCount: 0,
     averageFrameCost: 0,
@@ -92,12 +105,12 @@ window.__live2dPerformance = {
     renderer: "initializing",
     webgpuAvailable: !!navigator.gpu,
     lowPowerProfile: !!live2dLowPowerDevice,
+    frameRateLimit: getLive2dFrameRateLimit(),
     recoveredMotions: 0
 };
 
-function markLive2dInteraction(activeFor) {
-    var now = performance.now();
-    live2dHighFpsUntil = Math.max(live2dHighFpsUntil, now + (activeFor || 5000));
+function markLive2dInteraction() {
+    // 兼容控制接口：交互不再改变渲染帧率。
 }
 
 function resetLive2dTickerClock(timestamp) {
@@ -131,17 +144,12 @@ function updateLive2dPerformanceProfile(frameCost) {
 
     if (live2dSlowSamples >= 2 && live2dActiveFps > 24) {
         live2dActiveFps = 24;
-        live2dIdleFps = 12;
         live2dSlowSamples = 0;
     } else if (live2dFastSamples >= 4 && !live2dLowPowerDevice && live2dActiveFps < 30) {
         live2dActiveFps = 30;
-        live2dIdleFps = 15;
         live2dFastSamples = 0;
     }
-    live2dActiveFrameInterval = 1000 / live2dActiveFps;
-    live2dIdleFrameInterval = 1000 / live2dIdleFps;
     window.__live2dPerformance.activeFps = live2dActiveFps;
-    window.__live2dPerformance.idleFps = live2dIdleFps;
 }
 
 window.__setLive2dRenderingEnabled = function (enabled) {
@@ -171,9 +179,7 @@ function startLive2dRenderLoop() {
             live2dLastFrame = timestamp;
             return;
         }
-        var frameInterval = timestamp < live2dHighFpsUntil
-            ? live2dActiveFrameInterval
-            : live2dIdleFrameInterval;
+        var frameInterval = getLive2dFrameInterval();
         var elapsed = timestamp - live2dLastFrame;
         if (elapsed + 0.5 < frameInterval) return;
         live2dLastFrame = elapsed > frameInterval * 2
@@ -182,6 +188,7 @@ function startLive2dRenderLoop() {
         var frameStarted = performance.now();
         app.ticker.update(timestamp);
         updateLive2dPerformanceProfile(performance.now() - frameStarted);
+        window.__live2dPerformance.frameRateLimit = getLive2dFrameRateLimit();
     }
     live2dFrameRequest = window.requestAnimationFrame(renderLive2dFrame);
 }
