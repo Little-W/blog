@@ -708,7 +708,7 @@ body{cursor: url(/custom/default.cur),default;}
 	font-weight: 700;
     border-top: 1px solid #e9e9e9;
     cursor: pointer;
-    transition: all 0.4s ease;
+	transition: background 0.18s ease;
     overflow: hidden;
     margin: 0;
 }
@@ -719,27 +719,9 @@ body{cursor: url(/custom/default.cur),default;}
 
 
 
-.music-list::after{
-	content: '';
-	display: block;
-	position: absolute;
-	width: 150px;
-	height: 150px;
-	left: var(--x, 0);
-	top: var(--y, 0);
-	background-image: radial-gradient(circle, #000 20%, transparent 10%);
-	background-repeat: no-repeat;
-	background-position: 50%;
-	transform: translate(-50%, -50%) scale(10);
-	opacity: 0;
-	transition: transform 0.8s, opacity 0.8s;
-}
-
-.music-list:active::after {
-	transform: translate(-50%, -50%) scale(0);
-	opacity: 0.3;
-	transition: 0s;
-}
+/* 旧版列表的 150px 点击扩散层会在相邻表项上造成范围选择的视觉错觉。
+ * 现代曲目表仅保留当前行的 hover 状态。 */
+.music-list::after { content: none; display: none; }
 .music-list-checkbox{
 	position: relative;
     line-height: 32px;

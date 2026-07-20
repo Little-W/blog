@@ -140,12 +140,14 @@
 .music-page #aplayer_list_active { display:block; padding:0; }
 .music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; scrollbar-color:rgba(102,112,133,.3) transparent; }
 .music-page .music-list { display:grid; grid-template-columns:38px 52px minmax(0,1fr) 174px; align-items:center; height:64px; min-height:64px; padding:6px 16px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; font-size:.86rem; line-height:normal; transform:none; transition:background .18s ease; }
+/* 悬停只作用于当前 li。移除旧版的点击扩散伪元素后，不会再出现类似范围选择的
+   大片变色效果。 */
 .music-page .music-list:hover { z-index:1; transform:none; background:var(--music-soft); }
 .music-page .music-list:has(.music-list-checkbox:checked) { background:rgba(0,168,233,.075); }
 .music-track-index { color:var(--music-muted); text-align:center; font-variant-numeric:tabular-nums; pointer-events:none; }
 .music-track-cover { width:42px; height:42px; overflow:hidden; border-radius:7px; background:linear-gradient(145deg,#dceaf2,#a8bdcc); pointer-events:none; }
 .music-track-cover::after { content:'♪'; display:grid; place-items:center; width:100%; height:100%; color:rgba(20,45,67,.46); font-size:1.1rem; }
-.music-track-cover:has(img)::after { display:none; }
+.music-track-cover:has(img.is-loaded)::after { display:none; }
 .music-track-cover img { width:100%; height:100%; object-fit:cover; }
 .music-track-meta { min-width:0; display:flex; flex-direction:column; gap:4px; pointer-events:none; }
 .music-track-title { overflow:hidden; color:#162334; font-size:.91rem; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }

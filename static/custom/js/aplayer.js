@@ -408,26 +408,64 @@ function load_music_cover(candidates, onSuccess, onFailure) {
   loadNext();
 }
 
-function set_music_track_cover_image(image, song) {
+// 曲库列表中的同一张封面会被许多歌曲复用。将成功地址按原始封面标识缓存，
+// 并让同一时间的请求共享一个预加载任务；这样切换队列、重绘列表时不会重新
+// 触发数十个 HF 图片请求，更不会在候选镜像切换期间把已显示的封面清空。
+var music_cover_source_cache = Object.create(null);
+var music_cover_source_pending = Object.create(null);
+var music_cover_request_serial = 0;
+
+function music_cover_cache_key(song) {
+  if (!song) return '';
+  var source = song.cover_source || song.pic_source || song.cover || song.pic || '';
+  var hfPath = music_hf_cover_path(source);
+  return hfPath ? 'hf:' + hfPath.pathname + hfPath.search : String(source);
+}
+
+function resolve_music_cover_source(song) {
+  var cacheKey = music_cover_cache_key(song);
   var candidates = music_cover_candidates(song);
-  var sourceIndex = 0;
-  var attemptId = 0;
-  function loadNext() {
-    if (sourceIndex >= candidates.length) {
-      image.removeAttribute('src');
-      return;
-    }
-    var source = candidates[sourceIndex++];
-    var currentAttempt = ++attemptId;
+  if (!cacheKey || !candidates.length) return Promise.reject(new Error('封面地址无效'));
+  if (music_cover_source_cache[cacheKey]) return Promise.resolve(music_cover_source_cache[cacheKey]);
+  if (music_cover_source_pending[cacheKey]) return music_cover_source_pending[cacheKey];
+
+  var pending = new Promise(function(resolve, reject) {
+    load_music_cover(candidates, resolve, reject);
+  }).then(function(source) {
+    music_cover_source_cache[cacheKey] = source;
+    delete music_cover_source_pending[cacheKey];
+    return source;
+  }, function(error) {
+    // 失败不记入缓存。下次进入列表或网络恢复后仍会重新尝试。
+    delete music_cover_source_pending[cacheKey];
+    throw error;
+  });
+  music_cover_source_pending[cacheKey] = pending;
+  return pending;
+}
+
+function set_music_track_cover_image(image, song) {
+  if (!image) return;
+  var requestId = String(++music_cover_request_serial);
+  image.dataset.coverRequest = requestId;
+  image.classList.remove('is-loaded');
+  resolve_music_cover_source(song).then(function(source) {
+    if (image.dataset.coverRequest !== requestId) return;
     image.onload = function() {
-      if (currentAttempt !== attemptId) return;
+      if (image.dataset.coverRequest === requestId) image.classList.add('is-loaded');
     };
     image.onerror = function() {
-      if (currentAttempt === attemptId) loadNext();
+      if (image.dataset.coverRequest === requestId) image.classList.remove('is-loaded');
     };
     image.src = source;
-  }
-  loadNext();
+    // 命中浏览器内存缓存时，load 事件可能早于处理函数注册完成；complete
+    // 与 naturalWidth 一同确认，避免 CSS 将真实已加载封面误判为空白。
+    if (image.complete && image.naturalWidth > 0) image.classList.add('is-loaded');
+  }).catch(function() {
+    // 不删除已有 src。列表重绘或镜像短暂异常时保留当前封面；新节点则显示
+    // CSS 提供的占位符，避免出现无内容的蓝色方块。
+    if (image.dataset.coverRequest === requestId) image.classList.remove('is-loaded');
+  });
 }
 
 function install_music_source_fallback(player) {
@@ -1315,6 +1353,8 @@ function init_aplayer() {
   $(document).off("click.musicPlaylist", ".music-list");
   $(document).on("click.musicPlaylist", ".music-list", function (e) {
     var row = e.currentTarget;
+    // 下载与标签编辑属于行内独立操作，不能同时切换该歌曲的选中状态。
+    if (e.target.closest('.music-track-action')) return;
     var rect = row.getBoundingClientRect();
     row.style.setProperty('--x', (e.clientX - rect.left) + 'px');
     row.style.setProperty('--y', (e.clientY - rect.top) + 'px');
@@ -3372,13 +3412,16 @@ function set_player_cover(player, audio) {
   // 背景图不会触发元素自身的 error 事件。预读镜像封面；单个来源在 12 秒内
   // 没有响应时会继续尝试下一镜像。预读完成以前保留旧图，不能提前把未解码的
   // background-image 写入容器，否则会露出蓝色占位底色。
-  load_music_cover(candidates, function(source) {
+  resolve_music_cover_source(audio).then(function(source) {
     if (picture.dataset.coverRequest === requestId) {
       var resolvedCover = normalize_player_cover_source(source);
       if (resolvedCover) show_player_cover(picture, resolvedCover.cssSource, resolvedCover.resolvedSource, requestId, true);
     }
-  }, function() {
+  }).catch(function() {
     if (picture.dataset.coverRequest === requestId) {
+      // 镜像短时不可用时不覆盖旧封面。此前这里会直接清空背景，用户在曲库
+      // 勾选歌曲时便会看到一批 HF 封面变成空白；下一次切换仍会重新探测。
+      if (picture.style.backgroundImage) return;
       clear_player_cover_transition(picture);
       picture.style.backgroundImage = "";
       delete picture.dataset.coverSource;
