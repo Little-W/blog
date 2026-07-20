@@ -418,6 +418,145 @@
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ifm-color-primary) 24%, transparent);
 }
 
+.playlistTagOrderPanel {
+  margin: 0.25rem 0 0.9rem;
+  padding: 0.9rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 20%, var(--ifm-color-emphasis-200));
+  border-radius: 14px;
+}
+
+.playlistTagOrderHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
+}
+
+.playlistTagOrderHeading .eyebrow {
+  margin-bottom: 0.18rem;
+}
+
+.playlistTagOrderHeading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.playlistTagOrderHeading p {
+  margin: 0.3rem 0 0;
+  color: var(--ifm-color-emphasis-650, var(--ifm-color-emphasis-700));
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.playlistTagOrderHeading > span {
+  flex: 0 0 auto;
+  padding: 0.28rem 0.5rem;
+  color: var(--ifm-color-primary-darkest);
+  background: color-mix(in srgb, var(--ifm-color-primary) 11%, transparent);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.playlistTagOrderList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 0.12rem 0.14rem 0.12rem 0.02rem;
+  scrollbar-color: color-mix(in srgb, var(--ifm-color-primary) 42%, transparent) transparent;
+}
+
+.playlistTagOrderItem {
+  display: flex;
+  min-width: 0;
+  min-height: 2.55rem;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.34rem 0.36rem;
+  background: var(--ifm-background-surface-color, #fff);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 9px;
+  cursor: grab;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.playlistTagOrderItem:active {
+  cursor: grabbing;
+}
+
+.playlistTagOrderItem:focus-within {
+  border-color: color-mix(in srgb, var(--ifm-color-primary) 55%, var(--ifm-color-emphasis-300));
+}
+
+.playlistTagOrderDragging {
+  opacity: 0.48;
+}
+
+.playlistTagOrderDropTarget {
+  background: color-mix(in srgb, var(--ifm-color-primary) 10%, var(--ifm-background-surface-color, #fff));
+  border-color: var(--ifm-color-primary);
+  box-shadow: 0 5px 15px color-mix(in srgb, var(--ifm-color-primary) 14%, transparent);
+}
+
+.playlistTagOrderGrip {
+  flex: 0 0 auto;
+  color: var(--ifm-color-emphasis-500);
+  font-size: 1rem;
+}
+
+.playlistTagOrderName {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlistTagOrderInput {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.22rem;
+  color: var(--ifm-color-emphasis-650, var(--ifm-color-emphasis-700));
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.playlistTagOrderInput input {
+  width: 3.35rem;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.28rem;
+  color: var(--ifm-font-color-base);
+  background: color-mix(in srgb, var(--ifm-color-emphasis-100) 65%, transparent);
+  border: 1px solid var(--ifm-color-emphasis-250, var(--ifm-color-emphasis-200));
+  border-radius: 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.playlistTagOrderInput input:focus {
+  border-color: var(--ifm-color-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ifm-color-primary) 13%, transparent);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .searchBox {
   display: flex;
   min-width: 0;
@@ -915,8 +1054,23 @@ html[data-theme='dark'] .tabActive {
     grid-template-columns: 1fr;
   }
 
+  .playlistTagOrderList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .fieldRow {
     grid-template-columns: minmax(110px, 0.8fr) 88px minmax(140px, 1.5fr) 2.2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .playlistTagOrderHeading {
+    flex-direction: column;
+  }
+
+  .playlistTagOrderList {
+    grid-template-columns: 1fr;
+    max-height: 330px;
   }
 }
 

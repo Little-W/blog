@@ -24,6 +24,11 @@ type MusicTag = {
   name: string;
   order: number;
 };
+type PlaylistTagOrderItem = {
+  id: number;
+  name: string;
+  order: number;
+};
 type EditorField = {
   id: string;
   key: string;
@@ -329,8 +334,11 @@ function DataConsole({repository}: {repository: string | null}) {
   const [musicTags, setMusicTags] = useState<MusicTag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
   const [syncMusicLists, setSyncMusicLists] = useState(true);
+  const [draggingPlaylistTagId, setDraggingPlaylistTagId] = useState<number | null>(null);
+  const [dragOverPlaylistTagId, setDragOverPlaylistTagId] = useState<number | null>(null);
 
   const supportsTagFilter = selectedName === 'music_hq' || selectedName === 'music_sq';
+  const supportsPlaylistTagOrdering = selectedName === 'music_tag';
 
   const loadDataset = async (name: string) => {
     setBusy(true);
@@ -399,6 +407,38 @@ function DataConsole({repository}: {repository: string | null}) {
   useEffect(() => {
     setPage(0);
   }, [search, tagFilter]);
+
+  const playlistTagOrder = useMemo<PlaylistTagOrderItem[]>(() => records
+    .map((record) => ({
+      id: Number(record.tag_id),
+      name: String(record.tag_name || '').trim(),
+      order: Number(record.tag_order),
+    }))
+    .filter((tag) => Number.isInteger(tag.id) && tag.id >= 0 && tag.name && Number.isFinite(tag.order))
+    .sort((left, right) => left.order - right.order || left.id - right.id), [records]);
+
+  const applyPlaylistTagOrder = (ordered: PlaylistTagOrderItem[]) => {
+    const nextOrders = new Map(ordered.map((tag, index) => [tag.id, index + 1]));
+    setRecords((current) => current.map((record) => {
+      const nextOrder = nextOrders.get(Number(record.tag_id));
+      return nextOrder === undefined || Number(record.tag_order) === nextOrder
+        ? record
+        : {...record, tag_order: nextOrder};
+    }));
+    setDirty(true);
+    setNotice('歌单显示顺序已在页面中调整，提交数据表后才会写入仓库。');
+  };
+
+  const movePlaylistTag = (tagId: number, position: number) => {
+    const sourceIndex = playlistTagOrder.findIndex((tag) => tag.id === tagId);
+    if (sourceIndex < 0) return;
+    const targetIndex = Math.max(0, Math.min(playlistTagOrder.length - 1, Math.round(position) - 1));
+    if (sourceIndex === targetIndex) return;
+    const ordered = playlistTagOrder.slice();
+    const [tag] = ordered.splice(sourceIndex, 1);
+    ordered.splice(targetIndex, 0, tag);
+    applyPlaylistTagOrder(ordered);
+  };
 
   const chooseDataset = (name: string) => {
     if (name === selectedName) return;
@@ -577,6 +617,73 @@ function DataConsole({repository}: {repository: string | null}) {
               </button>
             ))}
           </div>
+        ) : null}
+
+        {supportsPlaylistTagOrdering ? (
+          <section className={styles.playlistTagOrderPanel} aria-labelledby="playlist-tag-order-title">
+            <div className={styles.playlistTagOrderHeading}>
+              <div>
+                <span className={styles.eyebrow}>PLAYLIST ORDER</span>
+                <h3 id="playlist-tag-order-title">歌单显示顺序</h3>
+                <p>拖动标签调整位置，或直接输入“第几位”。保存时会自动重编号为连续整数。</p>
+              </div>
+              <span>{playlistTagOrder.length} 个公开歌单</span>
+            </div>
+            <div className={styles.playlistTagOrderList}>
+              {playlistTagOrder.map((tag, index) => {
+                const isDragging = draggingPlaylistTagId === tag.id;
+                const isDragTarget = dragOverPlaylistTagId === tag.id && !isDragging;
+                return (
+                  <div
+                    className={`${styles.playlistTagOrderItem}${isDragging ? ` ${styles.playlistTagOrderDragging}` : ''}${isDragTarget ? ` ${styles.playlistTagOrderDropTarget}` : ''}`}
+                    key={tag.id}
+                    draggable={!busy}
+                    onDragStart={(event) => {
+                      setDraggingPlaylistTagId(tag.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', String(tag.id));
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      if (dragOverPlaylistTagId !== tag.id) setDragOverPlaylistTagId(tag.id);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const rawId = event.dataTransfer.getData('text/plain');
+                      const transferredId = rawId ? Number(rawId) : Number.NaN;
+                      const sourceId = Number.isInteger(transferredId) ? transferredId : draggingPlaylistTagId;
+                      if (sourceId !== null) movePlaylistTag(sourceId, index + 1);
+                      setDraggingPlaylistTagId(null);
+                      setDragOverPlaylistTagId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingPlaylistTagId(null);
+                      setDragOverPlaylistTagId(null);
+                    }}>
+                    <Icon className={styles.playlistTagOrderGrip} icon="lucide:grip-vertical" aria-hidden="true" />
+                    <span className={styles.playlistTagOrderName} title={tag.name}>{tag.name}</span>
+                    <label className={styles.playlistTagOrderInput}>
+                      <span className={styles.visuallyHidden}>{tag.name} 的显示位置</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={playlistTagOrder.length}
+                        value={index + 1}
+                        disabled={busy}
+                        onChange={(event) => {
+                          const nextPosition = Number(event.target.value);
+                          if (Number.isInteger(nextPosition) && nextPosition >= 1) movePlaylistTag(tag.id, nextPosition);
+                        }}
+                        aria-label={`${tag.name} 的显示位置`}
+                      />
+                      <span>位</span>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
         ) : null}
 
         <div className={styles.recordList} aria-busy={busy}>

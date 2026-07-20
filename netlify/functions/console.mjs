@@ -395,6 +395,28 @@ function validateRecords(records) {
   });
 }
 
+function normalizeMusicTagRecords(records) {
+  const tagIds = new Set();
+  const tagOrders = new Set();
+  return records.map((record, index) => {
+    const tagId = Number(record.tag_id);
+    const tagOrder = Number(record.tag_order);
+    const tagName = typeof record.tag_name === 'string' ? record.tag_name.trim() : '';
+    if (!Number.isInteger(tagId) || tagId < 0) {
+      throw requestError(`歌单标签第 ${index + 1} 条的 tag_id 无效。`);
+    }
+    if (tagIds.has(tagId)) throw requestError(`歌单标签编号 ${tagId} 重复。`);
+    if (!Number.isInteger(tagOrder) || tagOrder < 1) {
+      throw requestError(`歌单标签「${tagName || tagId}」的显示顺序必须是大于 0 的整数。`);
+    }
+    if (tagOrders.has(tagOrder)) throw requestError(`歌单标签显示顺序 ${tagOrder} 重复。`);
+    if (!tagName) throw requestError(`歌单标签 ${tagId} 缺少 tag_name。`);
+    tagIds.add(tagId);
+    tagOrders.add(tagOrder);
+    return {...record, tag_id: tagId, tag_order: tagOrder, tag_name: tagName};
+  });
+}
+
 function serializeJsonl(dataset, records) {
   validateRecords(records);
   const content = `${dataset.header}\n${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
@@ -561,6 +583,7 @@ async function saveDataset(request) {
     const current = parseJsonl((await readBlob(snapshot, dataset.path)).content, dataset.header);
     records = [...current.records, ...body.records];
   }
+  if (dataset === DATASETS.music_tag) records = normalizeMusicTagRecords(records);
   const content = serializeJsonl(dataset, records);
   if (syncMusicLists) {
     const companionFile = await readBlob(snapshot, companion.path);
