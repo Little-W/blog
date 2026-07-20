@@ -447,28 +447,99 @@ function resolve_music_cover_source(song) {
   return pending;
 }
 
-function set_music_track_cover_image(image, song) {
+function set_music_track_cover_loaded(image, loaded) {
+  if (!image) return;
+  image.classList.toggle('is-loaded', Boolean(loaded));
+  var cover = image.parentElement;
+  if (cover && cover.classList.contains('music-track-cover')) {
+    cover.classList.toggle('has-image', Boolean(loaded));
+  }
+}
+
+function load_music_track_cover_image(image, song) {
   if (!image) return;
   var requestId = String(++music_cover_request_serial);
   image.dataset.coverRequest = requestId;
-  image.classList.remove('is-loaded');
+  set_music_track_cover_loaded(image, false);
   resolve_music_cover_source(song).then(function(source) {
-    if (image.dataset.coverRequest !== requestId) return;
+    if (image.dataset.coverRequest !== requestId || !image.isConnected) return;
     image.onload = function() {
-      if (image.dataset.coverRequest === requestId) image.classList.add('is-loaded');
+      if (image.dataset.coverRequest === requestId) set_music_track_cover_loaded(image, true);
     };
     image.onerror = function() {
-      if (image.dataset.coverRequest === requestId) image.classList.remove('is-loaded');
+      if (image.dataset.coverRequest === requestId) set_music_track_cover_loaded(image, false);
     };
     image.src = source;
     // 命中浏览器内存缓存时，load 事件可能早于处理函数注册完成；complete
     // 与 naturalWidth 一同确认，避免 CSS 将真实已加载封面误判为空白。
-    if (image.complete && image.naturalWidth > 0) image.classList.add('is-loaded');
+    if (image.complete && image.naturalWidth > 0) set_music_track_cover_loaded(image, true);
   }).catch(function() {
     // 不删除已有 src。列表重绘或镜像短暂异常时保留当前封面；新节点则显示
     // CSS 提供的占位符，避免出现无内容的蓝色方块。
-    if (image.dataset.coverRequest === requestId) image.classList.remove('is-loaded');
+    if (image.dataset.coverRequest === requestId) set_music_track_cover_loaded(image, false);
   });
+}
+
+function set_music_track_cover_image(image, song) {
+  if (!image) return;
+  image.__musicCoverSong = song;
+  image.dataset.coverPending = 'true';
+  set_music_track_cover_loaded(image, false);
+}
+
+function observe_music_track_cover_images(list) {
+  if (!list) return;
+  var images = Array.prototype.slice.call(list.querySelectorAll('img[data-cover-pending="true"]'));
+  function start(image) {
+    if (!image || image.dataset.coverPending !== 'true') return;
+    delete image.dataset.coverPending;
+    var song = image.__musicCoverSong;
+    image.__musicCoverSong = null;
+    load_music_track_cover_image(image, song);
+  }
+  if (typeof window.IntersectionObserver !== 'function') {
+    images.forEach(start);
+    return;
+  }
+  var queuedImages = [];
+  var flushTimer = 0;
+  function isNearVisibleRange(image) {
+    if (!image || !image.isConnected) return false;
+    var listRect = list.getBoundingClientRect();
+    var imageRect = image.getBoundingClientRect();
+    return imageRect.bottom >= listRect.top - 320 && imageRect.top <= listRect.bottom + 320;
+  }
+  function flushQueue() {
+    flushTimer = 0;
+    var queue = queuedImages;
+    queuedImages = [];
+    queue.forEach(function(image) {
+      if (isNearVisibleRange(image)) start(image);
+      else if (image && image.isConnected && image.dataset.coverPending === 'true') observer.observe(image);
+    });
+  }
+  function scheduleFlush(delay) {
+    if (flushTimer) window.clearTimeout(flushTimer);
+    flushTimer = window.setTimeout(flushQueue, delay);
+  }
+  var observer = new window.IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      if (queuedImages.indexOf(entry.target) === -1) queuedImages.push(entry.target);
+    });
+    if (queuedImages.length) scheduleFlush(32);
+  }, {root: list, rootMargin: '320px 0px'});
+  images.forEach(function(image) { observer.observe(image); });
+  list.addEventListener('scroll', function() {
+    if (queuedImages.length) scheduleFlush(140);
+  }, {passive: true});
+  list.__musicCoverObserver = observer;
+  list.__musicCoverStop = function() {
+    observer.disconnect();
+    if (flushTimer) window.clearTimeout(flushTimer);
+    queuedImages = [];
+  };
 }
 
 function install_music_source_fallback(player) {
@@ -1454,9 +1525,6 @@ function init_aplayer() {
     var row = e.currentTarget;
     // 下载与标签编辑属于行内独立操作，不能同时切换该歌曲的选中状态。
     if (e.target.closest('.music-track-action')) return;
-    var rect = row.getBoundingClientRect();
-    row.style.setProperty('--x', (e.clientX - rect.left) + 'px');
-    row.style.setProperty('--y', (e.clientY - rect.top) + 'px');
     var musicId = normalize_music_id(row.music !== undefined ? row.music : row.dataset.musicId);
     if (musicId === null) return;
     if (find_selected_music_index(musicId) === -1) {
@@ -3114,6 +3182,8 @@ function init_custom_list() {
   var list_div = document.getElementById("aplayer_list_active");
   var list_div_sel = document.querySelector("#aplayer_list_active");
   var ol = list_div.querySelector(".music-list-ol");
+  if (ol && ol.__musicCoverStop) ol.__musicCoverStop();
+  else if (ol && ol.__musicCoverObserver) ol.__musicCoverObserver.disconnect();
   try {
     list_div_sel.removeChild(ol);
   } catch (err) {
@@ -3122,6 +3192,10 @@ function init_custom_list() {
 
   var ol = document.createElement("ol");
   ol.setAttribute("class", "music-list-ol");
+  var selectedMusicIds = Object.create(null);
+  ap_list_ptr[1].forEach(function(musicId) {
+    selectedMusicIds[Number(musicId)] = true;
+  });
   //console.log("active_list.length",active_list.length);
 
   for (var i = 0; i < active_list.length; i++) {
@@ -3129,11 +3203,12 @@ function init_custom_list() {
     //console.log(arr.author + " - " + arr.title);
     var li = document.createElement("li");
     li.setAttribute("style", "margin-top:0px;");
-    li.setAttribute("class", "music-list");
+    var isSelected = selectedMusicIds[Number(active_list[i])] === true;
+    li.setAttribute("class", "music-list" + (isSelected ? " is-selected" : ""));
     li.setAttribute("id", "music-id" + active_list[i]);
     li.music = active_list[i];
     li.dataset.musicId = active_list[i];
-    li.setAttribute("aria-selected", "false");
+    li.setAttribute("aria-selected", String(isSelected));
     //li.setAttribute("name","music" + i);
 
     var list_num = document.createElement("span");
@@ -3146,9 +3221,13 @@ function init_custom_list() {
     if (arr.pic) {
       var coverImage = document.createElement("img");
       coverImage.loading = "lazy";
+      coverImage.decoding = "async";
+      coverImage.fetchPriority = "low";
+      coverImage.width = 42;
+      coverImage.height = 42;
       coverImage.alt = "";
-      // 列表一次会生成大量曲目。直接由对应的 <img> 进行懒加载，并为每个
-      // 节点单独维护镜像重试状态，不能共用循环内的 coverImage 变量。
+      // 列表可能包含数百首曲目。先登记封面资料，挂载列表后再由可视范围
+      // 观察器启动镜像探测，避免切换歌单时立即发出整页封面请求。
       set_music_track_cover_image(coverImage, arr);
       cover.appendChild(coverImage);
     }
@@ -3179,12 +3258,7 @@ function init_custom_list() {
     checkBox.setAttribute("aria-label", "切换 " + arr.title);
     checkBox.music = active_list[i];
     checkBox.dataset.musicId = active_list[i];
-    for (var j = 0; j < ap_list_ptr[1].length; j++) {
-      if (ap_list_ptr[1][j] == active_list[i]) {
-        checkBox.checked = true;
-        break;
-      }
-    }
+    checkBox.checked = isSelected;
     var actions = document.createElement('div');
     actions.setAttribute('class', 'music-track-actions');
     actions.appendChild(create_music_play_next_action(arr, active_list[i]));
@@ -3198,6 +3272,7 @@ function init_custom_list() {
     ol.appendChild(li);
   }
   list_div.appendChild(ol);
+  observe_music_track_cover_images(ol);
   var resultCount = document.getElementById('music-list-result-count');
   if (resultCount) resultCount.innerText = active_list.length;
   apply_music_list_display_limit(music_list_display_limit);

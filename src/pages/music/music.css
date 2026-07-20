@@ -80,6 +80,7 @@
   box-shadow: var(--music-shadow);
   backdrop-filter: blur(16px);
 }
+.music-library { backdrop-filter:none; -webkit-backdrop-filter:none; }
 
 .music-section__heading { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:22px; }
 .music-section__heading h2 { margin:0; color:inherit; font-size:1.65rem; letter-spacing:-.025em; }
@@ -95,15 +96,14 @@
 .music-page .playlist-tag-group { display:grid; flex:0 0 calc(100% - 4px); width:calc(100% - 4px); grid-template-rows:repeat(3,42px); gap:8px; min-width:0; contain:layout paint; scroll-snap-align:start; }
 .music-page .playlist-tag-group--measure { position:absolute; visibility:hidden; pointer-events:none; }
 .music-page .playlist-tag-row { display:flex; min-width:0; align-items:stretch; justify-content:flex-start; gap:9px; }
-.music-page .playlist-tag-row .sytle-button { position:relative; isolation:isolate; flex:1 0 auto; min-width:max-content; max-width:none; overflow:visible; margin:0; padding:8px 12px; border:1px solid var(--music-border); border-radius:999px; background:var(--music-soft); color:#273646; font-size:.86rem; text-align:center; text-overflow:clip; white-space:nowrap; box-shadow:none; transition:border-color .14s ease,background-color .14s ease,color .14s ease; }
+.music-page .playlist-tag-row .sytle-button { position:relative; isolation:isolate; flex:1 0 auto; min-width:max-content; max-width:none; overflow:visible; margin:0; padding:8px 12px; border:1px solid var(--music-border); border-radius:999px; background:var(--music-soft); color:#273646; font-size:.86rem; text-align:center; text-overflow:clip; white-space:nowrap; box-shadow:none; transition:none; }
 /* 每行先按文字的原始宽度排版，再把剩余宽度均分给该行的项目。这样长名称
    不会被截断，短名称也会随当前页宽度自然延展，三行都贴齐两侧边缘。 */
 .music-page .playlist-tag-group--measure .sytle-button { flex:0 0 auto; }
 .music-page .sytle-button { flex:none; margin:0; padding:10px 17px; border:1px solid var(--music-border); border-radius:999px; background:var(--music-soft); color:#273646; font-size:.86rem; box-shadow:none; }
 .music-page .playlist-tag-row .sytle-button::after { content:none!important; display:none!important; }
-/* 旧版的通用按钮波纹层没有相对定位，会延展到整组标签。歌单标签单独使用
-   当前按钮的粉色悬停状态，其他标签保持原来的背景和文字颜色。 */
-.music-page .playlist-tag-row .sytle-button:hover { transform:none; border-color:#e7a6c0; background:#f8dce8; color:#693149; }
+/* 标签不使用退色动画，避免鼠标连续经过时形成多个项目同时着色的残影。 */
+.music-page .playlist-tag-row .sytle-button:hover { transform:none; border-color:var(--music-accent); background:#17344d; color:#fff; box-shadow:0 8px 24px rgba(23,52,77,.18); }
 .music-page .sytle-button:hover { transform:translateY(-1px); background:#e6f3fa; color:#12283a; }
 .music-page .sytle-button.--activated { border-color:var(--music-accent); background:#17344d; color:#fff; box-shadow:0 8px 24px rgba(23,52,77,.18); }
 .music-page .playlist-tag-row .sytle-button.--activated,
@@ -144,14 +144,14 @@
 .music-track-head span:nth-child(2) { grid-column:2/4; }
 .music-track-head span:last-child { grid-column:4; text-align:right; }
 .music-page #aplayer_list_active { display:block; padding:0; }
-.music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; scrollbar-color:rgba(102,112,133,.3) transparent; }
-.music-page .music-list { display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; font-size:.86rem; line-height:normal; transform:none; transition:background .18s ease; }
-.music-page .music-list:hover { z-index:1; transform:none; background:var(--music-soft); }
-.music-page .music-list:has(.music-list-checkbox:checked) { background:rgba(0,168,233,.075); }
+.music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-color:rgba(102,112,133,.3) transparent; contain:layout paint style; transition:none; }
+.music-page .music-list { display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; background:transparent; font-size:.86rem; line-height:normal; transform:none; content-visibility:auto; contain-intrinsic-size:64px; transition:none; }
+.music-page .music-list:hover,
+.music-page .music-list.is-selected { z-index:1; transform:none; background:linear-gradient(90deg,rgba(0,168,233,.13),rgba(0,168,233,.055)); }
 .music-track-index { color:var(--music-muted); text-align:center; font-variant-numeric:tabular-nums; pointer-events:none; }
 .music-track-cover { width:42px; height:42px; overflow:hidden; border-radius:7px; background:linear-gradient(145deg,#dceaf2,#a8bdcc); pointer-events:none; }
 .music-track-cover::after { content:'♪'; display:grid; place-items:center; width:100%; height:100%; color:rgba(20,45,67,.46); font-size:1.1rem; }
-.music-track-cover:has(img.is-loaded)::after { display:none; }
+.music-track-cover.has-image::after { display:none; }
 .music-track-cover img { width:100%; height:100%; object-fit:cover; }
 .music-track-meta { min-width:0; display:flex; flex-direction:column; gap:4px; pointer-events:none; }
 .music-track-title { overflow:hidden; color:#162334; font-size:.91rem; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
@@ -508,6 +508,7 @@ html[data-theme='dark'] .music-page .sytle-button { background:#1d2833; color:#c
 html[data-theme='dark'] .music-page .sytle-button:hover { background:#263542; color:#fff; }
 html[data-theme='dark'] .music-page .sytle-button.--activated,
 html[data-theme='dark'] .music-page .sytle-button-current-list { background:#eaf7fd; color:#0b1a26; }
+html[data-theme='dark'] .music-page .playlist-tag-row .sytle-button:hover,
 html[data-theme='dark'] .music-page .playlist-tag-row .sytle-button.--activated,
 html[data-theme='dark'] .music-page .playlist-tag-row .sytle-button.--activated:hover { border-color:var(--music-accent); background:#eaf7fd; color:#0b1a26; }
 html[data-theme='dark'] .music-page #ap_list_remove,
@@ -521,9 +522,9 @@ html[data-theme='dark'] .music-track-title,
 html[data-theme='dark'] .music-page #mv-list-title,
 html[data-theme='dark'] .music-page .title_name { color:#edf6fc; }
 html[data-theme='dark'] .music-track-cover { background:linear-gradient(145deg,#2d4052,#1b2732); }
-html[data-theme='dark'] .music-page .music-list:hover { background:#202d39; }
+html[data-theme='dark'] .music-page .music-list:hover,
+html[data-theme='dark'] .music-page .music-list.is-selected { background:linear-gradient(90deg,rgba(0,168,233,.2),rgba(0,168,233,.08)); }
 html[data-theme='dark'] .music-page .mv_list_div:hover { background:#18232d; }
-html[data-theme='dark'] .music-page .music-list:has(.music-list-checkbox:checked) { background:rgba(0,168,233,.1); }
 html[data-theme='dark'] .music-page .music-track-action { border-color:rgba(119,216,250,.24); background:rgba(12,43,61,.6); color:#b6e4f5; }
 html[data-theme='dark'] .music-page .music-track-action:hover { border-color:rgba(119,216,250,.72); background:rgba(28,74,96,.88); color:#effbff; }
 html[data-theme='dark'] .music-tag-editor { border-color:rgba(117,214,249,.25); background:#101d28; color:#d9eff9; box-shadow:0 24px 80px rgba(0,0,0,.58); }
