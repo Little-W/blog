@@ -155,10 +155,10 @@ function load_static_data(name) {
 }
 
 // Hugging Face 在国内网络中的可用性会随网络和地区变化。播放器始终先尝试
-// Sufy CDN、AI 快站、hf-mirror，再在媒体加载失败时切换到官方地址。音频和封面
+// AI 快站、Sufy CDN、hf-mirror，再在媒体加载失败时切换到官方地址。音频和封面
 // 流量由资料源直接发给
 // 浏览器，不经过博客的 Netlify Function。
-var MUSIC_HF_SOURCE_HOSTS = ['hf-cdn.sufy.com', 'aifasthub.com', 'hf-mirror.com', 'huggingface.co'];
+var MUSIC_HF_SOURCE_HOSTS = ['aifasthub.com', 'hf-cdn.sufy.com', 'hf-mirror.com', 'huggingface.co'];
 var music_hf_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
 var music_hf_probe_promise = null;
 var music_hf_cover_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
@@ -260,7 +260,10 @@ function prime_music_hf_mirrors(sampleSource) {
   music_hf_probe_promise = Promise.all(probes).then(function(results) {
     var reachable = results.filter(Boolean).sort(function(left, right) { return left.elapsed - right.elapsed; });
     if (reachable.length) {
-      var nextPriority = reachable.map(function(result) { return result.host; });
+      // aifasthub 是曲库的首选源；测速仅调整其后的备用顺序，不能把首选源
+      // 置换到后面，否则一次偶发测速波动会改变后续所有播放请求的首站。
+      var nextPriority = ['aifasthub.com'].concat(reachable.map(function(result) { return result.host; })
+        .filter(function(host) { return host !== 'aifasthub.com'; }));
       MUSIC_HF_SOURCE_HOSTS.forEach(function(host) {
         if (nextPriority.indexOf(host) === -1) nextPriority.push(host);
       });
@@ -306,7 +309,8 @@ function prime_music_hf_cover_mirrors(sampleCover) {
   music_hf_cover_probe_promise = Promise.all(probes).then(function(results) {
     var reachable = results.filter(Boolean).sort(function(left, right) { return left.elapsed - right.elapsed; });
     if (reachable.length) {
-      var nextPriority = reachable.map(function(result) { return result.host; });
+      var nextPriority = ['aifasthub.com'].concat(reachable.map(function(result) { return result.host; })
+        .filter(function(host) { return host !== 'aifasthub.com'; }));
       MUSIC_HF_SOURCE_HOSTS.forEach(function(host) {
         if (nextPriority.indexOf(host) === -1) nextPriority.push(host);
       });
@@ -4477,6 +4481,29 @@ load_music_lists = function() {
       }
     }, 520);
   }
+  // 旧页面的通用按钮波纹曾让整组标签呈现出范围选择的外观。歌单轨道不依赖
+  // CSS :hover 推断状态，改为在指针移动时明确标记实际命中的一个按钮；因此
+  // 从轨道外部斜向扫入时也不会把经过的项目遗留为悬停状态。
+  var hoveredTagButton = null;
+  function setHoveredTagButton(target) {
+    var nextButton = target && target.closest ? target.closest('.playlist-tag-row .sytle-button') : null;
+    if (nextButton && !subdiv.contains(nextButton)) nextButton = null;
+    if (hoveredTagButton === nextButton) return;
+    if (hoveredTagButton) hoveredTagButton.classList.remove('playlist-tag--hover');
+    hoveredTagButton = nextButton;
+    if (hoveredTagButton) hoveredTagButton.classList.add('playlist-tag--hover');
+  }
+  subdiv.addEventListener('pointermove', function(event) {
+    if (event.pointerType && event.pointerType !== 'mouse') return;
+    setHoveredTagButton(event.target);
+  }, {passive: true});
+  subdiv.addEventListener('pointerleave', function() {
+    setHoveredTagButton(null);
+  }, {passive: true});
+  // 标签是操作控件，不应成为浏览器文本范围选择的起点。
+  subdiv.addEventListener('selectstart', function(event) {
+    if (event.target.closest && event.target.closest('.playlist-tag-row .sytle-button')) event.preventDefault();
+  });
   setTimeout(rebuildTagPages, 0);
   formerPage.addEventListener('click', function() {
     rebuildTagPages();
