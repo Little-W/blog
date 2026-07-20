@@ -139,10 +139,15 @@
 .music-track-head span:last-child { grid-column:4; text-align:right; }
 .music-page #aplayer_list_active { display:block; padding:0; }
 .music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; scrollbar-color:rgba(102,112,133,.3) transparent; }
-.music-page .music-list { display:grid; grid-template-columns:38px 52px minmax(0,1fr) 174px; align-items:center; height:64px; min-height:64px; padding:6px 16px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; font-size:.86rem; line-height:normal; transform:none; transition:background .18s ease; }
+.music-page .music-list { display:grid; grid-template-columns:38px 52px minmax(0,1fr) 174px; align-items:center; height:64px; min-height:64px; padding:6px 16px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; font-size:.86rem; line-height:normal; transform:none; transition:background-color .14s ease,color .14s ease; }
 /* 悬停只作用于当前 li。移除旧版的点击扩散伪元素后，不会再出现类似范围选择的
    大片变色效果。 */
-.music-page .music-list:hover { z-index:1; transform:none; background:var(--music-soft); }
+.music-page .music-list:hover { z-index:1; transform:none; background:#173d54; color:#fff; }
+.music-page .music-list:hover .music-track-index,
+.music-page .music-list:hover .music-track-title { color:#fff; }
+.music-page .music-list:hover .music-track-author { color:rgba(235,249,255,.76); }
+.music-page .music-list:hover .music-track-action { border-color:rgba(215,247,255,.34); background:rgba(255,255,255,.12); color:#effbff; }
+.music-page .music-list:hover .music-list-checkbox { border-color:#d8f6ff; }
 .music-page .music-list:has(.music-list-checkbox:checked) { background:rgba(0,168,233,.075); }
 .music-track-index { color:var(--music-muted); text-align:center; font-variant-numeric:tabular-nums; pointer-events:none; }
 .music-track-cover { width:42px; height:42px; overflow:hidden; border-radius:7px; background:linear-gradient(145deg,#dceaf2,#a8bdcc); pointer-events:none; }
@@ -245,9 +250,13 @@ body:has(.music-page) #canvas_sakura { z-index:10!important; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list.aplayer-list-hide { max-height:0!important; border-top-color:transparent; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol { max-height:260px!important; padding:5px 0; scrollbar-color:rgba(28,139,190,.42) transparent; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol::-webkit-scrollbar-thumb { background:rgba(28,139,190,.42); }
-.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li { height:40px; padding:0 17px; border-color:rgba(16,119,170,.1); color:#153a51; font-size:.79rem; line-height:40px; }
-.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover,
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li { height:40px; padding:0 17px; border-color:rgba(16,119,170,.1); color:#153a51; font-size:.79rem; line-height:40px; transform:none!important; transition:background-color .14s ease,color .14s ease; }
+/* 队列当前播放项维持自己的静态标记；仅指针所在 li 使用深色悬停背景。 */
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li.aplayer-list-light { background:rgba(84,198,240,.2); }
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover { background:#173d54; color:#fff; }
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover .aplayer-list-index,
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover .aplayer-list-title,
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover .aplayer-list-author { color:#fff; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-index,
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-author { color:#5c8194; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-title { color:#173d54; }
@@ -413,7 +422,7 @@ html[data-theme='dark'] .music-track-title,
 html[data-theme='dark'] .music-page #mv-list-title,
 html[data-theme='dark'] .music-page .title_name { color:#edf6fc; }
 html[data-theme='dark'] .music-track-cover { background:linear-gradient(145deg,#2d4052,#1b2732); }
-html[data-theme='dark'] .music-page .music-list:hover { background:#202d39; }
+html[data-theme='dark'] .music-page .music-list:hover { background:#315d75; }
 html[data-theme='dark'] .music-page .mv_list_div:hover { background:#18232d; }
 html[data-theme='dark'] .music-page .music-list:has(.music-list-checkbox:checked) { background:rgba(0,168,233,.1); }
 html[data-theme='dark'] .music-page .music-track-action { border-color:rgba(119,216,250,.24); background:rgba(12,43,61,.6); color:#b6e4f5; }
@@ -499,8 +508,8 @@ html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplay
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol { scrollbar-color:rgba(108,213,249,.42) transparent; }
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol::-webkit-scrollbar-thumb { background:rgba(108,213,249,.42); }
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li { border-color:rgba(196,240,255,.07); color:#dceff7; }
-html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover,
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li.aplayer-list-light { background:rgba(75,178,220,.18); }
+html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover { background:#315d75; }
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-index,
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-author { color:#8db4c7; }
 html[data-theme='dark'] .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li .aplayer-list-title { color:#e8f7fd; }
