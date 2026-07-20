@@ -3991,7 +3991,13 @@ function aplayer0() {
 
   // APlayer 原本按单行歌词的高度计算偏移；新版歌词窗更高时，把当前歌词
   // 重新对齐到可视区域正中央，前后歌词自然环绕显示。
-  function center_current_lyric() {
+  //
+  // 注意不要在每次 timeupdate 后延迟两帧再覆写 transform：原播放器在本次
+  // 事件中已经写入自己的偏移，延迟覆写会让最后一句在两个位置之间反复动画。
+  // 同一个事件栈内立即纠正，并只在目标位置改变时写样式，浏览器只会绘制最终值。
+  var lyric_center_index = -1;
+  var lyric_center_offset = null;
+  function center_current_lyric(force) {
     var lyric_content = window.ap0 && window.ap0.template && window.ap0.template.lrc;
     if (!lyric_content) return;
     // template.lrc 指向内容容器，外层 .aplayer-lrc 才是可视歌词窗。
@@ -4000,24 +4006,37 @@ function aplayer0() {
     var current_line = lyric_view.querySelector(".aplayer-lrc-current");
     if (!current_line) return;
     var offset = lyric_view.clientHeight / 2 - (current_line.offsetTop + current_line.offsetHeight / 2);
-    lyric_content.style.transform = "translate3d(0," + Math.round(offset) + "px,0)";
+    var rounded_offset = Math.round(offset);
+    var lyric = window.ap0 && window.ap0.lrc;
+    var current_index = lyric && Number.isInteger(lyric.index) ? lyric.index : -1;
+    var target_transform = "translate3d(0," + rounded_offset + "px,0)";
+    if (!force && lyric_center_index === current_index && lyric_center_offset === rounded_offset &&
+        lyric_content.style.transform === target_transform) return;
+    lyric_center_index = current_index;
+    lyric_center_offset = rounded_offset;
+    lyric_content.style.transform = target_transform;
   }
   var lyric_center_pending = false;
   function schedule_lyric_center() {
     if (lyric_center_pending) return;
     lyric_center_pending = true;
     window.requestAnimationFrame(function() {
-      // 异步歌词解析器会在本帧末尾写入自己的 transform；再等一帧后覆盖它，
-      // 保证当前句无论首次加载还是播放中切换都稳定落在中间。
-      window.requestAnimationFrame(function() {
-        lyric_center_pending = false;
-        render_bilingual_lyrics(window.ap0);
-        center_current_lyric();
-      });
+      lyric_center_pending = false;
+      render_bilingual_lyrics(window.ap0);
+      center_current_lyric();
     });
   }
-  window.ap0.on("timeupdate", schedule_lyric_center);
-  window.ap0.on("listswitch", function() { window.setTimeout(schedule_lyric_center, 0); });
+  window.ap0.on("timeupdate", function() {
+    // APlayer 的内部 timeupdate 回调先执行；这里直接覆写它的单行偏移，避免
+    // 下一帧才纠正而导致当前行，尤其是末行，持续来回抖动。
+    render_bilingual_lyrics(window.ap0);
+    center_current_lyric();
+  });
+  window.ap0.on("listswitch", function() {
+    lyric_center_index = -1;
+    lyric_center_offset = null;
+    window.setTimeout(schedule_lyric_center, 0);
+  });
   if (window.__musicLyricObserver) window.__musicLyricObserver.disconnect();
   if (window.MutationObserver && window.ap0.template && window.ap0.template.lrc) {
     window.__musicLyricObserver = new window.MutationObserver(schedule_lyric_center);
