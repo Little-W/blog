@@ -293,7 +293,7 @@ body:has(.music-page) #canvas_sakura { z-index:10!important; }
 .music-page .music-player-shell .player-native-controls .aplayer-icon-loop svg,
 .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc svg { width:16px; height:16px; }
 .music-page .music-player-shell .player-native-controls .aplayer-icon-order,
-.music-page .music-player-shell .player-native-controls .aplayer-icon-loop { cursor:pointer; transition:none; }
+.music-page .music-player-shell .player-native-controls .aplayer-icon-loop { cursor:pointer; border-color:rgba(7,145,205,.58); background:rgba(220,247,255,.72); color:#086f9f; transition:none; }
 .music-page .music-player-shell .player-native-controls .aplayer-icon-order svg,
 .music-page .music-player-shell .player-native-controls .aplayer-icon-loop svg { display:block; margin:0; transform:none!important; }
 .aplayer.aplayer-fixed .aplayer-icon-lrc { display:inline-grid; width:28px; height:23px; margin:0 2px; padding:0; place-items:center; border:1px solid rgba(17,132,187,.22); border-radius:999px; background:rgba(255,255,255,.72); color:#286782; opacity:1; transition:border-color .18s ease,background-color .18s ease,color .18s ease; }
@@ -624,6 +624,9 @@ html[data-theme='dark'] .music-page .music-player-shell .player-native-controls 
 html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-loop,
 html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc,
 html[data-theme='dark'] .music-page .music-player-shell .song_ctr_button { border-color:rgba(120,214,248,.24); background:rgba(11,40,57,.72); color:#b9e6f7; }
+/* 播放顺序和循环模式始终保持蓝色描边；图标变化是唯一的模式反馈。 */
+html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-order,
+html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-loop { border-color:rgba(119,216,250,.72); background:rgba(27,68,89,.9); color:#f0fbff; }
 html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc:hover,
 html[data-theme='dark'] .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc[aria-pressed='false'],
 html[data-theme='dark'] .music-page .music-player-shell .song_ctr_button:hover { border-color:rgba(119,216,250,.72); background:rgba(27,68,89,.9); color:#f0fbff; }
