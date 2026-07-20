@@ -28,7 +28,15 @@ function Page(): JSX.Element {
     <section className="music-section music-playlists">
       <div className="music-section__heading">
         <div><span className="music-eyebrow">YOUR MOODS</span><h2>选择歌单</h2></div>
-        <p>使用两侧按钮浏览分类</p>
+        <div className="playlist-heading-tools">
+          <div className="playlist-sort-controls" role="group" aria-label="歌单排序">
+            <span>排序</span>
+            <button type="button" data-playlist-sort="default">默认</button>
+            <button type="button" data-playlist-sort="name">按名称</button>
+            <button type="button" data-playlist-sort="id">按 ID</button>
+          </div>
+          <p>使用两侧按钮浏览分类</p>
+        </div>
       </div>
       <div id="aplayer_list_parent"><div id="aplayer_list" /></div>
     </section>

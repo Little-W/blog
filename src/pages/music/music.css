@@ -84,6 +84,14 @@
 .music-section__heading { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:22px; }
 .music-section__heading h2 { margin:0; color:inherit; font-size:1.65rem; letter-spacing:-.025em; }
 .music-section__heading p { margin:0 0 3px; color:var(--music-muted); font-size:.85rem; }
+.playlist-heading-tools { display:flex; align-items:center; justify-content:flex-end; gap:14px; }
+.playlist-sort-controls { display:inline-flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--music-border); border-radius:999px; background:var(--music-soft); color:var(--music-muted); font-size:.74rem; }
+.playlist-sort-controls > span { padding:0 5px 0 7px; white-space:nowrap; }
+.playlist-sort-controls button { margin:0; padding:5px 9px; border:0; border-radius:999px; background:transparent; color:inherit; font:inherit; line-height:1.2; white-space:nowrap; cursor:pointer; transition:background-color .2s ease,color .2s ease,box-shadow .2s ease; }
+.playlist-sort-controls button:hover { background:rgba(37,136,183,.12); color:var(--music-accent-strong); }
+.playlist-sort-controls button.is-active { background:var(--music-panel-solid); color:var(--music-accent-strong); box-shadow:0 1px 5px rgba(22,55,76,.12); }
+html[data-theme='dark'] .playlist-sort-controls button:hover { background:rgba(110,207,240,.16); color:#d7f6ff; }
+html[data-theme='dark'] .playlist-sort-controls button.is-active { background:rgba(32,87,111,.88); color:#e3f9ff; box-shadow:0 1px 6px rgba(0,0,0,.25); }
 
 /* Playlist rail */
 .music-page #aplayer_list_parent { display:grid; grid-template-columns:42px minmax(0,1fr) 42px; gap:10px; align-items:center; width:100%; height:auto; opacity:1; bottom:0; }
@@ -681,6 +689,8 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   .music-hero__meta { gap:7px; font-size:.72rem; }
   .music-section { padding:18px; border-radius:19px; }
   .music-section__heading { align-items:flex-start; flex-direction:column; gap:8px; }
+  .playlist-heading-tools { align-items:flex-start; flex-direction:column; gap:7px; }
+  .playlist-sort-controls { max-width:100%; overflow-x:auto; }
   .music-library__toolbar { align-items:stretch; flex-direction:column; }
   .music-page #ap_list_button_sub { gap:6px; }
   .music-page #search-music-div { order:-1; width:100%; max-width:none; margin:0; }
