@@ -101,3 +101,12 @@ python3 tools/validate_media_data.py --check-urls --workers 12 --report /tmp/med
 ```
 
 远程服务临时不可访问默认记为警告；加入 `--strict-urls` 会将其视为错误。
+
+如需仅检查音乐资料中音频、封面和歌词的远程文件是否真实存在，可使用专用检查工具。它会并发请求 URL、自动编码旧记录中的空格和非 ASCII 文件名；不支持 `HEAD` 的源站会自动改用仅请求一个字节的 `Range GET`。默认只将确实缺失或无效的 URL 作为失败，`--strict` 会将网络失败和访问受限一并视为失败。
+
+```bash
+python3 tools/audit_music_resource_urls.py --workers 20 --timeout 8 \
+  --report /tmp/music-resource-url-report.json
+```
+
+`--max-records 5` 可用于小范围测试，每个资料集检查前五条记录。完整报告会保留每个 HQ/SQ 表项、字段、原始 URL、编码后的请求 URL、HTTP 状态与检查结果，便于定位资源问题。
