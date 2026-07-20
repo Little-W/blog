@@ -74,6 +74,17 @@ uv pip install --python /tmp/lddc-runtime/bin/python 'PyQt6>=6.6,<7'
 /tmp/lddc-runtime/bin/python tools/download_music_lyrics.py --apply --report /tmp/music-lyrics-result.json
 ```
 
+当原始下载目录不可用、但统一资源仓库仍保留音频时，可直接按 JSONL 中缺少 `lrc`
+的条目恢复歌词。该模式只会在 LDDC 成功返回歌词后更新 HQ、SQ 的歌词 URL；伴奏、
+剧情音轨和未检索到歌词的曲目保持为空。
+
+```bash
+/tmp/lddc-runtime/bin/python tools/download_music_lyrics.py --repair-missing --apply \
+  --report /tmp/music-lyrics-repair.json
+```
+
+`--offset` 与 `--limit` 可用于分批处理。
+
 ## 资料校验
 
 整理前后可执行以下命令检查 JSONL 结构、重复 ID、歌单引用、HQ/SQ 对应关系和 MV 资料：

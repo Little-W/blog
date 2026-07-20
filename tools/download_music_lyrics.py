@@ -16,6 +16,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote, urlsplit
 
 from import_new_music import (
     DEFAULT_ASSET_REPO,
@@ -28,7 +29,14 @@ from import_new_music import (
     scan_selected_roots,
     select_new_roots,
 )
-from music_library_gui import DEFAULT_DATA_DIR, LibraryConfig, Track, export_database
+from music_library_gui import (
+    DEFAULT_DATA_DIR,
+    LibraryConfig,
+    Track,
+    export_database,
+    read_jsonl_records,
+    write_jsonl_records,
+)
 
 
 DEFAULT_LDDC_ROOT = Path('/media/6/旧项目/网站/LDDC')
@@ -54,8 +62,14 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--raw-url', default=DEFAULT_RAW_URL)
     parser.add_argument('--lddc-root', type=Path, default=DEFAULT_LDDC_ROOT)
     parser.add_argument('--min-score', type=float, default=68.0, help='LDDC 自动匹配最低分数。')
+    parser.add_argument('--offset', type=int, default=0, help='跳过前 N 首候选曲目，便于分批恢复。')
     parser.add_argument('--limit', type=int, default=0, help='仅处理前 N 首，0 表示全部。')
     parser.add_argument('--overwrite', action='store_true', help='覆盖已有 LRC。')
+    parser.add_argument(
+        '--repair-missing',
+        action='store_true',
+        help='直接检查 JSONL 中缺少 lrc 的条目，并从资源仓库的已下载音频补写歌词。',
+    )
     parser.add_argument('--apply', action='store_true', help='执行网络请求；默认仅输出处理清单。')
     parser.add_argument('--report', type=Path, help='写入 JSON 结果。')
     return parser.parse_args()
@@ -88,6 +102,86 @@ def is_obvious_instrumental(track: Track) -> bool:
         track.artist.casefold() in INSTRUMENTAL_ARTISTS
         or any(marker in text for marker in ('instrumental', 'off vocal', 'offvocal', 'monologue', 'inst.'))
     )
+
+
+def asset_relative_from_url(url: Any) -> Path | None:
+    """Resolve a Hugging Face dataset URL to a relative asset path."""
+    if not isinstance(url, str):
+        return None
+    marker = '/datasets/Yusen/music/resolve/main/'
+    path = urlsplit(url).path
+    index = path.find(marker)
+    if index < 0:
+        return None
+    relative = Path(unquote(path[index + len(marker):]))
+    if not relative.parts or relative.is_absolute() or '..' in relative.parts:
+        return None
+    return relative
+
+
+def prepare_missing_lyric_repairs(data_dir: Path, asset_repo: Path) -> list[tuple[int, Track, Path]]:
+    """Build repair jobs from HQ records without an LRC URL.
+
+    The normal import workflow starts from `/media/2/音乐`.  This mode is for
+    repairing a published collection after that source directory is offline:
+    the unified asset repository already contains the MP3 and cover files.
+    """
+    records = read_jsonl_records(data_dir / 'music_hq.0.jsonl', 'music_hq')
+    jobs: list[tuple[int, Track, Path]] = []
+    for record in records:
+        if record.get('lrc'):
+            continue
+        mid = record.get('mid')
+        relative = asset_relative_from_url(record.get('url'))
+        if not isinstance(mid, int) or relative is None:
+            continue
+        source = asset_repo / relative
+        if not source.is_file():
+            print(f'跳过 mid={mid}：资源仓库中没有音频 {relative}')
+            continue
+        track = Track(
+            source=source,
+            source_relative=relative,
+            title=str(record.get('title') or '').strip(),
+            artist=str(record.get('author') or '').strip(),
+            album=str(record.get('album') or '').strip(),
+            cover=None,
+            lyrics=None,
+        )
+        if not track.title or not track.artist:
+            print(f'跳过 mid={mid}：缺少歌名或歌手。')
+            continue
+        jobs.append((mid, track, source.with_suffix('.lrc')))
+    return jobs
+
+
+def write_repaired_lyrics(
+    data_dir: Path,
+    asset_repo: Path,
+    raw_url: str,
+    repaired: dict[int, Path],
+) -> tuple[int, int]:
+    """Write successful repair targets to both HQ and SQ JSONL collections."""
+    if not repaired:
+        return 0, 0
+    relative_urls = {
+        mid: raw_url.rstrip('/') + '/' + quote(path.relative_to(asset_repo).as_posix(), safe='/')
+        for mid, path in repaired.items()
+    }
+    changed_counts: list[int] = []
+    for name in ('music_hq', 'music_sq'):
+        path = data_dir / f'{name}.0.jsonl'
+        records = read_jsonl_records(path, name)
+        changed = 0
+        for record in records:
+            mid = record.get('mid')
+            if mid in relative_urls and not record.get('lrc'):
+                record['lrc'] = relative_urls[mid]
+                changed += 1
+        if changed:
+            write_jsonl_records(path, name, records)
+        changed_counts.append(changed)
+    return changed_counts[0], changed_counts[1]
 
 
 def fetch_lyrics(track: Track, target: Path, min_score: float) -> tuple[str, str]:
@@ -125,10 +219,24 @@ def write_report(path: Path, results: list[dict[str, Any]]) -> None:
 
 def main() -> int:
     args = parse_arguments()
-    tracks = prepare_tracks(args.source_dir, args.reference)
-    if args.limit:
-        tracks = tracks[:args.limit]
-    print(f'候选曲目：{len(tracks)} 首。')
+    if args.offset < 0 or args.limit < 0:
+        raise ValueError('offset 和 limit 不能为负数。')
+    repair_jobs: list[tuple[int, Track, Path]] = []
+    if args.repair_missing:
+        repair_jobs = prepare_missing_lyric_repairs(args.data_dir, args.asset_repo)
+        if args.offset:
+            repair_jobs = repair_jobs[args.offset:]
+        if args.limit:
+            repair_jobs = repair_jobs[:args.limit]
+        print(f'JSONL 中待补歌词：{len(repair_jobs)} 首。')
+        tracks = [track for _, track, _ in repair_jobs]
+    else:
+        tracks = prepare_tracks(args.source_dir, args.reference)
+        if args.offset:
+            tracks = tracks[args.offset:]
+        if args.limit:
+            tracks = tracks[:args.limit]
+        print(f'候选曲目：{len(tracks)} 首。')
     if not args.apply:
         print('这是预览；确认后增加 --apply 下载歌词。')
         return 0
@@ -144,12 +252,15 @@ def main() -> int:
     _ = application  # Keep the event dispatcher alive while LDDC runs requests.
 
     results: list[dict[str, Any]] = []
-    for index, track in enumerate(tracks, start=1):
-        target = lyric_target(track, args.asset_repo)
+    repaired: dict[int, Path] = {}
+    iterable = repair_jobs if args.repair_missing else [(None, track, lyric_target(track, args.asset_repo)) for track in tracks]
+    for index, (mid, track, target) in enumerate(iterable, start=1):
         print(f'[{index}/{len(tracks)}] {track.display_name}')
         if target.is_file() and not args.overwrite:
             track.lyrics = target
-            results.append({'source': track.source_relative.as_posix(), 'status': 'existing', 'detail': target.as_posix()})
+            if isinstance(mid, int):
+                repaired[mid] = target
+            results.append({'mid': mid, 'source': track.source_relative.as_posix(), 'status': 'existing', 'detail': target.as_posix()})
             continue
         try:
             status, detail = fetch_lyrics(track, target, args.min_score)
@@ -157,20 +268,26 @@ def main() -> int:
             status, detail = 'failed', f'{error.__class__.__name__}: {error}'
         if status == 'success':
             track.lyrics = target
+            if isinstance(mid, int):
+                repaired[mid] = target
         print(f'  {status}: {detail}')
-        results.append({'source': track.source_relative.as_posix(), 'status': status, 'detail': detail})
+        results.append({'mid': mid, 'source': track.source_relative.as_posix(), 'status': status, 'detail': detail})
 
-    config = LibraryConfig(
-        source_dir=args.source_dir,
-        mp3_repo_dir=args.asset_repo,
-        sq_repo_dir=args.asset_repo,
-        data_dir=args.data_dir,
-        mp3_raw_url=args.raw_url,
-        sq_raw_url=args.raw_url,
-        list_ids=(1, 3),
-        overwrite=False,
-    )
-    hq_count, sq_count = export_database(tracks, config, print)
+    if args.repair_missing:
+        hq_count, sq_count = write_repaired_lyrics(args.data_dir, args.asset_repo, args.raw_url, repaired)
+        print(f'已补写歌词资料：HQ {hq_count} 条，SQ {sq_count} 条。')
+    else:
+        config = LibraryConfig(
+            source_dir=args.source_dir,
+            mp3_repo_dir=args.asset_repo,
+            sq_repo_dir=args.asset_repo,
+            data_dir=args.data_dir,
+            mp3_raw_url=args.raw_url,
+            sq_raw_url=args.raw_url,
+            list_ids=(1, 3),
+            overwrite=False,
+        )
+        hq_count, sq_count = export_database(tracks, config, print)
     summary = Counter(result['status'] for result in results)
     print(f'完成：{dict(summary)}；资料总数 HQ {hq_count}、SQ {sq_count}。')
     if args.report:
