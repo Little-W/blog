@@ -73,11 +73,16 @@ async function consoleApi<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function clearMusicBrowserCaches() {
-  if (typeof window === 'undefined' || !('caches' in window)) return;
-  await Promise.all([
-    window.caches.delete('yusen-music-playlists-v1'),
-    window.caches.delete('yusen-music-playlists-v2'),
-  ]).catch(() => undefined);
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem('yusen-music-data-invalidated-at', String(Date.now()));
+  } catch {}
+  if ('caches' in window) {
+    await Promise.all([
+      window.caches.delete('yusen-music-playlists-v1'),
+      window.caches.delete('yusen-music-playlists-v2'),
+    ]).catch(() => undefined);
+  }
 }
 
 function recordTitle(record: JsonRecord, index: number) {
@@ -622,6 +627,7 @@ function DataConsole({repository}: {repository: string | null}) {
       setPendingUpserts({});
       setPendingDeletes([]);
       setDirty(false);
+      await clearMusicBrowserCaches();
       await loadDataset(dataset.name, true);
       const syncNotice = supportsTagFilter && syncMusicLists
         ? `；已同步另一音质的 ${result.syncedCount || 0} 条标签设置${result.unmatchedCount ? `，另有 ${result.unmatchedCount} 条曲目未找到对应项` : ''}`
@@ -662,6 +668,7 @@ function DataConsole({repository}: {repository: string | null}) {
         }),
       });
       setImportText('');
+      await clearMusicBrowserCaches();
       await loadDataset(dataset.name, true);
       setNotice(`已写入 ${result.count} 条记录，提交编号为 ${result.commitSha.slice(0, 8)}。`);
     } catch (caught) {

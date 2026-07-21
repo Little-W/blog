@@ -22,12 +22,16 @@ var music_search_last_text = null;
 var music_search_base_list = [];
 var music_library_count = 0;
 // 静态资料曾以 stale-while-revalidate 缓存，数据表发布后浏览器仍可能先拿到
-// 上一版歌单。此版本参数只用于淘汰该旧缓存；后续由 Netlify 的 ETag 重新校验。
+// 上一版歌单。此值仅用于本地静态备用；生产环境以部署修订号检查一致性。
 var MUSIC_DATA_CACHE_VERSION = '20260719-acg101';
 var music_data_revision = MUSIC_DATA_CACHE_VERSION;
 var MUSIC_PLAYLIST_CACHE_NAME = 'yusen-music-playlists-v1';
 var MUSIC_PLAYLIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 var MUSIC_PLAYLIST_CACHE_LIMIT = 48;
+var MUSIC_REVISION_CHECK_INTERVAL_MS = 15 * 1000;
+var music_revision_checked_at = 0;
+var music_revision_check_promise = null;
+var music_cache_invalidation_promise = Promise.resolve(false);
 var music_quality_switching = false;
 var music_tag_overrides = {};
 var music_admin_state = { authenticated: false, checked: false, loading: false, promise: null };
@@ -139,6 +143,7 @@ $(function () {
     localStorage.setItem('music-list-display-limit', String(value));
     apply_music_list_display_limit(value);
   });
+  install_music_data_consistency_checks();
   init_with_database();
 });
 
@@ -208,13 +213,106 @@ function allow_music_static_fallback() {
 }
 
 function load_music_tags() {
-  return music_api_json('/api/music/tags').then(function(data) {
-    music_data_revision = String(data.revision || MUSIC_DATA_CACHE_VERSION);
+  return music_api_json('/api/music/tags?check=' + Date.now(), {cache: 'no-store'}).then(function(data) {
+    adopt_music_data_revision(data.revision || MUSIC_DATA_CACHE_VERSION);
+    music_revision_checked_at = Date.now();
     return Array.isArray(data.tags) ? data.tags : [];
   }).catch(function(error) {
     if (!allow_music_static_fallback()) throw error;
-    music_data_revision = MUSIC_DATA_CACHE_VERSION;
+    adopt_music_data_revision(MUSIC_DATA_CACHE_VERSION);
+    music_revision_checked_at = Date.now();
     return load_static_data('music_tag');
+  });
+}
+
+function invalidate_music_data_memory() {
+  var savedQueue = Array.isArray(music_list_all[0]) ? music_list_all[0].slice() : [];
+  music_list_all = [];
+  music_list_all[0] = savedQueue;
+  music_list_all[1] = [];
+  music_all = [];
+  music_all_hq = [];
+  music_all_sq = [];
+  music_list_promises = {};
+  music_quality_promises = {};
+  music_search_base_list = [];
+  music_search_last_text = null;
+}
+
+function adopt_music_data_revision(nextRevision) {
+  nextRevision = String(nextRevision || '').trim();
+  if (!nextRevision || nextRevision === music_data_revision) return false;
+  music_data_revision = nextRevision;
+  invalidate_music_data_memory();
+  music_cache_invalidation_promise = clear_music_playlist_cache();
+  return true;
+}
+
+function ensure_music_data_consistency(force) {
+  if (!force && Date.now() - music_revision_checked_at < MUSIC_REVISION_CHECK_INTERVAL_MS) {
+    return Promise.resolve({changed: false, revision: music_data_revision});
+  }
+  if (music_revision_check_promise) return music_revision_check_promise;
+  var revisionChangedDuringCheck = false;
+  music_revision_check_promise = music_api_json('/api/music/revision?check=' + Date.now(), {
+    cache: 'no-store',
+  }).then(function(data) {
+    music_revision_checked_at = Date.now();
+    var changed = adopt_music_data_revision(data.revision);
+    revisionChangedDuringCheck = changed;
+    if (!changed) return {changed: false, revision: music_data_revision};
+
+    // 发现新部署后同步更新标签列表。大体量曲目仍按需请求。
+    return music_cache_invalidation_promise.then(function() {
+      return music_api_json('/api/music/tags?revision=' + encodeURIComponent(music_data_revision) + '&check=' + Date.now(), {
+        cache: 'no-store',
+      });
+    }).then(function(tagData) {
+      var tagsChangedAgain = adopt_music_data_revision(tagData.revision || music_data_revision);
+      var cacheReady = tagsChangedAgain ? music_cache_invalidation_promise : Promise.resolve();
+      return cacheReady.then(function() {
+        music_tags = (Array.isArray(tagData.tags) ? tagData.tags : []).sort(objectSort('tag_order'));
+        if (page_loaded && typeof load_music_lists === 'function') load_music_lists(true);
+        return {changed: true, revision: music_data_revision};
+      });
+    });
+  }).catch(function() {
+    // 断网时保留已验证的本地资料；下次切换歌单或页面重新获得焦点时再检查。
+    music_revision_checked_at = Date.now();
+    return {changed: revisionChangedDuringCheck, revision: music_data_revision};
+  }).finally(function() {
+    music_revision_check_promise = null;
+  });
+  return music_revision_check_promise;
+}
+
+var music_visible_refresh_promise = null;
+function refresh_visible_music_data() {
+  if (!page_loaded) return Promise.resolve(false);
+  if (music_visible_refresh_promise) return music_visible_refresh_promise;
+  music_visible_refresh_promise = ensure_music_data_consistency(true).then(function(state) {
+    if (!state.changed || !page_loaded || current_list === 0) return false;
+    if (!music_tags.some(function(tag) { return Number(tag.tag_id) === Number(current_list); })) {
+      current_list = music_tags.length ? Number(music_tags[0].tag_id) : 2;
+    }
+    return get_music_list_from_current_revision(current_list, true).then(function() { return true; });
+  }).finally(function() {
+    music_visible_refresh_promise = null;
+  });
+  return music_visible_refresh_promise;
+}
+
+function install_music_data_consistency_checks() {
+  if (window.__yusenMusicConsistencyChecksInstalled) return;
+  window.__yusenMusicConsistencyChecksInstalled = true;
+  window.addEventListener('focus', refresh_visible_music_data);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') refresh_visible_music_data();
+  });
+  window.addEventListener('storage', function(event) {
+    if (event.key !== 'yusen-music-data-invalidated-at') return;
+    music_revision_checked_at = 0;
+    refresh_visible_music_data();
   });
 }
 
@@ -237,12 +335,14 @@ function music_playlist_cache_key(parameters) {
 function read_music_playlist_cache(parameters) {
   var key = music_playlist_cache_key(parameters);
   if (!key || !window.caches) return Promise.resolve(null);
-  return window.caches.open(MUSIC_PLAYLIST_CACHE_NAME).then(function(cache) {
+  return music_cache_invalidation_promise.then(function() {
+    return window.caches.open(MUSIC_PLAYLIST_CACHE_NAME);
+  }).then(function(cache) {
     return cache.match(key);
   }).then(function(response) {
     if (!response) return null;
     return response.json().then(function(entry) {
-      if (!entry || !entry.data || !Number.isFinite(Number(entry.cachedAt))) return null;
+      if (!entry || !entry.data || !Number.isFinite(Number(entry.cachedAt)) || String(entry.revision || '') !== music_data_revision) return null;
       return {
         data: entry.data,
         fresh: Date.now() - Number(entry.cachedAt) < MUSIC_PLAYLIST_CACHE_TTL_MS,
@@ -265,8 +365,10 @@ function trim_music_playlist_cache(cache) {
 function write_music_playlist_cache(parameters, data) {
   var key = music_playlist_cache_key(parameters);
   if (!key || !window.caches || !data) return Promise.resolve(data);
-  var entry = JSON.stringify({cachedAt: Date.now(), data: data});
-  return window.caches.open(MUSIC_PLAYLIST_CACHE_NAME).then(function(cache) {
+  var entry = JSON.stringify({cachedAt: Date.now(), revision: music_data_revision, data: data});
+  return music_cache_invalidation_promise.then(function() {
+    return window.caches.open(MUSIC_PLAYLIST_CACHE_NAME);
+  }).then(function(cache) {
     return cache.put(key, new Response(entry, {
       headers: {'content-type': 'application/json; charset=utf-8'},
     })).then(function() {
@@ -342,7 +444,9 @@ function static_music_tracks_fallback(parameters) {
 function fetch_music_tracks(parameters) {
   parameters = Object.assign({}, parameters || {});
   parameters.quality = Number(parameters.quality) === 1 ? 'sq' : 'hq';
-  return read_music_playlist_cache(parameters).then(function(cached) {
+  return ensure_music_data_consistency(false).then(function() {
+    return read_music_playlist_cache(parameters);
+  }).then(function(cached) {
     if (cached && cached.fresh) return cached.data;
     return music_api_json('/api/music/tracks', {
       method: 'POST',
@@ -359,6 +463,7 @@ function fetch_music_tracks(parameters) {
       if (cached && cached.data) return cached.data;
       throw error;
     }).then(function(data) {
+      adopt_music_data_revision(data && data.revision);
       return write_music_playlist_cache(parameters, data);
     });
   });
@@ -1114,7 +1219,7 @@ function fetch_music_hq() {}
 function fetch_music_sq() {}
 function get_mv_list() {}
 
-function get_music_list(k,is_switch)
+function get_music_list_from_current_revision(k,is_switch)
 {
   k = Number(k);
   if (!Number.isInteger(k)) return Promise.resolve([]);
@@ -1163,6 +1268,13 @@ function get_music_list(k,is_switch)
     console.error('Unable to load music playlist', error);
     show_music_list_message(error && error.message || '歌单加载失败，请稍后重试。', true);
     return [];
+  });
+}
+
+function get_music_list(k,is_switch)
+{
+  return ensure_music_data_consistency(false).then(function() {
+    return get_music_list_from_current_revision(k,is_switch);
   });
 }
 
@@ -5962,7 +6074,7 @@ function bind_playlist_sort_controls() {
 }
 
 /* Render the original playlist controls from local exported tags. */
-load_music_lists = function() {
+load_music_lists = function(skipTrackRender) {
   var div = document.getElementById('aplayer_list');
   if (!div) return;
   ['former_page_div', 'next_page_div'].forEach(function(id) {
@@ -6099,7 +6211,7 @@ load_music_lists = function() {
     scrollTagPage(current_page);
   });
   setup_music_lists();
-  init_custom_list();
+  if (!skipTrackRender) init_custom_list();
   current_page = 0;
   if (div.parentNode) {
     div.parentNode.style.opacity = '1';

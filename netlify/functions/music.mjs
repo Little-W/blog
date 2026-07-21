@@ -20,7 +20,7 @@ export const config = {
   preferStatic: false,
 };
 
-function json(payload, status = 200, cache = 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400') {
+function json(payload, status = 200, cache = 'no-store') {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -48,6 +48,7 @@ async function loadDataset(request, name) {
   const cached = datasetCache.get(name);
   if (cached && cached.expiresAt > Date.now()) return cached.records;
   const source = new URL(`/data/${name}.0.jsonl`, request.url);
+  source.searchParams.set('revision', dataRevision());
   const response = await fetch(source, {
     headers: {accept: 'application/x-ndjson,text/plain;q=0.9'},
     signal: AbortSignal.timeout(12_000),
@@ -130,6 +131,13 @@ async function getTags(request) {
         .sort((left, right) => left.tag_order - right.tag_order || left.tag_id - right.tag_id),
       revision: dataRevision(),
     },
+  });
+}
+
+function getRevision() {
+  return json({
+    success: true,
+    data: {revision: dataRevision()},
   });
 }
 
@@ -216,6 +224,7 @@ async function queryTracks(request) {
 export default async (request) => {
   const url = new URL(request.url);
   try {
+    if (url.pathname === '/api/music/revision' && request.method === 'GET') return getRevision();
     if (url.pathname === '/api/music/tags' && request.method === 'GET') return await getTags(request);
     if (url.pathname === '/api/music/tracks' && request.method === 'POST') return await queryTracks(request);
     return fail('音乐接口不存在。', 'NOT_FOUND', 404);

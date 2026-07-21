@@ -37,13 +37,21 @@ function post(body) {
 }
 
 test('返回标签和指定歌单，而不是完整音乐表', async () => {
+  const revisionResponse = await musicHandler(new Request('https://blog.example/api/music/revision'));
+  assert.equal(revisionResponse.headers.get('cache-control'), 'no-store');
+  const revision = await payload(revisionResponse);
+  assert.equal(revision.status, 200);
+  assert.equal(revision.body.data.revision, 'test-music-revision');
+
   const tags = await payload(await musicHandler(new Request('https://blog.example/api/music/tags')));
   assert.equal(tags.status, 200);
   assert.equal(tags.body.success, true);
   assert.ok(tags.body.data.tags.length > 1);
   assert.equal(tags.body.data.revision, 'test-music-revision');
 
-  const tracks = await payload(await post({quality: 'hq', listId: 2}));
+  const tracksResponse = await post({quality: 'hq', listId: 2});
+  assert.equal(tracksResponse.headers.get('cache-control'), 'no-store');
+  const tracks = await payload(tracksResponse);
   assert.equal(tracks.status, 200);
   assert.equal(tracks.body.data.records.length, tracks.body.data.playlistIds.length);
   assert.ok(tracks.body.data.records.length < tracks.body.data.totalLibrary);
