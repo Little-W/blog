@@ -206,16 +206,6 @@
     return uiBusyCount > 0;
   }
 
-  function hasPendingInput() {
-    var scheduling = navigator.scheduling;
-    if (!scheduling || typeof scheduling.isInputPending !== "function") return false;
-    try {
-      return scheduling.isInputPending({includeContinuous: true});
-    } catch (error) {
-      return false;
-    }
-  }
-
   function noteUiActivity() {
     setUiBusy("interaction", true);
     window.clearTimeout(uiActivityTimer);
@@ -233,13 +223,6 @@
     var interval = frameRate ? 1000 / frameRate : 0;
     function tick(timestamp) {
       if (!frameRequests[requestId]) return;
-      // Decorative canvases yield while scrolling, switching theme, or while the
-      // browser still has input waiting. The requested frame remains queued and
-      // resumes automatically as soon as the page interaction completes.
-      if (isUiBusy() || hasPendingInput()) {
-        frame.nativeId = nativeRequestAnimationFrame(tick);
-        return;
-      }
       var previous = lastFrameByCallback.get(callback) || 0;
       if (!interval || !previous || timestamp - previous >= interval - 0.5) {
         lastFrameByCallback.set(callback, timestamp);
@@ -371,8 +354,8 @@
   ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"].forEach(function(type) {
     window.addEventListener(type, noteUserInteraction, {passive: true});
   });
-  // `scroll` does not bubble. Capture it on document so the MV and music lists
-  // receive the same priority protection as window scrolling.
+  // `scroll` does not bubble. Capture it on document so Live2D can yield for
+  // nested MV and music list scrolling while the other effects keep rendering.
   document.addEventListener("scroll", function(event) {
     noteUserInteraction(event);
     noteUiActivity();

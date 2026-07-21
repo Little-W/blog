@@ -137,6 +137,9 @@ export class LAppDelegate {
       renderedFrames: this._renderedFrames,
       actualFps: Math.round(this._actualFps * 10) / 10,
       averageFrameCost: Math.round(this._averageFrameCost * 100) / 100,
+      adaptiveFrameDivisor: this._adaptiveFrameDivisor,
+      displayFrameInterval: Math.round(this._displayFrameInterval * 100) / 100,
+      interactionActive: this.isUiInteractionActive(),
       frameBudgetUse: targetFps
         ? Math.round(this._averageFrameCost / (1000 / targetFps) * 1000) / 10
         : 0,
@@ -161,18 +164,82 @@ export class LAppDelegate {
   }
 
   private canRender(): boolean {
+    return this._environmentEnabled && !document.hidden && this._inViewport;
+  }
+
+  private isUiInteractionActive(): boolean {
     const effects = (window as any).YusenEffects;
-    if (effects?.isUiBusy?.()) return false;
+    return this._scrolling || !!effects?.isUiBusy?.();
+  }
+
+  private hasPendingInput(): boolean {
     const scheduling = (navigator as any).scheduling;
     try {
-      if (scheduling?.isInputPending?.({ includeContinuous: true })) return false;
+      return !!scheduling?.isInputPending?.({ includeContinuous: true });
     } catch (_) {
-      // Older implementations may expose isInputPending without options.
+      return false;
     }
-    return this._environmentEnabled &&
-      !document.hidden &&
-      this._inViewport &&
-      !this._scrolling;
+  }
+
+  private updateDisplayCadence(timestamp: number): void {
+    if (this._lastAnimationTimestamp > 0) {
+      const elapsed = timestamp - this._lastAnimationTimestamp;
+      if (elapsed >= 4 && elapsed <= 100) {
+        this._lastAnimationInterval = elapsed;
+        if (this._displayFrameInterval <= 0) {
+          this._displayFrameInterval = elapsed;
+        } else if (elapsed <= this._displayFrameInterval * 1.35) {
+          // Follow a faster display quickly, but do not mistake a dropped frame
+          // during interaction for a lower-refresh monitor.
+          const weight = elapsed < this._displayFrameInterval ? 0.22 : 0.025;
+          this._displayFrameInterval +=
+            (elapsed - this._displayFrameInterval) * weight;
+        }
+      }
+    }
+    this._lastAnimationTimestamp = timestamp;
+  }
+
+  private shouldRenderDuringInteraction(timestamp: number): boolean {
+    if (!this.isUiInteractionActive()) {
+      this._adaptiveFrameDivisor = 1;
+      this._adaptiveRecoveryFrames = 0;
+      this._interactionFrameCounter = 0;
+      return true;
+    }
+
+    const displayInterval = this._displayFrameInterval || 16.67;
+    const animationInterval = this._lastAnimationInterval || displayInterval;
+    const renderCost = this._frameCostEstimate || this._averageFrameCost || 0;
+    const timingPressure = animationInterval / Math.max(1, displayInterval);
+    const costPressure = renderCost / Math.max(1, displayInterval * 0.58);
+    const desiredDivisor = Math.max(
+      1,
+      Math.min(6, Math.ceil(Math.max(timingPressure - 0.12, costPressure)))
+    );
+
+    if (desiredDivisor > this._adaptiveFrameDivisor) {
+      this._adaptiveFrameDivisor = desiredDivisor;
+      this._adaptiveRecoveryFrames = 0;
+    } else if (desiredDivisor < this._adaptiveFrameDivisor) {
+      this._adaptiveRecoveryFrames++;
+      if (this._adaptiveRecoveryFrames >= 10) {
+        this._adaptiveFrameDivisor--;
+        this._adaptiveRecoveryFrames = 0;
+      }
+    } else {
+      this._adaptiveRecoveryFrames = 0;
+    }
+
+    // Even under continuous input, keep the model alive at a reduced rate.
+    // This avoids the conspicuous freeze produced by the previous hard pause.
+    const maximumGap = Math.min(120, Math.max(50, displayInterval * 6));
+    if (timestamp - this._lastRenderTime >= maximumGap) return true;
+    if (this.hasPendingInput()) return false;
+
+    this._interactionFrameCounter =
+      (this._interactionFrameCounter + 1) % this._adaptiveFrameDivisor;
+    return this._interactionFrameCounter === 0;
   }
 
   private scheduleFrame(): void {
@@ -188,6 +255,7 @@ export class LAppDelegate {
   private onAnimationFrame = (timestamp: number): void => {
     this._frameRequest = 0;
     if (!this._running || s_instance == null) return;
+    this.updateDisplayCadence(timestamp);
 
     if (!this.canRender()) {
       this._lastRenderTime = timestamp;
@@ -199,7 +267,10 @@ export class LAppDelegate {
     const targetFps = this.getTargetFps();
     const frameInterval = targetFps ? 1000 / targetFps : 0;
     const elapsed = timestamp - this._lastRenderTime;
-    if (!frameInterval || elapsed + 0.5 >= frameInterval) {
+    if (
+      (!frameInterval || elapsed + 0.5 >= frameInterval) &&
+      this.shouldRenderDuringInteraction(timestamp)
+    ) {
       if (this._pointerMovePending) this.flushPointerMove();
       this._lastRenderTime = !frameInterval || elapsed > frameInterval * 2
         ? timestamp
@@ -343,6 +414,9 @@ export class LAppDelegate {
 
   private recordFrame(cost: number): void {
     this._renderedFrames++;
+    this._frameCostEstimate = this._frameCostEstimate
+      ? this._frameCostEstimate * 0.88 + cost * 0.12
+      : cost;
     this._frameCostTotal += cost;
     this._frameCostSamples++;
     if (this._frameCostSamples >= 60) {
@@ -401,6 +475,13 @@ export class LAppDelegate {
   private _frameRequest = 0;
   private _pointerMovePending = false;
   private _lastRenderTime = 0;
+  private _lastAnimationTimestamp = 0;
+  private _lastAnimationInterval = 0;
+  private _displayFrameInterval = 0;
+  private _frameCostEstimate = 0;
+  private _adaptiveFrameDivisor = 1;
+  private _adaptiveRecoveryFrames = 0;
+  private _interactionFrameCounter = 0;
   private _pendingPointerX = 0;
   private _pendingPointerY = 0;
   private _scrollTimer = 0;
