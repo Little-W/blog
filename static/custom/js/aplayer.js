@@ -24,6 +24,7 @@ var music_library_count = 0;
 // 静态资料曾以 stale-while-revalidate 缓存，数据表发布后浏览器仍可能先拿到
 // 上一版歌单。此版本参数只用于淘汰该旧缓存；后续由 Netlify 的 ETag 重新校验。
 var MUSIC_DATA_CACHE_VERSION = '20260719-acg101';
+var music_data_revision = MUSIC_DATA_CACHE_VERSION;
 var MUSIC_PLAYLIST_CACHE_NAME = 'yusen-music-playlists-v1';
 var MUSIC_PLAYLIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 var MUSIC_PLAYLIST_CACHE_LIMIT = 48;
@@ -142,9 +143,14 @@ function init_with_database()
   // Netlify Function 在服务端查询，不再把数千条曲目一次性放进页面内存。
   music_playlist_restore_state = read_saved_music_playlist();
   var savedIds = music_playlist_restore_state ? music_playlist_restore_state.ids : [];
+  var tagsPromise = load_music_tags();
   Promise.all([
-    load_music_tags(),
-    fetch_music_tracks({quality: quality, listId: current_list, ids: savedIds, sort: 'default'}),
+    tagsPromise,
+    // 先读取标签接口返回的部署版本，再查询歌单。这样每次新部署都会使用新的
+    // Cache Storage 键，不会继续显示上一次发布前的曲目顺序。
+    tagsPromise.then(function() {
+      return fetch_music_tracks({quality: quality, listId: current_list, ids: savedIds, sort: 'default'});
+    }),
     load_static_data('mv_bilibili'),
   ]).then(function (sets) {
     music_tags = sets[0].sort(objectSort('tag_order'));
@@ -192,9 +198,11 @@ function allow_music_static_fallback() {
 
 function load_music_tags() {
   return music_api_json('/api/music/tags').then(function(data) {
+    music_data_revision = String(data.revision || MUSIC_DATA_CACHE_VERSION);
     return Array.isArray(data.tags) ? data.tags : [];
   }).catch(function(error) {
     if (!allow_music_static_fallback()) throw error;
+    music_data_revision = MUSIC_DATA_CACHE_VERSION;
     return load_static_data('music_tag');
   });
 }
@@ -207,7 +215,7 @@ function music_playlist_cache_key(parameters) {
   var ids = Array.isArray(parameters.ids) ? parameters.ids.map(Number).filter(Number.isInteger) : [];
   // Cache Storage 只接受 GET 键。这个地址仅是本地索引，不会真正发送请求。
   var key = new URL('/__music-cache__/playlist', window.location.origin);
-  key.searchParams.set('revision', MUSIC_DATA_CACHE_VERSION);
+  key.searchParams.set('revision', music_data_revision);
   key.searchParams.set('quality', qualityName);
   key.searchParams.set('list', String(listId));
   key.searchParams.set('sort', String(parameters.sort || 'default'));

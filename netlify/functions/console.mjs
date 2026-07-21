@@ -430,7 +430,7 @@ function normalizeMusicTagRecords(records) {
   });
 }
 
-function reconcileMusicTagOrders(tagRecords, musicRecords) {
+export function reconcileMusicTagOrders(tagRecords, musicRecords) {
   const members = new Map();
   for (const record of musicRecords) {
     const mid = Number(record.mid);
@@ -450,6 +450,21 @@ function reconcileMusicTagOrders(tagRecords, musicRecords) {
     for (const mid of validMids) if (!used.has(mid)) order.push(mid);
     return {...tag, music_order: order};
   });
+}
+
+export function sortMusicRecords(records, sort = 'id', musicOrder = []) {
+  const source = Array.isArray(records) ? records.slice() : [];
+  if (sort === 'list_order') {
+    const positions = new Map(
+      (Array.isArray(musicOrder) ? musicOrder : []).map((mid, index) => [Number(mid), index]),
+    );
+    return source.sort((left, right) => {
+      const leftPosition = positions.has(Number(left.mid)) ? positions.get(Number(left.mid)) : Number.MAX_SAFE_INTEGER;
+      const rightPosition = positions.has(Number(right.mid)) ? positions.get(Number(right.mid)) : Number.MAX_SAFE_INTEGER;
+      return leftPosition - rightPosition || Number(left.mid) - Number(right.mid);
+    });
+  }
+  return source.sort((left, right) => Number(left.mid) - Number(right.mid));
 }
 
 function validateMusicTagReferences(tagRecords, ...musicRecordSets) {
@@ -630,12 +645,11 @@ async function getDataset(url) {
     const tagFile = await readBlob(snapshot, DATASETS.music_tag.path);
     const tagRecords = parseJsonl(tagFile.content, DATASETS.music_tag.header).records;
     const tag = tagRecords.find((record) => Number(record.tag_id) === tagId);
-    const positions = new Map((Array.isArray(tag?.music_order) ? tag.music_order : []).map((mid, index) => [Number(mid), index]));
-    records = records.slice().sort((left, right) => {
-      const leftPosition = positions.has(Number(left.mid)) ? positions.get(Number(left.mid)) : Number.MAX_SAFE_INTEGER;
-      const rightPosition = positions.has(Number(right.mid)) ? positions.get(Number(right.mid)) : Number.MAX_SAFE_INTEGER;
-      return leftPosition - rightPosition || Number(left.mid) - Number(right.mid);
-    });
+    records = sortMusicRecords(records, 'list_order', tag?.music_order);
+  } else if (musicDataset) {
+    // “全部”及明确选择 MID 排序时始终以 mid 作为最高级顺序，不受各歌单
+    // 独立顺序影响。
+    records = sortMusicRecords(records, 'id');
   } else if (name === 'music_tag') {
     records = records.slice().sort((left, right) => Number(left.tag_order) - Number(right.tag_order) || Number(left.tag_id) - Number(right.tag_id));
   } else {

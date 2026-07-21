@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const originalFetch = globalThis.fetch;
+process.env.COMMIT_REF = 'test-music-revision';
 
 globalThis.fetch = async (input, init) => {
   const url = new URL(input instanceof URL ? input.href : typeof input === 'string' ? input : input.url);
@@ -21,7 +22,7 @@ globalThis.fetch = async (input, init) => {
   return originalFetch(input, init);
 };
 
-const {default: musicHandler} = await import('../netlify/functions/music.mjs');
+const {default: musicHandler, playlistOrder, sortTracks} = await import('../netlify/functions/music.mjs');
 
 async function payload(response) {
   return {status: response.status, body: await response.json()};
@@ -40,11 +41,25 @@ test('返回标签和指定歌单，而不是完整音乐表', async () => {
   assert.equal(tags.status, 200);
   assert.equal(tags.body.success, true);
   assert.ok(tags.body.data.tags.length > 1);
+  assert.equal(tags.body.data.revision, 'test-music-revision');
 
   const tracks = await payload(await post({quality: 'hq', listId: 2}));
   assert.equal(tracks.status, 200);
   assert.equal(tracks.body.data.records.length, tracks.body.data.playlistIds.length);
   assert.ok(tracks.body.data.records.length < tracks.body.data.totalLibrary);
+  assert.equal(tracks.body.data.revision, 'test-music-revision');
+});
+
+test('歌单默认使用独立顺序数组，MID 排序仍可单独选择', () => {
+  const records = [
+    {mid: 3, title: 'C', list: [2]},
+    {mid: 1, title: 'A', list: [2]},
+    {mid: 2, title: 'B', list: [2]},
+    {mid: 4, title: 'D', list: [3]},
+  ];
+  const ordered = playlistOrder({tag_id: 2, music_order: [2, 3, 1]}, records);
+  assert.deepEqual(ordered.map((record) => record.mid), [2, 3, 1]);
+  assert.deepEqual(sortTracks(ordered, 'id').map((record) => record.mid), [1, 2, 3]);
 });
 
 test('搜索结果按页限制并返回匹配总数', async () => {

@@ -72,6 +72,14 @@ async function consoleApi<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
+async function clearMusicBrowserCaches() {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  await Promise.all([
+    window.caches.delete('yusen-music-playlists-v1'),
+    window.caches.delete('yusen-music-playlists-v2'),
+  ]).catch(() => undefined);
+}
+
 function recordTitle(record: JsonRecord, index: number) {
   const preferred = [
     record.title,
@@ -703,6 +711,8 @@ function DataConsole({repository}: {repository: string | null}) {
       setMusicOrder(ordered);
       setMusicOrderHeadSha(first.headSha);
       setMusicOrderMode(true);
+      setPage(0);
+      setDatasetSort('list_order');
     } catch (caught) {
       if (requestId === musicOrderRequestId.current) {
         setError(caught instanceof Error ? caught.message : '无法读取歌单顺序。');
@@ -748,6 +758,7 @@ function DataConsole({repository}: {repository: string | null}) {
       setMusicOrderMode(false);
       setMusicOrder([]);
       setMusicOrderHeadSha('');
+      await clearMusicBrowserCaches();
       await loadDataset(requestedDataset, true);
       setNotice(`歌单顺序已保存，提交编号为 ${result.commitSha.slice(0, 8)}。`);
     } catch (caught) {
@@ -862,6 +873,7 @@ function DataConsole({repository}: {repository: string | null}) {
                 onClick={() => {
                   setPage(0);
                   setTagFilter(tag.id);
+                  setDatasetSort('list_order');
                   setMusicOrderMode(false);
                   setMusicOrder([]);
                 }}>

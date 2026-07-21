@@ -6,6 +6,15 @@ const DEFAULT_SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const datasetCache = new Map();
 
+function dataRevision() {
+  return String(
+    process.env.COMMIT_REF ||
+    process.env.DEPLOY_ID ||
+    process.env.BUILD_ID ||
+    'local',
+  ).slice(0, 160);
+}
+
 export const config = {
   path: '/api/music/*',
   preferStatic: false,
@@ -79,7 +88,7 @@ function normalizedIds(value) {
   return ids;
 }
 
-function playlistOrder(tag, records) {
+export function playlistOrder(tag, records) {
   const members = records.filter((record) => Array.isArray(record.list) && record.list.map(Number).includes(Number(tag.tag_id)));
   const byId = new Map(members.map((record) => [Number(record.mid), record]));
   const ordered = [];
@@ -96,7 +105,7 @@ function playlistOrder(tag, records) {
   return ordered;
 }
 
-function sortTracks(records, sort) {
+export function sortTracks(records, sort) {
   if (sort === 'name') {
     const collator = new Intl.Collator('zh-Hans-CN', {numeric: true, sensitivity: 'base'});
     return records.slice().sort((left, right) =>
@@ -119,6 +128,7 @@ async function getTags(request) {
           count: Array.isArray(tag.music_order) ? tag.music_order.length : null,
         }))
         .sort((left, right) => left.tag_order - right.tag_order || left.tag_id - right.tag_id),
+      revision: dataRevision(),
     },
   });
 }
@@ -197,6 +207,7 @@ async function queryTracks(request) {
       playlistIds,
       totalLibrary: records.length,
       quality: datasetName === 'music_sq' ? 'sq' : 'hq',
+      revision: dataRevision(),
       ...(searchMeta || {}),
     },
   });
