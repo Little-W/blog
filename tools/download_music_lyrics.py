@@ -98,7 +98,7 @@ def prepare_tracks(source_dir: Path, reference: Path, all_source_files: bool, da
 
 
 def lyric_target(track: Track, asset_repo: Path) -> Path:
-    return asset_repo / track.output_directory / f'{track.display_name}.lrc'
+    return batch_asset_repo(asset_repo) / track.output_directory / f'{track.display_name}.lrc'
 
 
 def is_obvious_instrumental(track: Track) -> bool:
