@@ -127,7 +127,7 @@ export class LAppDelegate {
     const targetFps = this.getTargetFps();
     return {
       renderer: 'Cubism Web SDK R5 / WebGL2',
-      activeFps: this._activeFps,
+      activeFps: targetFps,
       targetFps,
       frameRateLimit: this.getEffectFrameRateLimit(),
       mouseTracking: this._mouseTrackingEnabled,
@@ -135,9 +135,9 @@ export class LAppDelegate {
       renderedFrames: this._renderedFrames,
       actualFps: Math.round(this._actualFps * 10) / 10,
       averageFrameCost: Math.round(this._averageFrameCost * 100) / 100,
-      frameBudgetUse: Math.round(
-        this._averageFrameCost / (1000 / targetFps) * 1000
-      ) / 10,
+      frameBudgetUse: targetFps
+        ? Math.round(this._averageFrameCost / (1000 / targetFps) * 1000) / 10
+        : 0,
       lowPowerProfile: this._lowPowerDevice,
       webgpuAvailable: !!(navigator as any).gpu,
       motion
@@ -187,11 +187,11 @@ export class LAppDelegate {
     }
 
     const targetFps = this.getTargetFps();
-    const frameInterval = 1000 / targetFps;
+    const frameInterval = targetFps ? 1000 / targetFps : 0;
     const elapsed = timestamp - this._lastRenderTime;
-    if (elapsed + 0.5 >= frameInterval) {
+    if (!frameInterval || elapsed + 0.5 >= frameInterval) {
       if (this._pointerMovePending) this.flushPointerMove();
-      this._lastRenderTime = elapsed > frameInterval * 2
+      this._lastRenderTime = !frameInterval || elapsed > frameInterval * 2
         ? timestamp
         : this._lastRenderTime + frameInterval;
       LAppPal.updateTime();
@@ -359,14 +359,11 @@ export class LAppDelegate {
     const frameRate = Number(
       effects?.getLive2DFrameRate?.() ?? effects?.getFrameRate?.() ?? 0
     );
-    return [15, 24, 30, 45, 60, 90].includes(frameRate) ? frameRate : 0;
+    return [15, 24, 30, 45, 60].includes(frameRate) ? frameRate : 0;
   }
 
   private getTargetFps(): number {
-    const frameRateLimit = this.getEffectFrameRateLimit();
-    return frameRateLimit
-      ? Math.min(this._activeFps, frameRateLimit)
-      : this._activeFps;
+    return this.getEffectFrameRateLimit();
   }
 
   private constructor() {
@@ -375,7 +372,6 @@ export class LAppDelegate {
     this._lowPowerDevice =
       ((navigator as any).hardwareConcurrency || 8) <= 4 ||
       ((navigator as any).deviceMemory || 8) <= 4;
-    this._activeFps = 90;
   }
 
   private _cubismOption: Option;
@@ -398,7 +394,6 @@ export class LAppDelegate {
   private _pointerResetTimer = 0;
   private _intersectionObserver: IntersectionObserver = null;
   private _lowPowerDevice: boolean;
-  private _activeFps: number;
   private _renderedFrames = 0;
   private _frameCostTotal = 0;
   private _frameCostSamples = 0;

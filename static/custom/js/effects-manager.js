@@ -17,7 +17,7 @@
     complexity: "balanced"
   };
   var FRAME_RATE_OPTIONS = [0, 15, 24, 30, 45, 60];
-  var LIVE2D_FRAME_RATE_OPTIONS = [-1, 90].concat(FRAME_RATE_OPTIONS);
+  var LIVE2D_FRAME_RATE_OPTIONS = [-1].concat(FRAME_RATE_OPTIONS);
   var LOW_POWER_TIMEOUT_OPTIONS = [0, 30, 60, 180, 300, 600];
   var LOW_POWER_FRAME_RATE = 15;
   var COMPLEXITY_OPTIONS = ["low", "balanced", "high"];
