@@ -805,7 +805,7 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-info .aplayer-music .aplayer-title { font-size:1.02rem; }
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-lrc { display:block!important; height:94px!important; margin:7px 0 5px!important; }
   .music-page .music-player-shell #aplayer_ctr { padding:9px 10px 11px; overflow:hidden; }
-  .music-page .music-player-shell #ctr_panel_div { min-height:42px; grid-template-columns:auto minmax(0,1fr) auto auto auto; grid-template-areas:"progress progress order loop lyric" "transport volume volume volume queue"; column-gap:8px; row-gap:9px; align-items:center; }
+  .music-page .music-player-shell #ctr_panel_div { min-height:42px; grid-template-columns:10px auto minmax(0,1fr) 27px 27px 27px; grid-template-areas:". progress progress order loop lyric" "transport transport volume queue queue queue"; column-gap:8px; row-gap:9px; align-items:center; }
   .music-page .music-player-shell .player-transport-controls { gap:5px; }
   .music-page .music-player-shell .song_ctr_button { width:28px; height:28px; flex-basis:28px; }
   .music-page .music-player-shell .song_ctr_button svg { width:14px; height:14px; }
