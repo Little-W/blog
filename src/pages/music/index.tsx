@@ -45,6 +45,12 @@ function Page(): JSX.Element {
       <div className="music-section__heading music-library__heading">
         <div><span className="music-eyebrow">TRACKS</span><h2 id="current_playlist_name">默认歌单</h2></div>
         <div className="music-library-heading-tools">
+          <div id="music-order-controls" className="music-order-controls" hidden>
+            <button type="button" data-music-order-action="edit">调整顺序</button>
+            <button type="button" data-music-order-action="save">保存</button>
+            <button type="button" data-music-order-action="cancel">取消</button>
+            <span className="music-order-controls__status" aria-live="polite" />
+          </div>
           <div className="music-track-sort-controls" role="group" aria-label="歌曲列表排序">
             <span>排序</span>
             <button type="button" data-track-sort="default">默认</button>

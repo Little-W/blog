@@ -143,6 +143,7 @@ export class CubismShader_WebGL {
    */
   public constructor() {
     this._shaderSets = new Array<CubismShaderSet>();
+    this._modelColorBuffer = new CubismTextureColor();
     this._isShaderLoading = false;
     this._isShaderLoaded = false;
 
@@ -377,14 +378,13 @@ export class CubismShader_WebGL {
     this.gl.useProgram(shaderSet.shaderProgram);
 
     // 頂点配列の設定
-    if (renderer._bufferData.vertex == null) {
-      renderer._bufferData.vertex = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.vertex);
-
-    // 頂点配列の設定
     const vertexArray: Float32Array = model.getDrawableVertices(index);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, vertexArray, this.gl.DYNAMIC_DRAW);
+    renderer.updateBufferData(
+      'vertex',
+      this.gl.ARRAY_BUFFER,
+      vertexArray,
+      this.gl.DYNAMIC_DRAW
+    );
     this.gl.enableVertexAttribArray(shaderSet.attributePositionLocation);
     this.gl.vertexAttribPointer(
       shaderSet.attributePositionLocation,
@@ -396,12 +396,8 @@ export class CubismShader_WebGL {
     );
 
     // テクスチャ頂点の設定
-    if (renderer._bufferData.uv == null) {
-      renderer._bufferData.uv = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.uv);
     const uvArray: Float32Array = model.getDrawableVertexUvs(index);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, uvArray, this.gl.DYNAMIC_DRAW);
+    renderer.bindDrawableUvBuffer(index, uvArray);
     this.gl.enableVertexAttribArray(shaderSet.attributeTexCoordLocation);
     this.gl.vertexAttribPointer(
       shaderSet.attributeTexCoordLocation,
@@ -475,15 +471,15 @@ export class CubismShader_WebGL {
     if (model.isBlendModeEnabled()) {
       // ブレンドモードではモデルカラーは最後に処理するため不透明度のみ対応させる
       const drawableOpacity = model.getDrawableOpacity(index);
-      baseColor = new CubismTextureColor(
-        drawableOpacity,
-        drawableOpacity,
-        drawableOpacity,
-        drawableOpacity
-      );
+      baseColor = this._modelColorBuffer;
+      baseColor.r = drawableOpacity;
+      baseColor.g = drawableOpacity;
+      baseColor.b = drawableOpacity;
+      baseColor.a = drawableOpacity;
     } else {
       baseColor = renderer.getModelColorWithOpacity(
-        model.getDrawableOpacity(index)
+        model.getDrawableOpacity(index),
+        this._modelColorBuffer
       );
     }
 
@@ -532,20 +528,8 @@ export class CubismShader_WebGL {
     }
 
     // IBOを作成し、データを転送
-    if (renderer._bufferData.index == null) {
-      renderer._bufferData.index = this.gl.createBuffer();
-    }
     const indexArray: Uint16Array = model.getDrawableVertexIndices(index);
-
-    this.gl.bindBuffer(
-      this.gl.ELEMENT_ARRAY_BUFFER,
-      renderer._bufferData.index
-    );
-    this.gl.bufferData(
-      this.gl.ELEMENT_ARRAY_BUFFER,
-      indexArray,
-      this.gl.DYNAMIC_DRAW
-    );
+    renderer.bindDrawableIndexBuffer(index, indexArray);
 
     this.gl.blendFuncSeparate(srcColor, dstColor, srcAlpha, dstAlpha);
   }
@@ -783,11 +767,8 @@ export class CubismShader_WebGL {
     }
 
     // 頂点位置属性の設定
-    if (!renderer._bufferData.vertex) {
-      renderer._bufferData.vertex = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.vertex);
-    this.gl.bufferData(
+    renderer.updateBufferData(
+      'vertex',
       this.gl.ARRAY_BUFFER,
       s_renderTargetVertexArray,
       this.gl.STATIC_DRAW
@@ -803,11 +784,8 @@ export class CubismShader_WebGL {
     );
 
     // テクスチャ座標属性の設定
-    if (!renderer._bufferData.uv) {
-      renderer._bufferData.uv = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.uv);
-    this.gl.bufferData(
+    renderer.updateBufferData(
+      'uv',
       this.gl.ARRAY_BUFFER,
       s_renderTargetReverseUvArray,
       this.gl.STATIC_DRAW
@@ -855,12 +833,13 @@ export class CubismShader_WebGL {
     this.gl.useProgram(shaderSet.shaderProgram);
 
     // 頂点配列の設定
-    if (renderer._bufferData.vertex == null) {
-      renderer._bufferData.vertex = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.vertex);
     const vertexArray: Float32Array = model.getDrawableVertices(index);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, vertexArray, this.gl.DYNAMIC_DRAW);
+    renderer.updateBufferData(
+      'vertex',
+      this.gl.ARRAY_BUFFER,
+      vertexArray,
+      this.gl.DYNAMIC_DRAW
+    );
     this.gl.enableVertexAttribArray(shaderSet.attributePositionLocation);
     this.gl.vertexAttribPointer(
       shaderSet.attributePositionLocation,
@@ -872,10 +851,6 @@ export class CubismShader_WebGL {
     );
 
     //テクスチャ設定
-    if (renderer._bufferData.uv == null) {
-      renderer._bufferData.uv = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.uv);
     const textureNo: number = model.getDrawableTextureIndex(index);
     const textureId: WebGLTexture = renderer.getBindedTextures().get(textureNo);
     this.gl.activeTexture(this.gl.TEXTURE0);
@@ -883,12 +858,8 @@ export class CubismShader_WebGL {
     this.gl.uniform1i(shaderSet.samplerTexture0Location, 0);
 
     // テクスチャ頂点の設定
-    if (renderer._bufferData.uv == null) {
-      renderer._bufferData.uv = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.uv);
     const uvArray: Float32Array = model.getDrawableVertexUvs(index);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, uvArray, this.gl.DYNAMIC_DRAW);
+    renderer.bindDrawableUvBuffer(index, uvArray);
     this.gl.enableVertexAttribArray(shaderSet.attributeTexCoordLocation);
     this.gl.vertexAttribPointer(
       shaderSet.attributeTexCoordLocation,
@@ -938,20 +909,8 @@ export class CubismShader_WebGL {
     const dstAlpha: number = this.gl.ONE_MINUS_SRC_ALPHA;
 
     // IBOを作成し、データを転送
-    if (renderer._bufferData.index == null) {
-      renderer._bufferData.index = this.gl.createBuffer();
-    }
     const indexArray: Uint16Array = model.getDrawableVertexIndices(index);
-
-    this.gl.bindBuffer(
-      this.gl.ELEMENT_ARRAY_BUFFER,
-      renderer._bufferData.index
-    );
-    this.gl.bufferData(
-      this.gl.ELEMENT_ARRAY_BUFFER,
-      indexArray,
-      this.gl.DYNAMIC_DRAW
-    );
+    renderer.bindDrawableIndexBuffer(index, indexArray);
 
     this.gl.blendFuncSeparate(srcColor, dstColor, srcAlpha, dstAlpha);
   }
@@ -974,7 +933,7 @@ export class CubismShader_WebGL {
     }
 
     // この時点のテクスチャはPMAになっているはずなので計算を行う
-    const baseColor = renderer.getModelColor();
+    const baseColor = renderer.getModelColor(this._modelColorBuffer);
     baseColor.r *= baseColor.a;
     baseColor.g *= baseColor.a;
     baseColor.b *= baseColor.a;
@@ -1016,11 +975,8 @@ export class CubismShader_WebGL {
     this.gl.uniform1i(shaderSet.samplerTexture0Location, 0);
 
     // 頂点位置属性の設定
-    if (!renderer._bufferData.vertex) {
-      renderer._bufferData.vertex = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.vertex);
-    this.gl.bufferData(
+    renderer.updateBufferData(
+      'vertex',
       this.gl.ARRAY_BUFFER,
       s_renderTargetVertexArray,
       this.gl.STATIC_DRAW
@@ -1036,11 +992,8 @@ export class CubismShader_WebGL {
     );
 
     // テクスチャ座標属性の設定
-    if (!renderer._bufferData.uv) {
-      renderer._bufferData.uv = this.gl.createBuffer();
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, renderer._bufferData.uv);
-    this.gl.bufferData(
+    renderer.updateBufferData(
+      'uv',
       this.gl.ARRAY_BUFFER,
       s_renderTargetUvArray,
       this.gl.STATIC_DRAW
@@ -1886,6 +1839,7 @@ export class CubismShader_WebGL {
   }
 
   _shaderSets: Array<CubismShaderSet>; // ロードしたシェーダープログラムを保持する変数
+  _modelColorBuffer: CubismTextureColor;
   gl: WebGLRenderingContext | WebGL2RenderingContext; // webglコンテキスト
 
   _colorBlendMap: Map<CubismColorBlend, string>; // カラーブレンドの値と名称を紐づけする変数

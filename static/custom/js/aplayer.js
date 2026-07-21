@@ -1372,14 +1372,20 @@ function refresh_music_admin_session() {
 
 function ensure_music_order_controls() {
   var host = document.querySelector('.music-library-heading-tools');
-  if (!host || document.getElementById('music-order-controls')) return;
-  var controls = document.createElement('div');
-  controls.id = 'music-order-controls';
-  controls.className = 'music-order-controls';
-  controls.innerHTML = '<button type="button" data-music-order-action="edit">调整顺序</button>' +
-    '<button type="button" data-music-order-action="save">保存</button>' +
-    '<button type="button" data-music-order-action="cancel">取消</button>' +
-    '<span class="music-order-controls__status" aria-live="polite"></span>';
+  if (!host) return;
+  var controls = document.getElementById('music-order-controls');
+  if (!controls) {
+    controls = document.createElement('div');
+    controls.id = 'music-order-controls';
+    controls.className = 'music-order-controls';
+    controls.innerHTML = '<button type="button" data-music-order-action="edit">调整顺序</button>' +
+      '<button type="button" data-music-order-action="save">保存</button>' +
+      '<button type="button" data-music-order-action="cancel">取消</button>' +
+      '<span class="music-order-controls__status" aria-live="polite"></span>';
+    host.prepend(controls);
+  }
+  if (controls.dataset.musicOrderBound === 'true') return;
+  controls.dataset.musicOrderBound = 'true';
   controls.addEventListener('click', function(event) {
     var button = event.target.closest('[data-music-order-action]');
     if (!button) return;
@@ -1388,7 +1394,6 @@ function ensure_music_order_controls() {
     else if (action === 'save') save_music_order_editor();
     else if (action === 'cancel') cancel_music_order_editor();
   });
-  host.prepend(controls);
 }
 
 function sync_music_order_controls(message, isError) {
@@ -3537,7 +3542,8 @@ function init_custom_list_mv() {
   var mvVirtualScrollFrame = 0;
   var mvRenderVersion = 0;
   var mvCardNodeCache = new Map();
-  var mvVirtual = { active: false, columns: 1, itemHeight: 0, rowGap: 0, startRow: -1, endRow: -1, containerWidth: 0 };
+  var mvMountedCards = new Map();
+  var mvVirtual = { active: false, columns: 1, itemHeight: 0, itemWidth: 0, rowGap: 0, columnGap: 0, startRow: -1, endRow: -1, containerWidth: 0 };
 
   function mvCardKey(item) {
     return [item.mv_id, item.bilibili_bvid, item.bilibili_page || 1].join(":");
@@ -3556,6 +3562,10 @@ function init_custom_list_mv() {
   function resetMvCardLayout(card) {
     card.style.removeProperty("height");
     card.style.removeProperty("width");
+    card.style.removeProperty("position");
+    card.style.removeProperty("top");
+    card.style.removeProperty("left");
+    delete card.dataset.mvVirtualIndex;
   }
 
   function mvColumnCount() {
@@ -3571,12 +3581,9 @@ function init_custom_list_mv() {
     return parseFloat(style.rowGap || style.gap) || 0;
   }
 
-  function createVirtualSpacer(height, position) {
-    var spacer = document.createElement("li");
-    spacer.setAttribute("class", "mv-virtual-spacer mv-virtual-spacer--" + position);
-    spacer.setAttribute("aria-hidden", "true");
-    spacer.style.height = Math.max(0, Math.ceil(height)) + "px";
-    return spacer;
+  function mvColumnGap() {
+    var style = window.getComputedStyle(ol);
+    return parseFloat(style.columnGap || style.gap) || 0;
   }
 
   function syncMvListHeight() {
@@ -3624,19 +3631,41 @@ function init_custom_list_mv() {
     mvVirtual.startRow = startRow;
     mvVirtual.endRow = endRow;
     ol.classList.add("is-virtualized");
-    ol.innerHTML = "";
-    var fragment = document.createDocumentFragment();
-    if (startRow > 0) fragment.appendChild(createVirtualSpacer(startRow * rowPitch - mvVirtual.rowGap, "before"));
+    ol.style.height = Math.ceil(totalRows * mvVirtual.itemHeight + Math.max(0, totalRows - 1) * mvVirtual.rowGap + 4) + "px";
     var startIndex = startRow * mvVirtual.columns;
     var endIndex = Math.min(renderedMvItems.length, endRow * mvVirtual.columns);
+    var desiredKeys = new Set();
+    var desiredCards = [];
     for (var index = startIndex; index < endIndex; index += 1) {
-      var card = cachedMvCard(renderedMvItems[index]);
-      card.style.height = Math.ceil(mvVirtual.itemHeight) + "px";
-      fragment.appendChild(card);
+      var item = renderedMvItems[index];
+      var key = mvCardKey(item);
+      var card = cachedMvCard(item);
+      var virtualIndex = String(index);
+      desiredKeys.add(key);
+      if (card.dataset.mvVirtualIndex !== virtualIndex) {
+        var row = Math.floor(index / mvVirtual.columns);
+        var column = index % mvVirtual.columns;
+        card.dataset.mvVirtualIndex = virtualIndex;
+        card.style.position = "absolute";
+        card.style.top = Math.ceil(2 + row * rowPitch) + "px";
+        card.style.left = Math.ceil(2 + column * (mvVirtual.itemWidth + mvVirtual.columnGap)) + "px";
+        card.style.width = Math.floor(mvVirtual.itemWidth) + "px";
+        card.style.height = Math.ceil(mvVirtual.itemHeight) + "px";
+      }
+      desiredCards.push({key: key, card: card});
     }
-    var remainingRows = totalRows - endRow;
-    if (remainingRows > 0) fragment.appendChild(createVirtualSpacer(remainingRows * rowPitch - mvVirtual.rowGap, "after"));
-    ol.appendChild(fragment);
+    mvMountedCards.forEach(function(card, key) {
+      if (desiredKeys.has(key)) return;
+      card.remove();
+      mvMountedCards.delete(key);
+    });
+    // Keep the existing nodes in place. Normal scrolling removes one row and
+    // inserts one row instead of rebuilding every card in the buffered window.
+    desiredCards.forEach(function(entry, position) {
+      var current = ol.children[position] || null;
+      if (current !== entry.card) ol.insertBefore(entry.card, current);
+      mvMountedCards.set(entry.key, entry.card);
+    });
   }
 
   function scheduleVirtualRange() {
@@ -3659,7 +3688,9 @@ function init_custom_list_mv() {
       active: true,
       columns: mvColumnCount(),
       itemHeight: Math.ceil(itemHeight),
+      itemWidth: firstCard.getBoundingClientRect().width,
       rowGap: mvRowGap(),
+      columnGap: mvColumnGap(),
       startRow: -1,
       endRow: -1,
       containerWidth: listParent.clientWidth
@@ -3678,8 +3709,12 @@ function init_custom_list_mv() {
     mvVirtual.startRow = -1;
     mvVirtual.endRow = -1;
     if (mvVirtualMeasureFrame) window.cancelAnimationFrame(mvVirtualMeasureFrame);
+    if (mvVirtualScrollFrame) window.cancelAnimationFrame(mvVirtualScrollFrame);
+    mvVirtualScrollFrame = 0;
+    mvMountedCards.clear();
     listParent.scrollTop = 0;
     ol.classList.remove("is-virtualized");
+    ol.style.removeProperty("height");
     ol.innerHTML = "";
     var fragment = document.createDocumentFragment();
     if (!items.length) {

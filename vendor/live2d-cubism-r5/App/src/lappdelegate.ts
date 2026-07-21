@@ -18,6 +18,8 @@ export interface RuntimePreferences {
   idleMotion?: boolean;
 }
 
+const supportedFrameRates = [15, 24, 30, 45, 60];
+
 export let s_instance: LAppDelegate = null;
 
 export class LAppDelegate {
@@ -159,6 +161,14 @@ export class LAppDelegate {
   }
 
   private canRender(): boolean {
+    const effects = (window as any).YusenEffects;
+    if (effects?.isUiBusy?.()) return false;
+    const scheduling = (navigator as any).scheduling;
+    try {
+      if (scheduling?.isInputPending?.({ includeContinuous: true })) return false;
+    } catch (_) {
+      // Older implementations may expose isInputPending without options.
+    }
     return this._environmentEnabled &&
       !document.hidden &&
       this._inViewport &&
@@ -299,7 +309,10 @@ export class LAppDelegate {
       passive: true
     });
     document.addEventListener('visibilitychange', this.onVisibilityChange);
-    window.addEventListener('scroll', this.onScroll, { passive: true });
+    document.addEventListener('scroll', this.onScroll, {
+      capture: true,
+      passive: true
+    });
 
     if ('IntersectionObserver' in window) {
       this._intersectionObserver = new IntersectionObserver(entries => {
@@ -316,7 +329,7 @@ export class LAppDelegate {
     window.removeEventListener('pointerup', this.onPointerEnded);
     window.removeEventListener('pointercancel', this.onPointerCancel);
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    window.removeEventListener('scroll', this.onScroll);
+    document.removeEventListener('scroll', this.onScroll, true);
     this._intersectionObserver?.disconnect();
     this._intersectionObserver = null;
     window.clearTimeout(this._scrollTimer);
@@ -359,7 +372,7 @@ export class LAppDelegate {
     const frameRate = Number(
       effects?.getLive2DFrameRate?.() ?? effects?.getFrameRate?.() ?? 0
     );
-    return [15, 24, 30, 45, 60].includes(frameRate) ? frameRate : 0;
+    return supportedFrameRates.includes(frameRate) ? frameRate : 0;
   }
 
   private getTargetFps(): number {

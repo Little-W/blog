@@ -147,8 +147,7 @@ export class LAppSubdelegate {
     gl.disable(gl.STENCIL_TEST);
     gl.colorMask(true, true, true, true);
     gl.clearColor(0.0, 0.0, 0.0, 0.0);
-    gl.clearDepth(1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT);
     gl.disable(gl.DEPTH_TEST);
 
     gl.enable(gl.BLEND);

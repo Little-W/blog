@@ -32,6 +32,9 @@
   var lowPowerTimer = 0;
   var lowPowerModeActive = false;
   var lastInteractionAt = Date.now();
+  var uiBusyReasons = Object.create(null);
+  var uiBusyCount = 0;
+  var uiActivityTimer = 0;
 
   function normalizeSettings(stored) {
     var settings = Object.assign({}, DEFAULTS, stored || {});
@@ -187,17 +190,58 @@
     return Math.max(minimum || 1, Math.round(Number(baseValue) * multiplier));
   }
 
+  function setUiBusy(reason, active) {
+    reason = String(reason || "page");
+    if (active && !uiBusyReasons[reason]) {
+      uiBusyReasons[reason] = true;
+      uiBusyCount += 1;
+    } else if (!active && uiBusyReasons[reason]) {
+      delete uiBusyReasons[reason];
+      uiBusyCount = Math.max(0, uiBusyCount - 1);
+    }
+    document.documentElement.dataset.yusenUiBusy = isUiBusy() ? "on" : "off";
+  }
+
+  function isUiBusy() {
+    return uiBusyCount > 0;
+  }
+
+  function hasPendingInput() {
+    var scheduling = navigator.scheduling;
+    if (!scheduling || typeof scheduling.isInputPending !== "function") return false;
+    try {
+      return scheduling.isInputPending({includeContinuous: true});
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function noteUiActivity() {
+    setUiBusy("interaction", true);
+    window.clearTimeout(uiActivityTimer);
+    uiActivityTimer = window.setTimeout(function() {
+      uiActivityTimer = 0;
+      setUiBusy("interaction", false);
+    }, 140);
+  }
+
   function requestEffectAnimationFrame(callback) {
     var frameRate = getFrameRate();
-    if (!frameRate) return nativeRequestAnimationFrame(callback);
     var requestId = nextFrameRequestId++;
     var frame = { nativeId: 0 };
     frameRequests[requestId] = frame;
-    var interval = 1000 / frameRate;
+    var interval = frameRate ? 1000 / frameRate : 0;
     function tick(timestamp) {
       if (!frameRequests[requestId]) return;
+      // Decorative canvases yield while scrolling, switching theme, or while the
+      // browser still has input waiting. The requested frame remains queued and
+      // resumes automatically as soon as the page interaction completes.
+      if (isUiBusy() || hasPendingInput()) {
+        frame.nativeId = nativeRequestAnimationFrame(tick);
+        return;
+      }
       var previous = lastFrameByCallback.get(callback) || 0;
-      if (!previous || timestamp - previous >= interval - 0.5) {
+      if (!interval || !previous || timestamp - previous >= interval - 0.5) {
         lastFrameByCallback.set(callback, timestamp);
         delete frameRequests[requestId];
         callback(timestamp);
@@ -304,6 +348,8 @@
     getComplexity: function() { return settings.complexity; },
     getEffectComplexity: getEffectComplexity,
     setEffectEnabled: setEffectEnabled,
+    setUiBusy: setUiBusy,
+    isUiBusy: isUiBusy,
     requestAnimationFrame: requestEffectAnimationFrame,
     cancelAnimationFrame: cancelEffectAnimationFrame,
     loaded: loaded
@@ -322,11 +368,20 @@
     }
   });
 
-  ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"].forEach(function(type) {
+  ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"].forEach(function(type) {
     window.addEventListener(type, noteUserInteraction, {passive: true});
   });
+  // `scroll` does not bubble. Capture it on document so the MV and music lists
+  // receive the same priority protection as window scrolling.
+  document.addEventListener("scroll", function(event) {
+    noteUserInteraction(event);
+    noteUiActivity();
+  }, {capture: true, passive: true});
+  document.addEventListener("wheel", noteUiActivity, {capture: true, passive: true});
+  document.addEventListener("touchmove", noteUiActivity, {capture: true, passive: true});
 
   document.documentElement.dataset.yusenLowPower = "off";
+  document.documentElement.dataset.yusenUiBusy = "off";
   armLowPowerTimer();
 
   if (settings.enabled === false) {

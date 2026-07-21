@@ -674,6 +674,10 @@ export class CubismRenderer_WebGL extends CubismRenderer {
       uv: (WebGLBuffer = null),
       index: (WebGLBuffer = null)
     };
+    this._bufferDataCapacity = { vertex: 0, uv: 0, index: 0 };
+    this._drawableUvBuffers = [];
+    this._drawableIndexBuffers = [];
+    this._renderTargetIndexBuffer = null;
     this._modelRenderTargets = new Array<CubismOffscreenRenderTarget_WebGL>();
     this._drawableMasks = new Array<CubismRenderTarget_WebGL>();
     this._currentFbo = null;
@@ -706,6 +710,19 @@ export class CubismRenderer_WebGL extends CubismRenderer {
     this.gl.deleteBuffer(this._bufferData.index);
     this._bufferData.index = null;
     this._bufferData = null;
+    this._bufferDataCapacity = null;
+    for (const buffer of this._drawableUvBuffers) {
+      if (buffer != null) this.gl.deleteBuffer(buffer);
+    }
+    for (const buffer of this._drawableIndexBuffers) {
+      if (buffer != null) this.gl.deleteBuffer(buffer);
+    }
+    this._drawableUvBuffers = null;
+    this._drawableIndexBuffers = null;
+    if (this._renderTargetIndexBuffer != null) {
+      this.gl.deleteBuffer(this._renderTargetIndexBuffer);
+      this._renderTargetIndexBuffer = null;
+    }
 
     this._textures = null;
 
@@ -1376,14 +1393,7 @@ export class CubismRenderer_WebGL extends CubismRenderer {
 
     // ポリゴンメッシュを描画する
     {
-      // インデックスバッファの作成とバインド
-      const indexBuffer = this.gl.createBuffer();
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-      this.gl.bufferData(
-        this.gl.ELEMENT_ARRAY_BUFFER,
-        s_renderTargetIndexArray,
-        this.gl.STATIC_DRAW
-      );
+      this.bindRenderTargetIndexBuffer();
 
       // 描画
       this.gl.drawElements(
@@ -1392,7 +1402,6 @@ export class CubismRenderer_WebGL extends CubismRenderer {
         this.gl.UNSIGNED_SHORT,
         0
       );
-      this.gl.deleteBuffer(indexBuffer);
     }
 
     // 後処理
@@ -1464,14 +1473,7 @@ export class CubismRenderer_WebGL extends CubismRenderer {
     if (
       CubismShaderManager_WebGL.getInstance().getShader(this.gl)._isShaderLoaded
     ) {
-      // インデックスバッファの作成とバインド
-      const indexBuffer = this.gl.createBuffer();
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-      this.gl.bufferData(
-        this.gl.ELEMENT_ARRAY_BUFFER,
-        s_renderTargetIndexArray,
-        this.gl.STATIC_DRAW
-      );
+      this.bindRenderTargetIndexBuffer();
 
       // 描画
       this.gl.drawElements(
@@ -1480,10 +1482,86 @@ export class CubismRenderer_WebGL extends CubismRenderer {
         this.gl.UNSIGNED_SHORT,
         0
       );
-      this.gl.deleteBuffer(indexBuffer);
     }
 
     this.gl.useProgram(null);
+  }
+
+  /**
+   * Reuse the immutable full-screen quad index buffer. Creating, uploading and
+   * deleting the same six indices on every model pass causes avoidable driver
+   * synchronization at high refresh rates.
+   */
+  private bindRenderTargetIndexBuffer(): void {
+    if (this._renderTargetIndexBuffer == null) {
+      this._renderTargetIndexBuffer = this.gl.createBuffer();
+      this.gl.bindBuffer(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        this._renderTargetIndexBuffer
+      );
+      this.gl.bufferData(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        s_renderTargetIndexArray,
+        this.gl.STATIC_DRAW
+      );
+      return;
+    }
+    this.gl.bindBuffer(
+      this.gl.ELEMENT_ARRAY_BUFFER,
+      this._renderTargetIndexBuffer
+    );
+  }
+
+  /**
+   * Keep dynamic GPU storage and update its contents in place. Cubism draws
+   * many small meshes, so reallocating the same three buffers for every mesh is
+   * substantially more expensive than bufferSubData at high refresh rates.
+   */
+  public updateBufferData(
+    kind: 'vertex' | 'uv' | 'index',
+    target: number,
+    data: Float32Array | Uint16Array,
+    usage: number
+  ): void {
+    if (this._bufferData[kind] == null) {
+      this._bufferData[kind] = this.gl.createBuffer();
+    }
+    this.gl.bindBuffer(target, this._bufferData[kind]);
+    if (this._bufferDataCapacity[kind] < data.byteLength) {
+      let capacity = Math.max(256, this._bufferDataCapacity[kind] || 0);
+      while (capacity < data.byteLength) capacity *= 2;
+      this.gl.bufferData(target, capacity, usage);
+      this._bufferDataCapacity[kind] = capacity;
+    }
+    this.gl.bufferSubData(target, 0, data);
+  }
+
+  public bindDrawableUvBuffer(index: number, data: Float32Array): void {
+    let buffer = this._drawableUvBuffers[index];
+    if (buffer == null) {
+      buffer = this.gl.createBuffer();
+      this._drawableUvBuffers[index] = buffer;
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buffer);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, data, this.gl.STATIC_DRAW);
+      return;
+    }
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, buffer);
+  }
+
+  public bindDrawableIndexBuffer(index: number, data: Uint16Array): void {
+    let buffer = this._drawableIndexBuffers[index];
+    if (buffer == null) {
+      buffer = this.gl.createBuffer();
+      this._drawableIndexBuffers[index] = buffer;
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buffer);
+      this.gl.bufferData(
+        this.gl.ELEMENT_ARRAY_BUFFER,
+        data,
+        this.gl.STATIC_DRAW
+      );
+      return;
+    }
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, buffer);
   }
 
   /**
@@ -1754,6 +1832,14 @@ export class CubismRenderer_WebGL extends CubismRenderer {
     uv: WebGLBuffer;
     index: WebGLBuffer;
   }; // 頂点バッファデータ
+  _bufferDataCapacity: {
+    vertex: number;
+    uv: number;
+    index: number;
+  };
+  _drawableUvBuffers: Array<WebGLBuffer>;
+  _drawableIndexBuffers: Array<WebGLBuffer>;
+  _renderTargetIndexBuffer: WebGLBuffer;
   _extension: any; // 拡張機能
   gl: WebGLRenderingContext | WebGL2RenderingContext; // webglコンテキスト
 }

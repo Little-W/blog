@@ -18,9 +18,11 @@ export class LAppGlManager {
     this._gl = canvas.getContext('webgl2', {
       alpha: true,
       antialias: false,
+      depth: false,
+      stencil: false,
       premultipliedAlpha: true,
       preserveDrawingBuffer: false,
-      powerPreference: 'low-power'
+      powerPreference: 'high-performance'
     });
 
     if (!this._gl) {

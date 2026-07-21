@@ -114,8 +114,13 @@ export abstract class CubismRenderer {
    *
    * @return RGBAのカラー情報
    */
-  public getModelColor(): CubismTextureColor {
-    return JSON.parse(JSON.stringify(this._modelColor));
+  public getModelColor(result?: CubismTextureColor): CubismTextureColor {
+    const color = result || new CubismTextureColor();
+    color.r = this._modelColor.r;
+    color.g = this._modelColor.g;
+    color.b = this._modelColor.b;
+    color.a = this._modelColor.a;
+    return color;
   }
 
   /**
@@ -125,8 +130,11 @@ export abstract class CubismRenderer {
    *
    * @return RGBAのカラー情報
    */
-  getModelColorWithOpacity(opacity: number): CubismTextureColor {
-    const modelColorRGBA: CubismTextureColor = this.getModelColor();
+  getModelColorWithOpacity(
+    opacity: number,
+    result?: CubismTextureColor
+  ): CubismTextureColor {
+    const modelColorRGBA: CubismTextureColor = this.getModelColor(result);
     modelColorRGBA.a *= opacity;
     if (this.isPremultipliedAlpha()) {
       modelColorRGBA.r *= modelColorRGBA.a;

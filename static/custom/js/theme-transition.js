@@ -14,7 +14,14 @@
     var clearTimer = null;
     var coverTimer = null;
     var transitionFrame = null;
+    var priorityTimer = null;
     var replayingThemeToggle = false;
+
+    function setThemePriority(active) {
+      if (window.YusenEffects && typeof window.YusenEffects.setUiBusy === 'function') {
+        window.YusenEffects.setUiBusy('theme', active);
+      }
+    }
 
     function isThemeToggle(target) {
       if (!(target instanceof Element)) return null;
@@ -30,7 +37,12 @@
       event.stopImmediatePropagation();
       window.clearTimeout(coverTimer);
       window.clearTimeout(clearTimer);
+      window.clearTimeout(priorityTimer);
       window.cancelAnimationFrame(transitionFrame);
+      setThemePriority(true);
+      // If another script prevents the actual theme mutation, never leave
+      // decorative rendering paused indefinitely.
+      priorityTimer = window.setTimeout(function() { setThemePriority(false); }, 900);
       sweep.dataset.from = root.getAttribute('data-theme') || 'light';
       root.classList.remove('theme-transitioning');
       root.classList.add('theme-transition-covering');
@@ -50,12 +62,14 @@
       sweep.dataset.to = nextTheme;
       root.classList.remove('theme-transitioning', 'theme-transition-covering');
       window.clearTimeout(clearTimer);
+      window.clearTimeout(priorityTimer);
       window.cancelAnimationFrame(transitionFrame);
       // 下一帧再淡出，避免读取布局造成强制回流。
       transitionFrame = window.requestAnimationFrame(function () {
         root.classList.add('theme-transitioning');
         clearTimer = window.setTimeout(function () {
           root.classList.remove('theme-transitioning');
+          setThemePriority(false);
         }, 360);
       });
       previousTheme = nextTheme;

@@ -469,6 +469,8 @@ body:has(.music-page) #canvas_sakura { z-index:10!important; }
 .music-page #mv-list-ol-parent::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(92,117,136,.52); }
 .music-page #mv-list-ol-parent::after { display:none; }
 .music-page .mv-list-ol { width:100%; max-height:none; margin:0; padding:2px; overflow:visible; list-style:none; opacity:1; }
+.music-page .mv-list-ol.is-virtualized { position:relative; display:block; box-sizing:border-box; }
+.music-page .mv-list-ol.is-virtualized .mv_list_div { margin:0; }
 .music-page .mv-view-grid { display:grid; grid-auto-rows:auto; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); align-items:stretch; gap:15px; }
 .music-page .mv_list_div { position:relative; display:block; width:auto; height:100%; margin:0; padding:0; overflow:hidden; border:1px solid var(--music-border); border-radius:14px; box-sizing:border-box; background:var(--music-panel-solid); box-shadow:none; color:inherit; font-size:inherit; font-weight:inherit; line-height:normal; cursor:pointer; content-visibility:auto; contain-intrinsic-size:236px; transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease,background .2s ease; }
 .music-page .mv_list_div::after { z-index:5; pointer-events:none; }
@@ -507,8 +509,6 @@ body:has(.music-page) #canvas_sakura { z-index:10!important; }
 .music-page .mv-view-list .mv_list_text_div { min-height:112px; padding:12px 15px; }
 .music-page .mv-view-list .mv-card-title { margin-bottom:4px; font-size:.95rem; -webkit-line-clamp:1; }
 .music-page .mv-view-list .mv-card-play { width:36px; height:36px; }
-.music-page .mv-virtual-spacer { display:block; min-height:0; margin:0; padding:0; flex:0 0 auto; list-style:none; pointer-events:none; }
-.music-page .mv-view-grid .mv-virtual-spacer { grid-column:1/-1; }
 .music-page .mv-empty-state { display:flex; min-height:190px; grid-column:1/-1; align-items:center; justify-content:center; flex-direction:column; gap:6px; border:1px dashed var(--music-border); border-radius:14px; color:var(--music-muted); text-align:center; }
 .music-page .mv-empty-state strong { color:#30465a; }
 .music-page .mv-empty-state span { font-size:.78rem; }
