@@ -185,21 +185,13 @@ html[data-theme='dark'] .music-order-controls button[data-music-order-action="ed
 .music-track-drag-handle { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--music-border); border-radius:999px; color:var(--music-accent-strong); cursor:grab; user-select:none; }
 .music-track-reorder-tools input { width:64px; min-height:30px; border:1px solid var(--music-border); border-radius:9px; padding:3px 5px; background:var(--music-panel-solid); color:var(--music-text); font:inherit; text-align:center; }
 .music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-color:rgba(102,112,133,.3) transparent; contain:layout paint style; transition:none; }
-.music-page .music-list { position:relative; display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; overflow:hidden; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; background:transparent; font-size:.86rem; line-height:normal; transform:none; isolation:isolate; content-visibility:auto; contain-intrinsic-size:64px; transition:background .18s ease; }
+.music-page .music-list { position:relative; display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; overflow:hidden; contain:layout paint style; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; background:transparent; font-size:.86rem; line-height:normal; transform:none; isolation:isolate; transition:background-color .18s ease; }
 /* 恢复原版曲目表的白底、浅色悬停与浅蓝选中状态。保留明确的 is-selected
    类，避免 :has() 在长列表滚动时反复计算。 */
 .music-page .music-list::before { content:none; display:none; }
 .music-page .music-list:hover { z-index:1; transform:none; background:var(--music-soft); }
 .music-page .music-list.is-selected,
-.music-page .music-list.is-selected:hover { background:rgba(0,168,233,.075); box-shadow:none; }
-/* 滚动期间冻结曲目悬停样式。容器只切换一个类，不修改每一行，也不阻断
-   点击；滚动停止后恢复原有渐变。 */
-.music-page .music-list-ol.is-scrolling .music-list,
-.music-page .music-list-ol.is-scrolling .music-track-action { transition:none!important; }
-.music-page .music-list-ol.is-scrolling .music-list:hover:not(.is-selected) { z-index:auto; background:transparent; }
-.music-page .music-list-ol.is-scrolling .music-list.is-selected,
-.music-page .music-list-ol.is-scrolling .music-list.is-selected:hover { background:rgba(0,168,233,.075); }
-.music-page .music-list-ol.is-scrolling .music-track-action:hover { transform:none; }
+.music-page .music-list.is-selected:hover { background:#ecf8fd; box-shadow:none; }
 .music-page .music-list > * { position:relative; z-index:1; }
 /* 波纹固定在当前行的裁剪范围中，只使用 transform 与 opacity，避免恢复旧版
    扩散层时再次出现跨表项的“区间选择”错觉。 */
@@ -594,7 +586,7 @@ html[data-theme='dark'] .music-page .title_name { color:#edf6fc; }
 html[data-theme='dark'] .music-track-cover { background:linear-gradient(145deg,#2d4052,#1b2732); }
 html[data-theme='dark'] .music-page .music-list:hover { background:#202d39; }
 html[data-theme='dark'] .music-page .music-list.is-selected,
-html[data-theme='dark'] .music-page .music-list.is-selected:hover { background:rgba(0,168,233,.1); }
+html[data-theme='dark'] .music-page .music-list.is-selected:hover { background:#122a39; }
 html[data-theme='dark'] .music-page .music-list::after { background:radial-gradient(circle,rgba(111,215,249,.36) 0,rgba(111,215,249,.16) 38%,transparent 72%); }
 html[data-theme='dark'] .music-page .mv_list_div:hover { background:#18232d; }
 html[data-theme='dark'] .music-page .music-track-action { border-color:rgba(119,216,250,.24); background:rgba(12,43,61,.6); color:#b6e4f5; }

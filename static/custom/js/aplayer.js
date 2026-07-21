@@ -939,7 +939,6 @@ function load_music_track_cover_images(list) {
   var scrollFrame = 0;
   var stopped = false;
   var resizeObserver = null;
-  var stopHoverGuard = install_list_scroll_hover_guard(list);
 
   // 不依赖 IntersectionObserver 对滚动容器、content-visibility 和页面视口的组合
   // 判断。直接根据列表在屏幕中的可见部分及 scrollTop 计算曲目编号，页面滚动和
@@ -979,7 +978,6 @@ function load_music_track_cover_images(list) {
     window.removeEventListener('scroll', scheduleRange);
     window.removeEventListener('resize', scheduleRange);
     document.removeEventListener('scroll', scheduleRange, true);
-    stopHoverGuard();
   };
 }
 
@@ -2166,6 +2164,58 @@ function add_music_to_playlist(musicId, deferUiSync) {
   return !wasSelected;
 }
 
+function add_music_list_to_playlist(musicIds) {
+  if (!Array.isArray(musicIds) || !musicIds.length) return 0;
+  var selected = Object.create(null);
+  ap_list_ptr[1].forEach(function(musicId) {
+    var normalizedId = normalize_music_id(musicId);
+    if (normalizedId !== null) selected[normalizedId] = true;
+  });
+
+  var additions = [];
+  musicIds.forEach(function(musicId) {
+    var normalizedId = normalize_music_id(musicId);
+    if (normalizedId === null || selected[normalizedId]) return;
+    var song = get_music_record(normalizedId);
+    if (!song) return;
+    selected[normalizedId] = true;
+    additions.push({musicId: normalizedId, song: song});
+  });
+  if (!additions.length) {
+    sync_playlist_selection_ui();
+    return 0;
+  }
+
+  Array.prototype.push.apply(ap_list_ptr[0], additions.map(function(item) { return item.song; }));
+  Array.prototype.push.apply(ap_list_ptr[1], additions.map(function(item) { return item.musicId; }));
+  music_list_all[0] = ap_list_ptr[1];
+
+  get_playlist_players().forEach(function(player) {
+    var playerMusicIds = Object.create(null);
+    (player.list && player.list.audios || []).forEach(function(song) {
+      var musicId = normalize_music_id(song && song.mid);
+      if (musicId !== null) playerMusicIds[musicId] = true;
+    });
+    var missingSongs = additions.filter(function(item) {
+      return !playerMusicIds[item.musicId];
+    }).map(function(item) {
+      return clone_music_record(item.song);
+    });
+    if (!missingSongs.length) return;
+    try {
+      // APlayer 原生支持数组追加。一次更新队列 DOM，避免长歌单全选时
+      // 反复重建已有节点并排队大量 listadd 回调。
+      player.list.add(missingSongs);
+    } catch (err) {
+      console.error('Unable to add music list to APlayer', err);
+    }
+  });
+
+  sync_playlist_selection_ui();
+  save_music_playlist_state();
+  return additions.length;
+}
+
 function remove_music_from_playlist(musicId, deferUiSync) {
   musicId = normalize_music_id(musicId);
   if (musicId === null) return false;
@@ -2413,11 +2463,11 @@ function init_aplayer() {
 
   $(document).on("click", "#ap_list_select_all", function (e) {
     var all_checkbox = document.getElementsByClassName("music-list-checkbox");
+    var musicIds = [];
     for (var i = 0; i < all_checkbox.length; i++) {
-      add_music_to_playlist(all_checkbox[i].music, true);
+      musicIds.push(all_checkbox[i].music);
     }
-    sync_playlist_selection_ui();
-    save_music_playlist_state();
+    add_music_list_to_playlist(musicIds);
   });
   $(document).on("click", "#ap_list_remove", function (e) {
     clear_music_playlist();
@@ -2434,11 +2484,7 @@ function init_aplayer() {
       candidates[randomIndex] = temporary;
     }
     var song_num = Math.min(Math.floor(Math.random() * 5 + 3), candidates.length);
-    for (var j = 0; j < song_num; j++) {
-      add_music_to_playlist(candidates[j], true);
-    }
-    sync_playlist_selection_ui();
-    save_music_playlist_state();
+    add_music_list_to_playlist(candidates.slice(0, song_num));
   });
   // $(document).on("click", "#ap_load.sytle-ap-button", function (e) {
   //   aplayer0();
