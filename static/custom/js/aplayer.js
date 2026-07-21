@@ -787,12 +787,43 @@ function queue_music_track_cover_image(image) {
   pump_music_track_cover_queue();
 }
 
+function install_list_scroll_hover_guard(scroller) {
+  if (!scroller) return function() {};
+  if (typeof scroller.__musicScrollHoverGuardStop === 'function') {
+    return scroller.__musicScrollHoverGuardStop;
+  }
+  var idleTimer = 0;
+  var finish = function() {
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = 0;
+    scroller.classList.remove('is-scrolling');
+  };
+  var handleScroll = function() {
+    // 只切换容器上的一个类；曲目本身不逐项写样式，长列表滚动时不会产生
+    // 与项目数量成正比的脚本开销。停止滚动后再恢复悬停反馈。
+    if (!scroller.classList.contains('is-scrolling')) scroller.classList.add('is-scrolling');
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(finish, 140);
+  };
+  scroller.addEventListener('scroll', handleScroll, {passive: true});
+  if ('onscrollend' in scroller) scroller.addEventListener('scrollend', finish, {passive: true});
+  var stop = function() {
+    finish();
+    scroller.removeEventListener('scroll', handleScroll);
+    if ('onscrollend' in scroller) scroller.removeEventListener('scrollend', finish);
+    if (scroller.__musicScrollHoverGuardStop === stop) delete scroller.__musicScrollHoverGuardStop;
+  };
+  scroller.__musicScrollHoverGuardStop = stop;
+  return stop;
+}
+
 function load_music_track_cover_images(list) {
   if (!list) return;
   var images = Array.prototype.slice.call(list.querySelectorAll('img[data-cover-pending="true"]'));
   var scrollFrame = 0;
   var stopped = false;
   var resizeObserver = null;
+  var stopHoverGuard = install_list_scroll_hover_guard(list);
 
   // 不依赖 IntersectionObserver 对滚动容器、content-visibility 和页面视口的组合
   // 判断。直接根据列表在屏幕中的可见部分及 scrollTop 计算曲目编号，页面滚动和
@@ -832,6 +863,7 @@ function load_music_track_cover_images(list) {
     window.removeEventListener('scroll', scheduleRange);
     window.removeEventListener('resize', scheduleRange);
     document.removeEventListener('scroll', scheduleRange, true);
+    stopHoverGuard();
   };
 }
 
@@ -3741,6 +3773,7 @@ function init_custom_list_mv() {
     renderCards();
   };
   listParent.addEventListener("scroll", scheduleVirtualRange, { passive: true });
+  install_list_scroll_hover_guard(listParent);
   function handleMvListLayoutChange() {
     if (mvVirtual.active && Math.abs(mvVirtual.containerWidth - listParent.clientWidth) > 1) {
       renderCards();
