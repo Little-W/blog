@@ -124,9 +124,11 @@ export class LAppDelegate {
 
   public getStatus(): Record<string, unknown> {
     const motion = this.getManager()?.getMotionStatus() || null;
+    const targetFps = this.getTargetFps();
     return {
       renderer: 'Cubism Web SDK R5 / WebGL2',
       activeFps: this._activeFps,
+      targetFps,
       frameRateLimit: this.getEffectFrameRateLimit(),
       mouseTracking: this._mouseTrackingEnabled,
       idleMotion: this._idleMotionEnabled,
@@ -134,7 +136,7 @@ export class LAppDelegate {
       actualFps: Math.round(this._actualFps * 10) / 10,
       averageFrameCost: Math.round(this._averageFrameCost * 100) / 100,
       frameBudgetUse: Math.round(
-        this._averageFrameCost / (1000 / this._activeFps) * 1000
+        this._averageFrameCost / (1000 / targetFps) * 1000
       ) / 10,
       lowPowerProfile: this._lowPowerDevice,
       webgpuAvailable: !!(navigator as any).gpu,
@@ -184,10 +186,7 @@ export class LAppDelegate {
       return;
     }
 
-    const frameRateLimit = this.getEffectFrameRateLimit();
-    const targetFps = frameRateLimit
-      ? Math.min(this._activeFps, frameRateLimit)
-      : this._activeFps;
+    const targetFps = this.getTargetFps();
     const frameInterval = 1000 / targetFps;
     const elapsed = timestamp - this._lastRenderTime;
     if (elapsed + 0.5 >= frameInterval) {
@@ -338,9 +337,6 @@ export class LAppDelegate {
       this._averageFrameCost = this._frameCostTotal / this._frameCostSamples;
       this._actualFps = this._frameCostSamples * 1000 /
         Math.max(1, sampledAt - this._frameSampleStartedAt);
-      if (this._averageFrameCost > 12 && this._activeFps > 24) {
-        this._activeFps = 24;
-      }
       this._frameCostTotal = 0;
       this._frameCostSamples = 0;
       this._frameSampleStartedAt = sampledAt;
@@ -363,7 +359,14 @@ export class LAppDelegate {
     const frameRate = Number(
       effects?.getLive2DFrameRate?.() ?? effects?.getFrameRate?.() ?? 0
     );
-    return [15, 24, 30, 45, 60].includes(frameRate) ? frameRate : 0;
+    return [15, 24, 30, 45, 60, 90].includes(frameRate) ? frameRate : 0;
+  }
+
+  private getTargetFps(): number {
+    const frameRateLimit = this.getEffectFrameRateLimit();
+    return frameRateLimit
+      ? Math.min(this._activeFps, frameRateLimit)
+      : this._activeFps;
   }
 
   private constructor() {
@@ -372,7 +375,7 @@ export class LAppDelegate {
     this._lowPowerDevice =
       ((navigator as any).hardwareConcurrency || 8) <= 4 ||
       ((navigator as any).deviceMemory || 8) <= 4;
-    this._activeFps = this._lowPowerDevice ? 24 : 30;
+    this._activeFps = 90;
   }
 
   private _cubismOption: Option;

@@ -14,7 +14,7 @@ type EffectKey =
   | 'fireworks';
 
 type FrameRate = 0 | 15 | 24 | 30 | 45 | 60;
-type Live2DFrameRate = -1 | FrameRate;
+type Live2DFrameRate = -1 | FrameRate | 90;
 type LowPowerTimeout = 0 | 30 | 60 | 180 | 300 | 600;
 type Complexity = 'low' | 'balanced' | 'high';
 type EffectSettings = Record<EffectKey, boolean> & {
@@ -37,7 +37,8 @@ const FRAME_RATE_OPTIONS: Array<{value: FrameRate; label: string}> = [
 
 const LIVE2D_FRAME_RATE_OPTIONS: Array<{value: Live2DFrameRate; label: string}> = [
   {value: -1, label: '跟随特效帧率上限'},
-  {value: 0, label: '跟随显示器（垂直同步）'},
+  {value: 0, label: '跟随显示器（最高 90 FPS）'},
+  {value: 90, label: '90 FPS'},
   {value: 60, label: '60 FPS'},
   {value: 45, label: '45 FPS'},
   {value: 30, label: '30 FPS'},
@@ -348,7 +349,7 @@ export default function SettingsPage(): JSX.Element {
             <div className={styles.frameRateCopy}>
               <span className={styles.sectionLabel}>LIVE2D FRAME RATE</span>
               <h2>看板娘帧率上限</h2>
-              <p>可单独限制看板娘的渲染频率；“跟随特效帧率上限”使用上方设置。</p>
+              <p>看板娘默认以 90 FPS 为目标；显示器刷新率较低时由浏览器自动同步，也可在此单独限制。</p>
             </div>
             <label className={styles.frameRateSelect}>
               <span>当前上限</span>
