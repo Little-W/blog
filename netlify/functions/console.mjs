@@ -22,36 +22,43 @@ const DATASETS = Object.freeze({
     label: 'HQ 音乐',
     path: 'static/data/music_hq.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"music_hq"}',
+    idField: 'mid',
   },
   music_sq: {
     label: 'SQ / Hi-Res 音乐',
     path: 'static/data/music_sq.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"music_sq"}',
+    idField: 'mid',
   },
   music_tag: {
     label: '歌单标签',
     path: 'static/data/music_tag.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"music_tag"}',
+    idField: 'tag_id',
   },
   mv: {
     label: 'MV 主表',
     path: 'static/data/mv.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"mv"}',
+    idField: 'mv_id',
   },
   mv_bilibili: {
     label: 'MV B 站资料',
     path: 'static/data/mv_bilibili.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"mv_bilibili"}',
+    idField: 'mv_id',
   },
   mv_class: {
     label: 'MV 分类',
     path: 'static/data/mv_class.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"mv_class"}',
+    idField: 'list',
   },
   mv_out: {
     label: 'MV 扩展资料',
     path: 'static/data/mv_out.0.jsonl',
     header: '#filetype:JSON-streaming {"type":"Class","class":"mv_out"}',
+    idField: 'mv_id',
   },
 });
 
@@ -413,8 +420,59 @@ function normalizeMusicTagRecords(records) {
     if (!tagName) throw requestError(`歌单标签 ${tagId} 缺少 tag_name。`);
     tagIds.add(tagId);
     tagOrders.add(tagOrder);
-    return {...record, tag_id: tagId, tag_order: tagOrder, tag_name: tagName};
+    const seenMids = new Set();
+    const musicOrder = (Array.isArray(record.music_order) ? record.music_order : []).map(Number).filter((mid) => {
+      if (!Number.isInteger(mid) || mid < 0 || seenMids.has(mid)) return false;
+      seenMids.add(mid);
+      return true;
+    });
+    return {...record, tag_id: tagId, tag_order: tagOrder, tag_name: tagName, music_order: musicOrder};
   });
+}
+
+function reconcileMusicTagOrders(tagRecords, musicRecords) {
+  const members = new Map();
+  for (const record of musicRecords) {
+    const mid = Number(record.mid);
+    if (!Number.isInteger(mid) || mid < 0) continue;
+    for (const rawTagId of Array.isArray(record.list) ? record.list : []) {
+      const tagId = Number(rawTagId);
+      if (!Number.isInteger(tagId) || tagId < 0) continue;
+      if (!members.has(tagId)) members.set(tagId, []);
+      members.get(tagId).push(mid);
+    }
+  }
+  return normalizeMusicTagRecords(tagRecords).map((tag) => {
+    const validMids = [...new Set(members.get(Number(tag.tag_id)) || [])].sort((left, right) => left - right);
+    const valid = new Set(validMids);
+    const order = (Array.isArray(tag.music_order) ? tag.music_order : []).filter((mid) => valid.has(Number(mid))).map(Number);
+    const used = new Set(order);
+    for (const mid of validMids) if (!used.has(mid)) order.push(mid);
+    return {...tag, music_order: order};
+  });
+}
+
+function validateMusicTagReferences(tagRecords, ...musicRecordSets) {
+  const validTagIds = new Set(normalizeMusicTagRecords(tagRecords).map((tag) => Number(tag.tag_id)));
+  const references = new Map();
+  for (const records of musicRecordSets) {
+    for (const record of records) {
+      const mid = Number(record.mid);
+      for (const rawTagId of Array.isArray(record.list) ? record.list : []) {
+        const tagId = Number(rawTagId);
+        // 0、1 是播放器内部使用的“播放队列/全部”编号，不属于公开标签表。
+        if (!Number.isInteger(tagId) || tagId < 2 || validTagIds.has(tagId)) continue;
+        if (!references.has(tagId)) references.set(tagId, []);
+        if (references.get(tagId).length < 5) references.get(tagId).push(mid);
+      }
+    }
+  }
+  if (references.size) {
+    const details = [...references.entries()]
+      .map(([tagId, mids]) => `${tagId}（MID ${mids.join('、')}）`)
+      .join('；');
+    throw requestError(`仍有曲目引用不存在的歌单标签：${details}。`);
+  }
 }
 
 function serializeJsonl(dataset, records) {
@@ -444,11 +502,16 @@ async function readBody(request) {
     error.status = 413;
     throw error;
   }
+  let body;
   try {
-    return JSON.parse(raw);
+    body = JSON.parse(raw);
   } catch {
     throw requestError('请求内容不是有效 JSON。');
   }
+  if (!body || Array.isArray(body) || typeof body !== 'object') {
+    throw requestError('请求内容必须是 JSON 对象。');
+  }
+  return body;
 }
 
 async function commitFiles({files, baseHeadSha, message}) {
@@ -549,17 +612,73 @@ async function getDataset(url) {
   const snapshot = await repoSnapshot();
   const file = await readBlob(snapshot, dataset.path);
   const parsed = parseJsonl(file.content, dataset.header);
+  const page = Math.max(0, Number.parseInt(url.searchParams.get('page') || '0', 10) || 0);
+  const pageSize = Math.max(1, Math.min(200, Number.parseInt(url.searchParams.get('pageSize') || '36', 10) || 36));
+  const query = String(url.searchParams.get('query') || '').trim().toLocaleLowerCase().slice(0, 200);
+  const tagValue = url.searchParams.get('tagId');
+  const tagId = tagValue === null || tagValue === '' || tagValue === 'all' ? null : Number(tagValue);
+  const musicDataset = name === 'music_hq' || name === 'music_sq';
+  let records = parsed.records;
+  if (musicDataset && tagId !== null) {
+    if (!Number.isInteger(tagId) || tagId < 0) return fail('歌单标签无效。', 'INVALID_TAG');
+    records = records.filter((record) => Array.isArray(record.list) && record.list.map(Number).includes(tagId));
+  }
+  if (query) records = records.filter((record) => JSON.stringify(record).toLocaleLowerCase().includes(query));
+
+  const sort = String(url.searchParams.get('sort') || 'id');
+  if (musicDataset && tagId !== null && sort === 'list_order') {
+    const tagFile = await readBlob(snapshot, DATASETS.music_tag.path);
+    const tagRecords = parseJsonl(tagFile.content, DATASETS.music_tag.header).records;
+    const tag = tagRecords.find((record) => Number(record.tag_id) === tagId);
+    const positions = new Map((Array.isArray(tag?.music_order) ? tag.music_order : []).map((mid, index) => [Number(mid), index]));
+    records = records.slice().sort((left, right) => {
+      const leftPosition = positions.has(Number(left.mid)) ? positions.get(Number(left.mid)) : Number.MAX_SAFE_INTEGER;
+      const rightPosition = positions.has(Number(right.mid)) ? positions.get(Number(right.mid)) : Number.MAX_SAFE_INTEGER;
+      return leftPosition - rightPosition || Number(left.mid) - Number(right.mid);
+    });
+  } else if (name === 'music_tag') {
+    records = records.slice().sort((left, right) => Number(left.tag_order) - Number(right.tag_order) || Number(left.tag_id) - Number(right.tag_id));
+  } else {
+    records = records.slice().sort((left, right) => {
+      const leftId = Number(left[dataset.idField]);
+      const rightId = Number(right[dataset.idField]);
+      if (Number.isFinite(leftId) && Number.isFinite(rightId)) return leftId - rightId;
+      return String(left[dataset.idField] || '').localeCompare(String(right[dataset.idField] || ''), 'zh-CN', {numeric: true});
+    });
+  }
+  const count = records.length;
+  const offset = page * pageSize;
   return json({
     success: true,
     data: {
       name,
       label: dataset.label,
       path: dataset.path,
-      records: parsed.records,
-      count: parsed.records.length,
+      records: records.slice(offset, offset + pageSize),
+      count,
+      totalCount: parsed.records.length,
+      page,
+      pageSize,
       headSha: snapshot.headSha,
       blobSha: file.blobSha,
     },
+  });
+}
+
+function datasetRecordKey(dataset, record) {
+  const value = record?.[dataset.idField];
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < 0) throw requestError(`记录缺少有效的 ${dataset.idField}。`);
+  return String(id);
+}
+
+function normalizeDatasetRecordIds(dataset, records) {
+  const seen = new Set();
+  return records.map((record) => {
+    const key = datasetRecordKey(dataset, record);
+    if (seen.has(key)) throw requestError(`${dataset.idField} ${key} 重复。`);
+    seen.add(key);
+    return {...record, [dataset.idField]: Number(key)};
   });
 }
 
@@ -567,35 +686,69 @@ async function saveDataset(request) {
   const body = await readBody(request);
   const dataset = DATASETS[body.name];
   if (!dataset) return fail('未知的数据表。', 'INVALID_DATASET');
-  if (!['append', 'replace'].includes(body.operation)) return fail('数据操作类型无效。', 'INVALID_OPERATION');
+  if (!['append', 'replace', 'patch'].includes(body.operation)) return fail('数据操作类型无效。', 'INVALID_OPERATION');
   validateRecords(body.records);
   let records = body.records;
   const companion = musicCompanionDataset(dataset);
   const syncMusicLists = Boolean(body.syncMusicLists) && Boolean(companion);
+  const editingMusicTags = dataset === DATASETS.music_tag;
   let snapshot = null;
-  if (body.operation === 'append' || syncMusicLists) {
+  if (body.operation === 'append' || body.operation === 'patch' || syncMusicLists || editingMusicTags) {
     snapshot = await repoSnapshot();
     if (snapshot.headSha !== body.baseHeadSha) {
       return fail('远程仓库已被更新，请重新加载后再导入。', 'REPOSITORY_CHANGED', 409);
     }
   }
-  if (body.operation === 'append') {
+  if (body.operation === 'append' || body.operation === 'patch') {
     const current = parseJsonl((await readBlob(snapshot, dataset.path)).content, dataset.header);
-    records = [...current.records, ...body.records];
+    if (body.operation === 'append') {
+      records = [...current.records, ...body.records];
+    } else {
+      const deleteIds = new Set((Array.isArray(body.deleteIds) ? body.deleteIds : [])
+        .map((value) => datasetRecordKey(dataset, {[dataset.idField]: value})));
+      const upserts = new Map(body.records.map((record) => [datasetRecordKey(dataset, record), record]));
+      records = current.records
+        .filter((record) => !deleteIds.has(datasetRecordKey(dataset, record)))
+        .map((record) => upserts.get(datasetRecordKey(dataset, record)) || record);
+      const existing = new Set(records.map((record) => datasetRecordKey(dataset, record)));
+      for (const [key, record] of upserts) if (!existing.has(key)) records.push(record);
+    }
   }
-  if (dataset === DATASETS.music_tag) records = normalizeMusicTagRecords(records);
+  records = normalizeDatasetRecordIds(dataset, records);
+  if (editingMusicTags) {
+    const [hqFile, sqFile] = await Promise.all([
+      readBlob(snapshot, DATASETS.music_hq.path),
+      readBlob(snapshot, DATASETS.music_sq.path),
+    ]);
+    const hqRecords = parseJsonl(hqFile.content, DATASETS.music_hq.header).records;
+    const sqRecords = parseJsonl(sqFile.content, DATASETS.music_sq.header).records;
+    validateMusicTagReferences(records, hqRecords, sqRecords);
+    records = reconcileMusicTagOrders(
+      records,
+      hqRecords,
+    );
+  }
   const content = serializeJsonl(dataset, records);
   if (syncMusicLists) {
-    const companionFile = await readBlob(snapshot, companion.path);
+    const [companionFile, tagFile] = await Promise.all([
+      readBlob(snapshot, companion.path),
+      readBlob(snapshot, DATASETS.music_tag.path),
+    ]);
     const companionRecords = parseJsonl(companionFile.content, companion.header).records;
     const synced = synchronizeMusicLists(records, companionRecords, dataset.label, companion.label);
+    const tagRecords = reconcileMusicTagOrders(
+      parseJsonl(tagFile.content, DATASETS.music_tag.header).records,
+      records,
+    );
+    validateMusicTagReferences(tagRecords, records, synced.records);
     const result = await commitFiles({
       files: [
         {path: dataset.path, content},
         {path: companion.path, content: serializeJsonl(companion, synced.records)},
+        {path: DATASETS.music_tag.path, content: serializeJsonl(DATASETS.music_tag, tagRecords)},
       ],
       baseHeadSha: body.baseHeadSha,
-      message: body.message || `音乐：更新 ${dataset.label} 并同步 ${companion.label} 歌单标签`,
+      message: body.message || `音乐：更新 ${dataset.label} 并同步 ${companion.label} 歌单与顺序`,
     });
     return json({
       success: true,
@@ -720,16 +873,93 @@ async function saveMusicTags(request) {
     tagIds,
     DATASETS.music_sq.label,
   );
+  const orderedTags = reconcileMusicTagOrders(tagRecords, hq.records);
   const displayName = [hq.author || sq.author, hq.title || sq.title].filter(Boolean).join(' - ');
   const result = await commitFiles({
     files: [
       {path: DATASETS.music_hq.path, content: serializeJsonl(DATASETS.music_hq, hq.records)},
       {path: DATASETS.music_sq.path, content: serializeJsonl(DATASETS.music_sq, sq.records)},
+      {path: DATASETS.music_tag.path, content: serializeJsonl(DATASETS.music_tag, orderedTags)},
     ],
     baseHeadSha: snapshot.headSha,
     message: `音乐：更新 ${displayName || `曲目 ${mid}`} 的歌单标签`,
   });
   return json({success: true, data: {...result, mid, tagIds}}, 201);
+}
+
+async function musicOrderSnapshot(tagId) {
+  if (!Number.isInteger(tagId) || tagId < 2) return fail('只能调整公开歌单的曲目顺序。', 'INVALID_TAG');
+  const snapshot = await repoSnapshot();
+  const [tagFile, hqFile, sqFile] = await Promise.all([
+    readBlob(snapshot, DATASETS.music_tag.path),
+    readBlob(snapshot, DATASETS.music_hq.path),
+    readBlob(snapshot, DATASETS.music_sq.path),
+  ]);
+  const tags = normalizeMusicTagRecords(parseJsonl(tagFile.content, DATASETS.music_tag.header).records);
+  const tag = tags.find((record) => Number(record.tag_id) === tagId);
+  if (!tag) return fail('歌单不存在。', 'PLAYLIST_NOT_FOUND', 404);
+  const hqRecords = parseJsonl(hqFile.content, DATASETS.music_hq.header).records;
+  const sqRecords = parseJsonl(sqFile.content, DATASETS.music_sq.header).records;
+  const membersFor = (records) => records
+    .filter((record) => Array.isArray(record.list) && record.list.map(Number).includes(tagId))
+    .map((record) => Number(record.mid)).sort((left, right) => left - right);
+  const hqMembers = membersFor(hqRecords);
+  const sqMembers = membersFor(sqRecords);
+  if (hqMembers.length !== sqMembers.length || hqMembers.some((mid, index) => mid !== sqMembers[index])) {
+    return fail('HQ 与 SQ 的歌单成员不同，请先同步两张音乐表。', 'MUSIC_LIST_MISMATCH', 409);
+  }
+  const reconciledTag = reconcileMusicTagOrders(tags, hqRecords)
+    .find((record) => Number(record.tag_id) === tagId);
+  return {snapshot, tags, tag: reconciledTag || tag, members: hqMembers};
+}
+
+async function getMusicOrder(url) {
+  const result = await musicOrderSnapshot(Number(url.searchParams.get('tagId')));
+  if (result instanceof Response) return result;
+  return json({
+    success: true,
+    data: {
+      tagId: Number(result.tag.tag_id),
+      tagName: String(result.tag.tag_name || ''),
+      mids: result.tag.music_order,
+      headSha: result.snapshot.headSha,
+    },
+  }, 200, 'no-store');
+}
+
+async function saveMusicOrder(request) {
+  const body = await readBody(request);
+  const tagId = Number(body.tagId);
+  if (!Array.isArray(body.mids)) return fail('mids 必须是数组。', 'INVALID_MUSIC_ORDER');
+  const seen = new Set();
+  const mids = body.mids.map(Number).filter((mid) => {
+    if (!Number.isInteger(mid) || mid < 0 || seen.has(mid)) return false;
+    seen.add(mid);
+    return true;
+  });
+  if (mids.length !== body.mids.length) return fail('曲目顺序中包含无效或重复的 mid。', 'INVALID_MUSIC_ORDER');
+  if (!/^[0-9a-f]{40}$/i.test(String(body.baseHeadSha || ''))) {
+    return fail('缺少有效的基准提交编号。', 'INVALID_BASE_COMMIT');
+  }
+
+  const current = await musicOrderSnapshot(tagId);
+  if (current instanceof Response) return current;
+  const {snapshot, tags, tag, members} = current;
+  if (snapshot.headSha !== body.baseHeadSha) {
+    return fail('远程仓库已被更新，请重新加载后再保存。', 'REPOSITORY_CHANGED', 409);
+  }
+  const memberSet = new Set(members);
+  if (mids.length !== members.length || mids.some((mid) => !memberSet.has(mid))) {
+    return fail('提交的顺序必须完整包含该歌单的全部曲目。', 'INCOMPLETE_MUSIC_ORDER');
+  }
+  const nextTags = tags.map((record) => Number(record.tag_id) === tagId ? {...record, music_order: mids} : record);
+  const result = await commitFile({
+    path: DATASETS.music_tag.path,
+    content: serializeJsonl(DATASETS.music_tag, nextTags),
+    baseHeadSha: snapshot.headSha,
+    message: `音乐：调整歌单「${String(tag.tag_name || tagId)}」的曲目顺序`,
+  });
+  return json({success: true, data: {...result, tagId, mids}}, 201);
 }
 
 function datasetList() {
@@ -772,6 +1002,8 @@ export default async (request) => {
     if (url.pathname === '/api/console/dataset' && request.method === 'GET') return await getDataset(url);
     if (url.pathname === '/api/console/dataset' && request.method === 'POST') return await saveDataset(request);
     if (url.pathname === '/api/console/music-tags' && request.method === 'POST') return await saveMusicTags(request);
+    if (url.pathname === '/api/console/music-order' && request.method === 'GET') return await getMusicOrder(url);
+    if (url.pathname === '/api/console/music-order' && request.method === 'POST') return await saveMusicOrder(request);
     if (url.pathname === '/api/console/files' && request.method === 'GET') return await listFiles();
     if (url.pathname === '/api/console/file' && request.method === 'GET') return await getFile(url);
     if (url.pathname === '/api/console/file' && request.method === 'POST') return await saveFile(request);

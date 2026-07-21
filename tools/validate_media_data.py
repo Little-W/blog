@@ -234,6 +234,85 @@ def validate_tag_dataset(report: Report, dataset: Dataset) -> set[int]:
     return ids
 
 
+def music_memberships(dataset: Dataset) -> dict[int, set[int]]:
+    """Return the valid music mids assigned to each playlist ID."""
+    memberships: dict[int, set[int]] = {}
+    for record in dataset.records:
+        mid = record.get('mid')
+        list_ids = record.get('list')
+        if not is_int(mid) or not isinstance(list_ids, list):
+            continue
+        for list_id in list_ids:
+            if is_int(list_id):
+                memberships.setdefault(list_id, set()).add(mid)
+    return memberships
+
+
+def describe_ids(values: set[int]) -> str:
+    ordered = sorted(values)
+    suffix = '' if len(ordered) <= 20 else f'（共 {len(ordered)} 条）'
+    return f'{ordered[:20]}{suffix}'
+
+
+def validate_music_orders(report: Report, tags: Dataset, hq: Dataset, sq: Dataset) -> None:
+    """Require every tag order to contain each playlist member exactly once."""
+    memberships = {
+        'HQ': music_memberships(hq),
+        'SQ': music_memberships(sq),
+    }
+    for record in tags.records:
+        line = int(record['_validation_line'])
+        location = record_location(tags.name, line)
+        tag_id = record.get('tag_id')
+        if not is_int(tag_id):
+            continue
+
+        values = record.get('music_order')
+        if not isinstance(values, list):
+            report.error('invalid-music-order', location, 'music_order 必须是数组。')
+            continue
+
+        invalid_positions = [index for index, mid in enumerate(values) if not is_int(mid)]
+        if invalid_positions:
+            report.error(
+                'invalid-music-order-mid',
+                location,
+                f'music_order 中只能包含整数 mid；无效位置：{invalid_positions[:20]}。',
+            )
+
+        integer_mids = [mid for mid in values if is_int(mid)]
+        duplicates = {mid for mid, count in Counter(integer_mids).items() if count > 1}
+        if duplicates:
+            report.error(
+                'duplicate-music-order-mid',
+                location,
+                f'music_order 中存在重复 mid：{describe_ids(duplicates)}。',
+            )
+
+        actual = set(integer_mids)
+        hq_expected = memberships['HQ'].get(tag_id, set())
+        sq_expected = memberships['SQ'].get(tag_id, set())
+        expected_by_quality = [('HQ/SQ', hq_expected)] if hq_expected == sq_expected else [
+            ('HQ', hq_expected),
+            ('SQ', sq_expected),
+        ]
+        for quality, expected in expected_by_quality:
+            nonmembers = actual - expected
+            if nonmembers:
+                report.error(
+                    'music-order-nonmember',
+                    location,
+                    f'music_order 包含不属于该歌单的 {quality} mid：{describe_ids(nonmembers)}。',
+                )
+            missing = expected - actual
+            if missing:
+                report.error(
+                    'music-order-missing-member',
+                    location,
+                    f'music_order 未包含该歌单的全部 {quality} 成员，缺少：{describe_ids(missing)}。',
+                )
+
+
 def validate_native_mv_dataset(report: Report, dataset: Dataset, allowed_list_ids: set[int] | None) -> set[int]:
     ids = unique_integer_ids(report, dataset, 'mv_id')
     for record in dataset.records:
@@ -439,6 +518,7 @@ def main() -> int:
     validate_mv_class_dataset(report, datasets['mv_class'])
     mv_out_ids = validate_native_mv_dataset(report, datasets['mv_out'], allowed_list_ids)
     compare_music_libraries(report, datasets['music_hq'], datasets['music_sq'], hq_ids, sq_ids)
+    validate_music_orders(report, datasets['music_tag'], datasets['music_hq'], datasets['music_sq'])
     compare_native_mv_libraries(report, mv_ids, mv_out_ids)
 
     if args.check_urls:

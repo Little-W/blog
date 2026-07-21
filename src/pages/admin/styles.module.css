@@ -365,10 +365,42 @@
 }
 
 .recordToolbar {
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin: 1rem 0 0.65rem;
   color: var(--ifm-color-emphasis-600);
   font-size: 0.75rem;
+}
+
+.sortControl {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 2.45rem;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0 0.55rem 0 0.7rem;
+  color: var(--ifm-color-emphasis-700);
+  background: color-mix(in srgb, var(--ifm-color-emphasis-100) 80%, transparent);
+  border: 1px solid var(--ifm-color-emphasis-250, var(--ifm-color-emphasis-200));
+  border-radius: 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sortControl select {
+  min-height: 1.8rem;
+  padding: 0 1.7rem 0 0.42rem;
+  color: var(--ifm-font-color-base);
+  background-color: var(--ifm-background-surface-color, #fff);
+  border: 1px solid var(--ifm-color-emphasis-250, var(--ifm-color-emphasis-200));
+  border-radius: 6px;
+  outline: none;
+  font: inherit;
+}
+
+.sortControl select:focus {
+  border-color: var(--ifm-color-primary);
 }
 
 .tagFilterBar {
@@ -424,6 +456,87 @@
   background: color-mix(in srgb, var(--ifm-color-primary) 4%, transparent);
   border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 20%, var(--ifm-color-emphasis-200));
   border-radius: 14px;
+}
+
+.musicOrderToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0 0 0.85rem;
+  padding: 0.62rem 0.72rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 18%, var(--ifm-color-emphasis-200));
+  border-radius: 11px;
+}
+
+.musicOrderToolbar > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.musicOrderToolbar strong {
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.musicOrderToolbar span {
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.68rem;
+}
+
+.musicOrderPanel {
+  margin: 0 0 0.95rem;
+  padding: 0.9rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 5%, var(--ifm-background-surface-color, #fff));
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 25%, var(--ifm-color-emphasis-200));
+  border-radius: 14px;
+}
+
+.musicOrderList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.42rem;
+  max-height: 430px;
+  overflow-y: auto;
+  padding: 0.12rem 0.14rem 0.12rem 0.02rem;
+  scrollbar-color: color-mix(in srgb, var(--ifm-color-primary) 42%, transparent) transparent;
+}
+
+.musicOrderItem {
+  display: flex;
+  min-width: 0;
+  min-height: 2.55rem;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.34rem 0.36rem;
+  background: var(--ifm-background-surface-color, #fff);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 9px;
+  cursor: grab;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+}
+
+.musicOrderItem:active {
+  cursor: grabbing;
+}
+
+.musicOrderMid {
+  flex: 0 0 auto;
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.musicOrderActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
 }
 
 .playlistTagOrderHeading {
@@ -1058,6 +1171,10 @@ html[data-theme='dark'] .tabActive {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .musicOrderList {
+    grid-template-columns: 1fr;
+  }
+
   .fieldRow {
     grid-template-columns: minmax(110px, 0.8fr) 88px minmax(140px, 1.5fr) 2.2rem;
   }
@@ -1068,9 +1185,23 @@ html[data-theme='dark'] .tabActive {
     flex-direction: column;
   }
 
+  .musicOrderToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .musicOrderToolbar > button,
+  .musicOrderActions > button {
+    flex: 1;
+  }
+
   .playlistTagOrderList {
     grid-template-columns: 1fr;
     max-height: 330px;
+  }
+
+  .musicOrderList {
+    max-height: 390px;
   }
 }
 

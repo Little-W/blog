@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
 import {useLocation} from '@docusaurus/router';
@@ -16,6 +16,9 @@ type DatasetPayload = {
   path: string;
   records: JsonRecord[];
   count: number;
+  totalCount: number;
+  page: number;
+  pageSize: number;
   headSha: string;
   blobSha: string;
 };
@@ -29,6 +32,11 @@ type PlaylistTagOrderItem = {
   name: string;
   order: number;
 };
+type MusicOrderItem = {
+  mid: number;
+  title: string;
+};
+type DatasetSort = 'id' | 'list_order';
 type EditorField = {
   id: string;
   key: string;
@@ -149,6 +157,28 @@ function parseListTagIds(value: string): number[] {
   } catch {
     return [];
   }
+}
+
+const DATASET_ID_FIELDS: Record<string, string> = {
+  music_hq: 'mid',
+  music_sq: 'mid',
+  music_tag: 'tag_id',
+  mv: 'mv_id',
+  mv_bilibili: 'mv_id',
+  mv_class: 'list',
+  mv_out: 'mv_id',
+};
+
+function datasetRecordId(name: string, record: JsonRecord): string | number | null {
+  const field = DATASET_ID_FIELDS[name];
+  const value = field ? record[field] : undefined;
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized >= 0 ? normalized : null;
+}
+
+function datasetRecordKey(name: string, record: JsonRecord): string | null {
+  const value = datasetRecordId(name, record);
+  return value === null ? null : String(value);
 }
 
 function RecordEditor({
@@ -323,8 +353,10 @@ function DataConsole({repository}: {repository: string | null}) {
   const [records, setRecords] = useState<JsonRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [datasetSort, setDatasetSort] = useState<DatasetSort>('id');
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
@@ -334,43 +366,70 @@ function DataConsole({repository}: {repository: string | null}) {
   const [musicTags, setMusicTags] = useState<MusicTag[]>([]);
   const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
   const [syncMusicLists, setSyncMusicLists] = useState(true);
+  const [pendingUpserts, setPendingUpserts] = useState<Record<string, JsonRecord>>({});
+  const [pendingDeletes, setPendingDeletes] = useState<Array<string | number>>([]);
   const [draggingPlaylistTagId, setDraggingPlaylistTagId] = useState<number | null>(null);
   const [dragOverPlaylistTagId, setDragOverPlaylistTagId] = useState<number | null>(null);
+  const [musicOrderMode, setMusicOrderMode] = useState(false);
+  const [musicOrder, setMusicOrder] = useState<MusicOrderItem[]>([]);
+  const [musicOrderHeadSha, setMusicOrderHeadSha] = useState('');
+  const [musicOrderBusy, setMusicOrderBusy] = useState(false);
+  const [draggingMusicId, setDraggingMusicId] = useState<number | null>(null);
+  const [dragOverMusicId, setDragOverMusicId] = useState<number | null>(null);
+  const loadRequestId = useRef(0);
+  const musicOrderRequestId = useRef(0);
 
   const supportsTagFilter = selectedName === 'music_hq' || selectedName === 'music_sq';
   const supportsPlaylistTagOrdering = selectedName === 'music_tag';
 
-  const loadDataset = async (name: string) => {
+  const pageSize = selectedName === 'music_tag' ? 200 : 36;
+
+  useEffect(() => {
+    musicOrderRequestId.current += 1;
+    setMusicOrderMode(false);
+    setMusicOrder([]);
+    setMusicOrderHeadSha('');
+    setMusicOrderBusy(false);
+  }, [selectedName, tagFilter]);
+
+  const loadDataset = async (name: string, ignorePending = false) => {
+    const requestId = ++loadRequestId.current;
     setBusy(true);
     setError('');
-    setNotice('');
     setSelectedIndex(null);
     setCreating(false);
     try {
-      const tagRequest = (name === 'music_hq' || name === 'music_sq')
-        ? consoleApi<DatasetPayload>('/api/console/dataset?name=music_tag')
-        : Promise.resolve(null);
-      const [data, tagDataset] = await Promise.all([
-        consoleApi<DatasetPayload>(`/api/console/dataset?name=${encodeURIComponent(name)}`),
-        tagRequest,
-      ]);
+      const params = new URLSearchParams({
+        name,
+        page: String(page),
+        pageSize: String(name === 'music_tag' ? 200 : pageSize),
+        query: search,
+        sort: supportsTagFilter && tagFilter !== 'all' ? datasetSort : 'id',
+      });
+      if (supportsTagFilter && tagFilter !== 'all') params.set('tagId', String(tagFilter));
+      const data = await consoleApi<DatasetPayload>(`/api/console/dataset?${params.toString()}`);
+      if (requestId !== loadRequestId.current) return;
       setDataset(data);
-      setRecords(data.records);
-      setMusicTags((tagDataset?.records || [])
-        .map((record) => ({
-          id: Number(record.tag_id),
-          name: String(record.tag_name || ''),
-          order: Number(record.tag_order) || 0,
-        }))
-        .filter((tag) => Number.isInteger(tag.id) && tag.id >= 0 && tag.name)
-        .sort((left, right) => left.order - right.order || left.id - right.id));
-      setTagFilter('all');
-      setDirty(false);
-      setPage(0);
+      if (ignorePending) {
+        setRecords(data.records);
+      } else {
+        const deleted = new Set(pendingDeletes.map((value) => String(Number(value))));
+        setRecords(data.records
+          .filter((record) => {
+            const key = datasetRecordKey(name, record);
+            return key === null || !deleted.has(key);
+          })
+          .map((record) => {
+            const key = datasetRecordKey(name, record);
+            return key && pendingUpserts[key] ? pendingUpserts[key] : record;
+          }));
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法读取数据表。');
+      if (requestId === loadRequestId.current) {
+        setError(caught instanceof Error ? caught.message : '无法读取数据表。');
+      }
     } finally {
-      setBusy(false);
+      if (requestId === loadRequestId.current) setBusy(false);
     }
   };
 
@@ -385,28 +444,41 @@ function DataConsole({repository}: {repository: string | null}) {
 
   useEffect(() => {
     if (selectedName) void loadDataset(selectedName);
-  }, [selectedName]);
-
-  const filteredIndexes = useMemo(() => {
-    const keyword = search.trim().toLocaleLowerCase();
-    return records
-      .map((record, index) => ({record, index}))
-      .filter(({record}) => {
-        if (supportsTagFilter && tagFilter !== 'all') {
-          const tags = Array.isArray(record.list) ? record.list.map(Number) : [];
-          if (!tags.includes(tagFilter)) return false;
-        }
-        return !keyword || JSON.stringify(record).toLocaleLowerCase().includes(keyword);
-      })
-      .map(({index}) => index);
-  }, [records, search, supportsTagFilter, tagFilter]);
-  const pageSize = 36;
-  const pageCount = Math.max(1, Math.ceil(filteredIndexes.length / pageSize));
-  const visibleIndexes = filteredIndexes.slice(page * pageSize, (page + 1) * pageSize);
+  }, [selectedName, page, search, tagFilter, datasetSort]);
 
   useEffect(() => {
-    setPage(0);
-  }, [search, tagFilter]);
+    const timeout = window.setTimeout(() => {
+      setPage(0);
+      setSearch(searchInput.trim());
+    }, 320);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (!supportsTagFilter) {
+      setMusicTags([]);
+      return;
+    }
+    let active = true;
+    void consoleApi<DatasetPayload>('/api/console/dataset?name=music_tag&page=0&pageSize=200')
+      .then((tagDataset) => {
+        if (!active) return;
+        setMusicTags(tagDataset.records
+          .map((record) => ({
+            id: Number(record.tag_id),
+            name: String(record.tag_name || ''),
+            order: Number(record.tag_order) || 0,
+          }))
+          .filter((tag) => Number.isInteger(tag.id) && tag.id >= 0 && tag.name)
+          .sort((left, right) => left.order - right.order || left.id - right.id));
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : '无法读取歌单标签。');
+      });
+    return () => { active = false; };
+  }, [supportsTagFilter]);
+
+  const pageCount = Math.max(1, Math.ceil((dataset?.count || 0) / (dataset?.pageSize || pageSize)));
 
   const playlistTagOrder = useMemo<PlaylistTagOrderItem[]>(() => records
     .map((record) => ({
@@ -419,12 +491,23 @@ function DataConsole({repository}: {repository: string | null}) {
 
   const applyPlaylistTagOrder = (ordered: PlaylistTagOrderItem[]) => {
     const nextOrders = new Map(ordered.map((tag, index) => [tag.id, index + 1]));
-    setRecords((current) => current.map((record) => {
-      const nextOrder = nextOrders.get(Number(record.tag_id));
-      return nextOrder === undefined || Number(record.tag_order) === nextOrder
-        ? record
-        : {...record, tag_order: nextOrder};
-    }));
+    setRecords((current) => {
+      const nextRecords = current.map((record) => {
+        const nextOrder = nextOrders.get(Number(record.tag_id));
+        return nextOrder === undefined || Number(record.tag_order) === nextOrder
+          ? record
+          : {...record, tag_order: nextOrder};
+      });
+      setPendingUpserts((pending) => {
+        const next = {...pending};
+        nextRecords.forEach((record) => {
+          const key = datasetRecordKey('music_tag', record);
+          if (key) next[key] = record;
+        });
+        return next;
+      });
+      return nextRecords;
+    });
     setDirty(true);
     setNotice('歌单显示顺序已在页面中调整，提交数据表后才会写入仓库。');
   };
@@ -443,10 +526,41 @@ function DataConsole({repository}: {repository: string | null}) {
   const chooseDataset = (name: string) => {
     if (name === selectedName) return;
     if (dirty && !window.confirm('当前数据表有未提交的修改，确定放弃吗？')) return;
+    setDataset(null);
+    setRecords([]);
+    setPendingUpserts({});
+    setPendingDeletes([]);
+    setDirty(false);
+    setSearchInput('');
+    setSearch('');
+    setPage(0);
+    setTagFilter('all');
+    setDatasetSort('id');
+    setMusicOrderMode(false);
+    setMusicOrder([]);
     setSelectedName(name);
   };
 
   const applyRecord = (record: JsonRecord) => {
+    const key = datasetRecordKey(selectedName, record);
+    if (!key) {
+      setError(`表项必须包含 ${DATASET_ID_FIELDS[selectedName] || '唯一编号'}。`);
+      return;
+    }
+    const previous = selectedIndex === null ? null : records[selectedIndex];
+    const previousId = previous ? datasetRecordId(selectedName, previous) : null;
+    const previousKey = previous ? datasetRecordKey(selectedName, previous) : null;
+    if (previousKey && previousKey !== key && previousId !== null) {
+      setPendingDeletes((current) => [...current.filter((id) => `${typeof id}:${String(id)}` !== previousKey), previousId]);
+      setPendingUpserts((current) => {
+        const next = {...current};
+        delete next[previousKey];
+        next[key] = record;
+        return next;
+      });
+    } else {
+      setPendingUpserts((current) => ({...current, [key]: record}));
+    }
     if (creating || selectedIndex === null) {
       setRecords((current) => [...current, record]);
       setSelectedIndex(records.length);
@@ -460,6 +574,19 @@ function DataConsole({repository}: {repository: string | null}) {
 
   const deleteRecord = () => {
     if (selectedIndex === null || !window.confirm('确定删除当前表项吗？')) return;
+    const record = records[selectedIndex];
+    const id = datasetRecordId(selectedName, record);
+    const key = datasetRecordKey(selectedName, record);
+    if (id === null || key === null) {
+      setError('当前表项缺少唯一编号，无法安全删除。');
+      return;
+    }
+    setPendingDeletes((current) => [...current.filter((item) => String(Number(item)) !== key), id]);
+    setPendingUpserts((current) => {
+      const next = {...current};
+      delete next[key];
+      return next;
+    });
     setRecords((current) => current.filter((_, index) => index !== selectedIndex));
     setSelectedIndex(null);
     setDirty(true);
@@ -474,8 +601,9 @@ function DataConsole({repository}: {repository: string | null}) {
         method: 'POST',
         body: JSON.stringify({
           name: dataset.name,
-          operation: 'replace',
-          records,
+          operation: 'patch',
+          records: Object.values(pendingUpserts),
+          deleteIds: pendingDeletes,
           baseHeadSha: dataset.headSha,
           syncMusicLists: supportsTagFilter && syncMusicLists,
           message: supportsTagFilter && syncMusicLists
@@ -483,7 +611,10 @@ function DataConsole({repository}: {repository: string | null}) {
             : `数据：通过控制台编辑 ${dataset.label}`,
         }),
       });
-      await loadDataset(dataset.name);
+      setPendingUpserts({});
+      setPendingDeletes([]);
+      setDirty(false);
+      await loadDataset(dataset.name, true);
       const syncNotice = supportsTagFilter && syncMusicLists
         ? `；已同步另一音质的 ${result.syncedCount || 0} 条标签设置${result.unmatchedCount ? `，另有 ${result.unmatchedCount} 条曲目未找到对应项` : ''}`
         : '';
@@ -523,12 +654,108 @@ function DataConsole({repository}: {repository: string | null}) {
         }),
       });
       setImportText('');
-      await loadDataset(dataset.name);
+      await loadDataset(dataset.name, true);
       setNotice(`已写入 ${result.count} 条记录，提交编号为 ${result.commitSha.slice(0, 8)}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '导入失败。');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const loadMusicOrder = async () => {
+    if (!dataset || !supportsTagFilter || tagFilter === 'all') return;
+    const requestId = ++musicOrderRequestId.current;
+    const requestedDataset = dataset.name;
+    const requestedTag = tagFilter;
+    setMusicOrderBusy(true);
+    setError('');
+    try {
+      const requestPage = (targetPage: number) => {
+        const params = new URLSearchParams({
+          name: requestedDataset,
+          page: String(targetPage),
+          pageSize: '200',
+          tagId: String(requestedTag),
+          sort: 'list_order',
+        });
+        return consoleApi<DatasetPayload>(`/api/console/dataset?${params.toString()}`);
+      };
+      const first = await requestPage(0);
+      if (requestId !== musicOrderRequestId.current) return;
+      const remainingPages = Math.ceil(first.count / first.pageSize);
+      const rest = remainingPages > 1
+        ? await Promise.all(Array.from({length: remainingPages - 1}, (_, index) => requestPage(index + 1)))
+        : [];
+      if (requestId !== musicOrderRequestId.current) return;
+      if (first.name !== requestedDataset || rest.some((part) => part.name !== requestedDataset || part.headSha !== first.headSha)) {
+        throw new Error('读取期间仓库资料发生变化，请重新打开顺序编辑。');
+      }
+      const seen = new Set<number>();
+      const ordered = [first, ...rest]
+        .flatMap((part) => part.records)
+        .map((record) => ({mid: Number(record.mid), title: String(record.title || `MID ${String(record.mid)}`)}))
+        .filter((item) => {
+          if (!Number.isInteger(item.mid) || item.mid < 0 || seen.has(item.mid)) return false;
+          seen.add(item.mid);
+          return true;
+        });
+      setMusicOrder(ordered);
+      setMusicOrderHeadSha(first.headSha);
+      setMusicOrderMode(true);
+    } catch (caught) {
+      if (requestId === musicOrderRequestId.current) {
+        setError(caught instanceof Error ? caught.message : '无法读取歌单顺序。');
+      }
+    } finally {
+      if (requestId === musicOrderRequestId.current) setMusicOrderBusy(false);
+    }
+  };
+
+  const moveMusic = (mid: number, position: number) => {
+    setMusicOrder((current) => {
+      const sourceIndex = current.findIndex((item) => item.mid === mid);
+      if (sourceIndex < 0) return current;
+      const targetIndex = Math.max(0, Math.min(current.length - 1, Math.round(position) - 1));
+      if (sourceIndex === targetIndex) return current;
+      const next = current.slice();
+      const [item] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  };
+
+  const saveMusicOrder = async () => {
+    if (!dataset || tagFilter === 'all' || !musicOrder.length) return;
+    const requestId = ++musicOrderRequestId.current;
+    const requestedDataset = dataset.name;
+    const requestedTag = tagFilter;
+    const requestedMids = musicOrder.map((item) => item.mid);
+    const baseHeadSha = musicOrderHeadSha || dataset.headSha;
+    setMusicOrderBusy(true);
+    setError('');
+    try {
+      const result = await consoleApi<{commitSha: string; count: number}>('/api/console/music-order', {
+        method: 'POST',
+        body: JSON.stringify({
+          tagId: requestedTag,
+          mids: requestedMids,
+          baseHeadSha,
+          message: `音乐：通过控制台调整歌单「${musicTags.find((tag) => tag.id === requestedTag)?.name || requestedTag}」的曲目顺序`,
+        }),
+      });
+      if (requestId !== musicOrderRequestId.current) return;
+      setMusicOrderMode(false);
+      setMusicOrder([]);
+      setMusicOrderHeadSha('');
+      await loadDataset(requestedDataset, true);
+      setNotice(`歌单顺序已保存，提交编号为 ${result.commitSha.slice(0, 8)}。`);
+    } catch (caught) {
+      if (requestId === musicOrderRequestId.current) {
+        setError(caught instanceof Error ? caught.message : '保存歌单顺序失败。');
+      }
+    } finally {
+      if (requestId === musicOrderRequestId.current) setMusicOrderBusy(false);
     }
   };
 
@@ -556,7 +783,7 @@ function DataConsole({repository}: {repository: string | null}) {
           <div>
             <span className={styles.eyebrow}>DATABASE</span>
             <h2>{dataset?.label || '正在读取数据表'}</h2>
-            <p>{dataset ? `${records.length} 条记录 · ${dataset.path}` : '从 GitHub 仓库读取'}</p>
+            <p>{dataset ? `${dataset.totalCount} 条记录 · 当前仅加载 ${records.length} 条 · ${dataset.path}` : '从 GitHub 仓库读取'}</p>
           </div>
           <div className={styles.headerActions}>
             {supportsTagFilter ? (
@@ -592,9 +819,23 @@ function DataConsole({repository}: {repository: string | null}) {
         <div className={styles.recordToolbar}>
           <label className={styles.searchBox}>
             <Icon icon="lucide:search" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索当前数据表" />
+            <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="搜索数据表" />
           </label>
-          <span>{filteredIndexes.length} 条匹配</span>
+          {supportsTagFilter ? (
+            <label className={styles.sortControl}>
+              <span>排序</span>
+              <select
+                value={tagFilter === 'all' ? 'id' : datasetSort}
+                onChange={(event) => {
+                  setPage(0);
+                  setDatasetSort(event.target.value as DatasetSort);
+                }}>
+                <option value="id">按 MID</option>
+                <option value="list_order" disabled={tagFilter === 'all'}>按歌单内顺序</option>
+              </select>
+            </label>
+          ) : null}
+          <span>{dataset?.count || 0} 条匹配</span>
           {dirty ? <strong className={styles.dirtyMark}>有未提交修改</strong> : null}
         </div>
 
@@ -604,7 +845,13 @@ function DataConsole({repository}: {repository: string | null}) {
             <button
               type="button"
               className={tagFilter === 'all' ? styles.tagFilterActive : styles.tagFilterButton}
-              onClick={() => setTagFilter('all')}>
+              onClick={() => {
+                setPage(0);
+                setTagFilter('all');
+                setDatasetSort('id');
+                setMusicOrderMode(false);
+                setMusicOrder([]);
+              }}>
               全部
             </button>
             {musicTags.map((tag) => (
@@ -612,14 +859,116 @@ function DataConsole({repository}: {repository: string | null}) {
                 type="button"
                 key={tag.id}
                 className={tagFilter === tag.id ? styles.tagFilterActive : styles.tagFilterButton}
-                onClick={() => setTagFilter(tag.id)}>
+                onClick={() => {
+                  setPage(0);
+                  setTagFilter(tag.id);
+                  setMusicOrderMode(false);
+                  setMusicOrder([]);
+                }}>
                 {tag.name}
               </button>
             ))}
           </div>
         ) : null}
 
-        {supportsPlaylistTagOrdering ? (
+        {supportsTagFilter && tagFilter !== 'all' ? (
+          <div className={styles.musicOrderToolbar}>
+            <div>
+              <strong>{musicTags.find((tag) => tag.id === tagFilter)?.name || `歌单 #${tagFilter}`}</strong>
+              <span>{datasetSort === 'list_order' ? '当前按歌单内顺序显示' : '当前按 MID 显示'}</span>
+            </div>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              disabled={busy || musicOrderBusy || dirty}
+              onClick={() => {
+                if (musicOrderMode) {
+                  setMusicOrderMode(false);
+                  setMusicOrder([]);
+                } else {
+                  void loadMusicOrder();
+                }
+              }}>
+              <Icon icon={musicOrderMode ? 'lucide:x' : 'lucide:list-ordered'} />
+              {musicOrderMode ? '退出调序' : '调整歌单顺序'}
+            </button>
+          </div>
+        ) : null}
+
+        {musicOrderMode ? (
+          <section className={styles.musicOrderPanel} aria-labelledby="music-order-title">
+            <div className={styles.playlistTagOrderHeading}>
+              <div>
+                <span className={styles.eyebrow}>TRACK ORDER</span>
+                <h3 id="music-order-title">歌单曲目顺序</h3>
+                <p>拖动曲目或输入序号。这里只加载当前歌单，不会将整个音乐表载入浏览器。</p>
+              </div>
+              <span>{musicOrder.length} 首</span>
+            </div>
+            <div className={styles.musicOrderList} aria-busy={musicOrderBusy}>
+              {musicOrder.map((item, index) => {
+                const isDragging = draggingMusicId === item.mid;
+                const isDragTarget = dragOverMusicId === item.mid && !isDragging;
+                return (
+                  <div
+                    key={item.mid}
+                    className={`${styles.musicOrderItem}${isDragging ? ` ${styles.playlistTagOrderDragging}` : ''}${isDragTarget ? ` ${styles.playlistTagOrderDropTarget}` : ''}`}
+                    draggable={!musicOrderBusy}
+                    onDragStart={(event) => {
+                      setDraggingMusicId(item.mid);
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', String(item.mid));
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      if (dragOverMusicId !== item.mid) setDragOverMusicId(item.mid);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const transferred = Number(event.dataTransfer.getData('text/plain'));
+                      const sourceId = Number.isInteger(transferred) ? transferred : draggingMusicId;
+                      if (sourceId !== null) moveMusic(sourceId, index + 1);
+                      setDraggingMusicId(null);
+                      setDragOverMusicId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingMusicId(null);
+                      setDragOverMusicId(null);
+                    }}>
+                    <Icon className={styles.playlistTagOrderGrip} icon="lucide:grip-vertical" aria-hidden="true" />
+                    <span className={styles.musicOrderMid}>MID {item.mid}</span>
+                    <span className={styles.playlistTagOrderName} title={item.title}>{item.title}</span>
+                    <label className={styles.playlistTagOrderInput}>
+                      <span className={styles.visuallyHidden}>{item.title} 的播放位置</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={musicOrder.length}
+                        value={index + 1}
+                        disabled={musicOrderBusy}
+                        onChange={(event) => {
+                          const position = Number(event.target.value);
+                          if (Number.isInteger(position) && position >= 1) moveMusic(item.mid, position);
+                        }}
+                      />
+                      <span>位</span>
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <div className={styles.musicOrderActions}>
+              <button type="button" className={styles.secondaryButton} disabled={musicOrderBusy} onClick={() => { setMusicOrderMode(false); setMusicOrder([]); }}>取消</button>
+              <button type="button" className={styles.primaryButton} disabled={musicOrderBusy || !musicOrder.length} onClick={() => void saveMusicOrder()}>
+                <Icon icon="lucide:git-commit-horizontal" />
+                保存歌单顺序
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {supportsPlaylistTagOrdering && !searchInput.trim() ? (
           <section className={styles.playlistTagOrderPanel} aria-labelledby="playlist-tag-order-title">
             <div className={styles.playlistTagOrderHeading}>
               <div>
@@ -687,24 +1036,24 @@ function DataConsole({repository}: {repository: string | null}) {
         ) : null}
 
         <div className={styles.recordList} aria-busy={busy}>
-          {visibleIndexes.map((index) => {
-            const record = records[index];
+          {records.map((record, index) => {
+            const absoluteIndex = page * (dataset?.pageSize || pageSize) + index;
             return (
               <button
                 type="button"
-                key={`${index}-${String(record.objectId || record.mid || record.mv_id || '')}`}
+                key={`${datasetRecordKey(selectedName, record) || index}`}
                 className={selectedIndex === index ? styles.recordActive : styles.recordButton}
                 onClick={() => { setSelectedIndex(index); setCreating(false); }}>
-                <span className={styles.recordNumber}>{index + 1}</span>
+                <span className={styles.recordNumber}>{absoluteIndex + 1}</span>
                 <span className={styles.recordText}>
-                  <strong>{recordTitle(record, index)}</strong>
+                  <strong>{recordTitle(record, absoluteIndex)}</strong>
                   <small>{Object.entries(record).slice(0, 3).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}</small>
                 </span>
                 <Icon icon="lucide:chevron-right" />
               </button>
             );
           })}
-          {!busy && visibleIndexes.length === 0 ? <div className={styles.emptyState}>没有匹配的表项。</div> : null}
+          {!busy && records.length === 0 ? <div className={styles.emptyState}>没有匹配的表项。</div> : null}
           {busy ? <div className={styles.loadingState}><Icon icon="lucide:loader-circle" />正在处理…</div> : null}
         </div>
         <div className={styles.pagination}>
