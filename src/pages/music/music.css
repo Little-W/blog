@@ -765,22 +765,22 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-lrc p,
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-lrc p.aplayer-lrc-current { min-height:20px!important; height:auto!important; margin:4px 0!important; line-height:1.38!important; }
   .music-page .music-player-shell #aplayer_ctr { padding-inline:14px; }
-  .music-page .music-player-shell #ctr_panel_div { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; grid-template-areas:"progress time order loop lyric" "transport volume volume . queue"; gap:8px 10px; }
+  .music-page .music-player-shell #ctr_panel_div { display:grid; grid-template-columns:auto minmax(0,1fr) auto auto auto auto; grid-template-areas:"progress progress time order loop lyric" "transport volume volume volume volume queue"; gap:8px 10px; align-items:center; }
   .music-page .music-player-shell .player-transport-controls { grid-area:transport; gap:7px; justify-self:start; }
   .music-page .music-player-shell .song_ctr_button { width:33px; height:33px; flex-basis:33px; }
   .music-page .music-player-shell #pause_or_paly_div { width:38px; height:38px; flex-basis:38px; }
   .music-page .music-player-shell .player-native-controls,
   .music-page .music-player-shell .player-native-controls .aplayer-time { display:contents; }
-  .music-page .music-player-shell .player-native-controls .aplayer-bar-wrap { grid-area:progress; width:100%; min-width:0; margin-left:8px; }
+  .music-page .music-player-shell .player-native-controls .aplayer-bar-wrap { grid-area:progress; width:100%; min-width:0; margin-left:0; }
   .music-page .music-player-shell .player-native-controls .aplayer-time-inner { grid-area:time; align-self:center; }
   .music-page .music-player-shell .player-native-controls .aplayer-icon-order { grid-area:order; }
   .music-page .music-player-shell .player-native-controls .aplayer-icon-loop { grid-area:loop; }
   .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc { grid-area:lyric; }
-  .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap { grid-area:volume; justify-self:start; margin-left:0; }
+  .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap { grid-area:volume; width:100%; min-width:0; justify-self:stretch; margin-left:0; }
   .music-page .music-player-shell .player-native-controls .aplayer-icon-order,
   .music-page .music-player-shell .player-native-controls .aplayer-icon-loop,
   .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc { width:29px; height:24px; flex-basis:29px; }
-  .music-page .music-player-shell .player-volume-slider { width:86px; }
+  .music-page .music-player-shell .player-volume-slider { width:100%; min-width:0; }
   .music-page .music-player-shell .player-queue-toggle { grid-area:queue; min-height:33px; padding:6px 9px; justify-self:end; }
   .mv-source-banner { align-items:flex-start; }
   .mv-toolbar { flex-wrap:wrap; }
@@ -805,14 +805,13 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-info .aplayer-music .aplayer-title { font-size:1.02rem; }
   .music-page .music-player-shell #aplayer0.aplayer .aplayer-lrc { display:block!important; height:94px!important; margin:7px 0 5px!important; }
   .music-page .music-player-shell #aplayer_ctr { padding:9px 10px 11px; overflow:hidden; }
-  .music-page .music-player-shell #ctr_panel_div { min-height:42px; gap:7px 6px; }
+  .music-page .music-player-shell #ctr_panel_div { min-height:42px; grid-template-columns:auto minmax(0,1fr) auto auto auto; grid-template-areas:"progress progress order loop lyric" "transport volume volume volume queue"; column-gap:8px; row-gap:9px; align-items:center; }
   .music-page .music-player-shell .player-transport-controls { gap:5px; }
   .music-page .music-player-shell .song_ctr_button { width:28px; height:28px; flex-basis:28px; }
   .music-page .music-player-shell .song_ctr_button svg { width:14px; height:14px; }
   .music-page .music-player-shell #pause_or_paly_div { width:33px; height:33px; flex-basis:33px; }
   .music-page .music-player-shell .player-native-controls { min-width:0; gap:4px; }
-  .music-page .music-player-shell #ctr_panel_div { grid-template-areas:"progress progress order loop lyric" "transport volume volume . queue"; }
-  .music-page .music-player-shell .player-native-controls .aplayer-bar-wrap { min-width:34px; margin-left:8px; padding-block:10px; }
+  .music-page .music-player-shell .player-native-controls .aplayer-bar-wrap { min-width:34px; margin-left:0; padding-block:10px; }
   .music-page .music-player-shell .player-native-controls .aplayer-time { height:32px; gap:3px; font-size:.61rem; }
   .music-page .music-player-shell .player-native-controls .aplayer-time-inner { display:none; }
   .music-page .music-player-shell .player-native-controls .aplayer-icon { width:20px; height:20px; }
@@ -823,10 +822,10 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   .music-page .music-player-shell .player-native-controls .aplayer-icon-order svg,
   .music-page .music-player-shell .player-native-controls .aplayer-icon-loop svg,
   .music-page .music-player-shell .player-native-controls .aplayer-icon-lrc svg { width:15px; height:15px; }
-  .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap { height:29px; gap:3px; margin-left:0; }
+  .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap { width:100%; min-width:0; height:29px; gap:3px; margin-left:0; justify-self:stretch; }
   .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap .aplayer-icon { width:22px; height:22px; }
   .music-page .music-player-shell .player-native-controls .aplayer-volume-wrap .aplayer-icon svg { width:22px; height:22px; }
-  .music-page .music-player-shell .player-volume-slider { width:58px; height:23px; }
+  .music-page .music-player-shell .player-volume-slider { width:100%; min-width:0; height:23px; }
   .music-page .music-player-shell .player-volume-range { height:23px; }
   .music-page .music-player-shell .player-volume-range::-webkit-slider-runnable-track { height:21px; }
   .music-page .music-player-shell .player-volume-range::-moz-range-track { height:21px; }
