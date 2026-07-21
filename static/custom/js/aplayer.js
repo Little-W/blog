@@ -32,7 +32,18 @@ var music_quality_switching = false;
 var music_tag_overrides = {};
 var music_admin_state = { authenticated: false, checked: false, loading: false, promise: null };
 var music_tag_editor_state = null;
-var music_order_editor_state = {active: false, saving: false, original: [], dragMid: null, baseHeadSha: null};
+var music_order_editor_state = {
+  active: false,
+  saving: false,
+  original: [],
+  dragMid: null,
+  baseHeadSha: null,
+  dragScroller: null,
+  dragClientY: null,
+  dragScrollFrame: 0,
+  dragScrollTime: 0,
+  dropMarker: null
+};
 var mv_player_runtime_promise = null;
 let SQ_button;
 let HQ_button;
@@ -1453,6 +1464,7 @@ function start_music_order_editor() {
 }
 
 function cancel_music_order_editor() {
+  finish_music_order_drag(music_order_editor_state.dragScroller && music_order_editor_state.dragScroller.querySelector('.music-list.is-dragging'));
   if (music_order_editor_state.active && music_order_editor_state.original.length) {
     active_list = music_order_editor_state.original.slice();
     music_list_all[current_list] = active_list.slice();
@@ -1466,16 +1478,145 @@ function cancel_music_order_editor() {
   init_custom_list();
 }
 
+function clear_music_order_drop_marker() {
+  var marker = music_order_editor_state.dropMarker;
+  if (marker) marker.classList.remove('is-drop-before', 'is-drop-after');
+  music_order_editor_state.dropMarker = null;
+}
+
+function mark_music_order_drop_target(row, placeAfter) {
+  if (!row || row === music_order_editor_state.dropMarker && row.classList.contains(placeAfter ? 'is-drop-after' : 'is-drop-before')) return;
+  clear_music_order_drop_marker();
+  row.classList.add(placeAfter ? 'is-drop-after' : 'is-drop-before');
+  music_order_editor_state.dropMarker = row;
+}
+
+function stop_music_order_drag_scroll() {
+  if (music_order_editor_state.dragScrollFrame) {
+    window.cancelAnimationFrame(music_order_editor_state.dragScrollFrame);
+  }
+  var scroller = music_order_editor_state.dragScroller;
+  if (scroller) scroller.classList.remove('is-order-dragging', 'is-order-scroll-up', 'is-order-scroll-down');
+  music_order_editor_state.dragScrollFrame = 0;
+  music_order_editor_state.dragScrollTime = 0;
+  music_order_editor_state.dragClientY = null;
+  music_order_editor_state.dragScroller = null;
+  document.removeEventListener('dragover', handle_music_order_document_dragover, true);
+  clear_music_order_drop_marker();
+}
+
+function finish_music_order_drag(row) {
+  if (row) row.classList.remove('is-dragging');
+  music_order_editor_state.dragMid = null;
+  stop_music_order_drag_scroll();
+}
+
+function run_music_order_drag_scroll(timestamp) {
+  music_order_editor_state.dragScrollFrame = 0;
+  var scroller = music_order_editor_state.dragScroller;
+  var clientY = music_order_editor_state.dragClientY;
+  if (music_order_editor_state.dragMid === null || !scroller || !scroller.isConnected || !Number.isFinite(clientY)) return;
+
+  var rect = scroller.getBoundingClientRect();
+  var edgeSize = Math.max(48, Math.min(88, rect.height * 0.22));
+  var direction = 0;
+  var strength = 0;
+  if (clientY < rect.top + edgeSize) {
+    direction = -1;
+    strength = Math.min(1, (rect.top + edgeSize - clientY) / edgeSize);
+  } else if (clientY > rect.bottom - edgeSize) {
+    direction = 1;
+    strength = Math.min(1, (clientY - (rect.bottom - edgeSize)) / edgeSize);
+  }
+
+  scroller.classList.toggle('is-order-scroll-up', direction < 0);
+  scroller.classList.toggle('is-order-scroll-down', direction > 0);
+  if (!direction) {
+    music_order_editor_state.dragScrollTime = 0;
+    return;
+  }
+
+  var previousTime = music_order_editor_state.dragScrollTime || timestamp;
+  var elapsed = Math.min(34, Math.max(8, timestamp - previousTime));
+  music_order_editor_state.dragScrollTime = timestamp;
+  var previousScrollTop = scroller.scrollTop;
+  var pixelsPerSecond = 180 + 760 * strength * strength;
+  scroller.scrollTop += direction * pixelsPerSecond * elapsed / 1000;
+  if (scroller.scrollTop !== previousScrollTop) {
+    music_order_editor_state.dragScrollFrame = window.requestAnimationFrame(run_music_order_drag_scroll);
+  }
+}
+
+function schedule_music_order_drag_scroll() {
+  if (!music_order_editor_state.dragScrollFrame) {
+    music_order_editor_state.dragScrollFrame = window.requestAnimationFrame(run_music_order_drag_scroll);
+  }
+}
+
+function handle_music_order_document_dragover(event) {
+  if (music_order_editor_state.dragMid === null || !music_order_editor_state.dragScroller) return;
+  event.preventDefault();
+  music_order_editor_state.dragClientY = event.clientY;
+  schedule_music_order_drag_scroll();
+}
+
+function start_music_order_drag(row, event) {
+  stop_music_order_drag_scroll();
+  music_order_editor_state.dragMid = normalize_music_id(row && row.dataset.musicId);
+  music_order_editor_state.dragScroller = row && row.closest('.music-list-ol');
+  music_order_editor_state.dragClientY = event.clientY;
+  if (row) row.classList.add('is-dragging');
+  if (music_order_editor_state.dragScroller) music_order_editor_state.dragScroller.classList.add('is-order-dragging');
+  document.addEventListener('dragover', handle_music_order_document_dragover, true);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    // Firefox 需要实际的拖放数据才会持续派发 dragover。
+    event.dataTransfer.setData('text/plain', String(music_order_editor_state.dragMid));
+  }
+}
+
+function sync_music_order_row_positions(list) {
+  if (!list) return;
+  var rows = list.querySelectorAll('.music-list[data-music-id]');
+  Array.prototype.forEach.call(rows, function(row, index) {
+    var number = row.querySelector('.music-track-index');
+    if (number) number.innerText = index + 1;
+    var input = row.querySelector('.music-track-reorder-tools input[type="number"]');
+    if (input) {
+      input.max = String(rows.length);
+      input.value = String(index + 1);
+    }
+  });
+}
+
 function move_music_order_item(musicId, targetIndex) {
   if (music_order_editor_state.saving) return;
   musicId = normalize_music_id(musicId);
-  targetIndex = Math.max(0, Math.min(active_list.length - 1, Number(targetIndex)));
   var sourceIndex = active_list.map(Number).indexOf(musicId);
+  targetIndex = Number(targetIndex);
+  if (Number.isInteger(targetIndex)) targetIndex = Math.max(0, Math.min(active_list.length - 1, targetIndex));
   if (musicId === null || sourceIndex < 0 || !Number.isInteger(targetIndex) || sourceIndex === targetIndex) return;
+  var list = document.querySelector('#aplayer_list_active .music-list-ol');
+  var scrollTop = list ? list.scrollTop : 0;
   active_list.splice(sourceIndex, 1);
   active_list.splice(targetIndex, 0, musicId);
   music_list_all[current_list] = active_list.slice();
-  init_custom_list();
+
+  // 仅移动已有行，保留滚动位置、已解码封面和当前拖放状态。
+  var row = list && Array.prototype.find.call(list.children, function(item) {
+    return normalize_music_id(item.dataset.musicId) === musicId;
+  });
+  if (!list || !row || list.children.length !== active_list.length) {
+    stop_music_order_drag_scroll();
+    init_custom_list();
+    var rebuiltList = document.querySelector('#aplayer_list_active .music-list-ol');
+    if (rebuiltList) rebuiltList.scrollTop = scrollTop;
+    return;
+  }
+  row.remove();
+  list.insertBefore(row, list.children[targetIndex] || null);
+  sync_music_order_row_positions(list);
+  list.scrollTop = scrollTop;
 }
 
 function save_music_order_editor() {
@@ -3969,23 +4110,30 @@ function init_custom_list() {
       li.draggable = true;
       li.classList.add('is-reordering');
       li.addEventListener('dragstart', function(event) {
-        music_order_editor_state.dragMid = normalize_music_id(event.currentTarget.dataset.musicId);
-        event.currentTarget.classList.add('is-dragging');
-        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+        start_music_order_drag(event.currentTarget, event);
       });
       li.addEventListener('dragend', function(event) {
-        event.currentTarget.classList.remove('is-dragging');
-        music_order_editor_state.dragMid = null;
+        finish_music_order_drag(event.currentTarget);
       });
       li.addEventListener('dragover', function(event) {
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        var rect = event.currentTarget.getBoundingClientRect();
+        mark_music_order_drop_target(event.currentTarget, event.clientY >= rect.top + rect.height / 2);
+      });
+      li.addEventListener('dragleave', function(event) {
+        if (!event.currentTarget.contains(event.relatedTarget)) clear_music_order_drop_marker();
       });
       li.addEventListener('drop', function(event) {
         event.preventDefault();
         var targetMid = normalize_music_id(event.currentTarget.dataset.musicId);
         var targetIndex = active_list.map(Number).indexOf(targetMid);
-        move_music_order_item(music_order_editor_state.dragMid, targetIndex);
+        var sourceIndex = active_list.map(Number).indexOf(music_order_editor_state.dragMid);
+        var rect = event.currentTarget.getBoundingClientRect();
+        var insertionIndex = targetIndex + (event.clientY >= rect.top + rect.height / 2 ? 1 : 0);
+        if (sourceIndex >= 0 && sourceIndex < insertionIndex) insertionIndex -= 1;
+        move_music_order_item(music_order_editor_state.dragMid, insertionIndex);
+        clear_music_order_drop_marker();
       });
       var reorderTools = document.createElement('div');
       reorderTools.className = 'music-track-reorder-tools';
