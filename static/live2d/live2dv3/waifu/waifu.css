@@ -14,6 +14,10 @@
     will-change: transform;
 }
 
+.waifu[hidden] {
+    display: none !important;
+}
+
 .waifu:hover,
 .waifu:focus-within,
 .waifu--move-mode,
@@ -84,9 +88,9 @@
     z-index: 5;
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 5px;
     align-items: center;
-    padding: 5px;
+    padding: 4px;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -116,8 +120,8 @@
     position: relative;
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
     margin: 0;
     padding: 0;
     color: #446483;
@@ -132,8 +136,8 @@
 }
 
 .waifu-tool__button svg {
-    width: 19px;
-    height: 19px;
+    width: 18px;
+    height: 18px;
     overflow: visible;
     fill: none;
     stroke: currentColor;

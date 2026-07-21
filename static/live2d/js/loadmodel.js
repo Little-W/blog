@@ -23,6 +23,11 @@
       !/Android|webOS|iPhone|iPod|iPad|BlackBerry/i.test(navigator.userAgent);
   }
 
+  function canRender() {
+    var effects = window.YusenEffects;
+    return canLoad() && (!effects || typeof effects.isEnabled !== "function" || effects.isEnabled("live2d"));
+  }
+
   function loadStyle(href) {
     if (document.querySelector('link[href="' + href + '"]')) return;
     var link = document.createElement("link");
@@ -154,6 +159,11 @@
       }
       loaderState.loaded = true;
       loaderState.status = "ready";
+      var widget = document.getElementById("waifu");
+      if (widget) widget.hidden = !canRender();
+      if (typeof window.__setLive2dRenderingEnabled === "function") {
+        window.__setLive2dRenderingEnabled(canRender());
+      }
     }).catch(function (error) {
       loaderState.status = "error";
       console.warn("[Live2D] The widget could not be initialized.", error);
@@ -181,9 +191,9 @@
   function handleEnvironmentChange() {
     if (!loaderState.started && canLoad()) scheduleLoading();
     var widget = document.getElementById("waifu");
-    if (widget) widget.style.display = canLoad() ? "flex" : "none";
+    if (widget) widget.hidden = !canRender();
     if (typeof window.__setLive2dRenderingEnabled === "function") {
-      window.__setLive2dRenderingEnabled(canLoad());
+      window.__setLive2dRenderingEnabled(canRender());
     }
   }
 

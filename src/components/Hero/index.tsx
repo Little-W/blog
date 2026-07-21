@@ -5,9 +5,6 @@ import Translate from '@docusaurus/Translate';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Link from '@docusaurus/Link';
 
-import HeroMain from '/img/atri.png';
-
-import JuejinIcon from '@site/static/svg/juejin.svg';
 import { Icon } from '@iconify/react';
 
 import styles from './styles.module.scss';
@@ -81,7 +78,16 @@ function Hero() {
         </animated.div>
       </div>
       <div className={styles.bloghome__image}>
-        < img src = "/img/atri.png"></img>
+        <img
+          src="/img/atri-1920.webp"
+          srcSet="/img/atri-960.webp 960w, /img/atri-1920.webp 1920w, /img/atri.webp 3840w"
+          sizes="(max-width: 1000px) 100vw, 58vw"
+          alt=""
+          width={3840}
+          height={3448}
+          fetchPriority="high"
+          decoding="async"
+        />
       </div>
     </animated.div>
   );

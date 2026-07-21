@@ -70,44 +70,14 @@ export class LAppDelegate {
     this._running = true;
     this._lastRenderTime = performance.now();
     LAppPal.resetTime();
-
-    const loop = (timestamp: number): void => {
-      if (!this._running || s_instance == null) return;
-      this._frameRequest = requestAnimationFrame(loop);
-
-      if (!this.canRender()) {
-        this._lastRenderTime = timestamp;
-        LAppPal.resetTime();
-        return;
-      }
-
-      const frameRateLimit = this.getEffectFrameRateLimit();
-      const targetFps = frameRateLimit
-        ? Math.min(this._activeFps, frameRateLimit)
-        : this._activeFps;
-      const frameInterval = 1000 / targetFps;
-      const elapsed = timestamp - this._lastRenderTime;
-      if (elapsed + 0.5 < frameInterval) return;
-
-      this._lastRenderTime = elapsed > frameInterval * 2
-        ? timestamp
-        : this._lastRenderTime + frameInterval;
-      LAppPal.updateTime();
-
-      const started = performance.now();
-      for (let i = 0; i < this._subdelegates.length; i++) {
-        this._subdelegates[i].update();
-      }
-      this.recordFrame(performance.now() - started);
-    };
-
-    this._frameRequest = requestAnimationFrame(loop);
+    this.scheduleFrame();
   }
 
   public release(): void {
     this._running = false;
     if (this._frameRequest) cancelAnimationFrame(this._frameRequest);
     this._frameRequest = 0;
+    this._pointerMovePending = false;
     this.releaseEventListeners();
     this.releaseSubdelegates();
     if (this._initialized) CubismFramework.dispose();
@@ -132,7 +102,18 @@ export class LAppDelegate {
   }
 
   public setRenderingEnabled(enabled: boolean): void {
-    this._environmentEnabled = !!enabled;
+    const nextEnabled = !!enabled;
+    if (this._environmentEnabled === nextEnabled) return;
+    this._environmentEnabled = nextEnabled;
+    if (!nextEnabled) {
+      if (this._frameRequest) cancelAnimationFrame(this._frameRequest);
+      this._frameRequest = 0;
+      this._pointerMovePending = false;
+    } else {
+      this._lastRenderTime = performance.now();
+      this.resetFrameSample();
+      this.scheduleFrame();
+    }
     LAppPal.resetTime();
   }
 
@@ -150,7 +131,11 @@ export class LAppDelegate {
       mouseTracking: this._mouseTrackingEnabled,
       idleMotion: this._idleMotionEnabled,
       renderedFrames: this._renderedFrames,
+      actualFps: Math.round(this._actualFps * 10) / 10,
       averageFrameCost: Math.round(this._averageFrameCost * 100) / 100,
+      frameBudgetUse: Math.round(
+        this._averageFrameCost / (1000 / this._activeFps) * 1000
+      ) / 10,
       lowPowerProfile: this._lowPowerDevice,
       webgpuAvailable: !!(navigator as any).gpu,
       motion
@@ -178,6 +163,49 @@ export class LAppDelegate {
       !this._scrolling;
   }
 
+  private scheduleFrame(): void {
+    if (
+      !this._running ||
+      !this._environmentEnabled ||
+      this._frameRequest ||
+      s_instance == null
+    ) return;
+    this._frameRequest = requestAnimationFrame(this.onAnimationFrame);
+  }
+
+  private onAnimationFrame = (timestamp: number): void => {
+    this._frameRequest = 0;
+    if (!this._running || s_instance == null) return;
+
+    if (!this.canRender()) {
+      this._lastRenderTime = timestamp;
+      LAppPal.resetTime();
+      this.scheduleFrame();
+      return;
+    }
+
+    const frameRateLimit = this.getEffectFrameRateLimit();
+    const targetFps = frameRateLimit
+      ? Math.min(this._activeFps, frameRateLimit)
+      : this._activeFps;
+    const frameInterval = 1000 / targetFps;
+    const elapsed = timestamp - this._lastRenderTime;
+    if (elapsed + 0.5 >= frameInterval) {
+      if (this._pointerMovePending) this.flushPointerMove();
+      this._lastRenderTime = elapsed > frameInterval * 2
+        ? timestamp
+        : this._lastRenderTime + frameInterval;
+      LAppPal.updateTime();
+
+      const started = performance.now();
+      for (let i = 0; i < this._subdelegates.length; i++) {
+        this._subdelegates[i].update();
+      }
+      this.recordFrame(performance.now() - started);
+    }
+    this.scheduleFrame();
+  };
+
   private isMoveMode(): boolean {
     return !!(window as any).YusenLive2DControls?.isMoveMode?.();
   }
@@ -192,14 +220,26 @@ export class LAppDelegate {
   };
 
   private onPointerMoved = (event: PointerEvent): void => {
-    if (this.isMoveMode()) return;
-    if (this._mouseTrackingEnabled || this._pointerCaptured) {
-      this.markInteraction(1800);
-    }
+    if (
+      this.isMoveMode() ||
+      !this._environmentEnabled ||
+      document.hidden ||
+      (!this._mouseTrackingEnabled && !this._pointerCaptured)
+    ) return;
+    this._pendingPointerX = event.clientX;
+    this._pendingPointerY = event.clientY;
+    this._pointerMovePending = true;
+  };
+
+  private flushPointerMove = (): void => {
+    this._pointerMovePending = false;
+    if (!this._environmentEnabled || document.hidden || this.isMoveMode()) return;
+    const clientX = this._pendingPointerX;
+    const clientY = this._pendingPointerY;
     for (const subdelegate of this._subdelegates) {
       subdelegate.onPointMoved(
-        event.clientX,
-        event.clientY,
+        clientX,
+        clientY,
         this._mouseTrackingEnabled
       );
     }
@@ -216,6 +256,7 @@ export class LAppDelegate {
 
   private onPointerEnded = (event: PointerEvent): void => {
     if (!this._pointerCaptured || this.isMoveMode()) return;
+    if (this._pointerMovePending) this.flushPointerMove();
     this._pointerCaptured = false;
     this.markInteraction(4000);
     for (const subdelegate of this._subdelegates) {
@@ -233,7 +274,10 @@ export class LAppDelegate {
 
   private onVisibilityChange = (): void => {
     LAppPal.resetTime();
-    if (!document.hidden) this.markInteraction(1000);
+    if (!document.hidden) {
+      this.resetFrameSample();
+      this.markInteraction(1000);
+    }
   };
 
   private onScroll = (): void => {
@@ -242,6 +286,7 @@ export class LAppDelegate {
     this._scrollTimer = window.setTimeout(() => {
       this._scrolling = false;
       LAppPal.resetTime();
+      this.resetFrameSample();
     }, 110);
   };
 
@@ -289,14 +334,24 @@ export class LAppDelegate {
     this._frameCostTotal += cost;
     this._frameCostSamples++;
     if (this._frameCostSamples >= 60) {
+      const sampledAt = performance.now();
       this._averageFrameCost = this._frameCostTotal / this._frameCostSamples;
+      this._actualFps = this._frameCostSamples * 1000 /
+        Math.max(1, sampledAt - this._frameSampleStartedAt);
       if (this._averageFrameCost > 12 && this._activeFps > 24) {
         this._activeFps = 24;
       }
       this._frameCostTotal = 0;
       this._frameCostSamples = 0;
+      this._frameSampleStartedAt = sampledAt;
       this.updatePerformanceState();
     }
+  }
+
+  private resetFrameSample(): void {
+    this._frameCostTotal = 0;
+    this._frameCostSamples = 0;
+    this._frameSampleStartedAt = performance.now();
   }
 
   private updatePerformanceState(): void {
@@ -332,7 +387,10 @@ export class LAppDelegate {
   private _mouseTrackingEnabled = true;
   private _idleMotionEnabled = true;
   private _frameRequest = 0;
+  private _pointerMovePending = false;
   private _lastRenderTime = 0;
+  private _pendingPointerX = 0;
+  private _pendingPointerY = 0;
   private _scrollTimer = 0;
   private _pointerResetTimer = 0;
   private _intersectionObserver: IntersectionObserver = null;
@@ -342,4 +400,6 @@ export class LAppDelegate {
   private _frameCostTotal = 0;
   private _frameCostSamples = 0;
   private _averageFrameCost = 0;
+  private _actualFps = 0;
+  private _frameSampleStartedAt = performance.now();
 }

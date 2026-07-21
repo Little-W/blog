@@ -144,21 +144,24 @@ export class LAppView {
     );
   }
 
-  public onPointerTracked(pointX: number, pointY: number): void {
-    const canvas = this._subdelegate.getCanvas();
-    const rect = canvas.getBoundingClientRect();
+  public onPointerTracked(
+    pointX: number,
+    pointY: number,
+    canvasWidth: number,
+    canvasHeight: number
+  ): void {
     // This archived model used a face-relative 300--400px tracking range in
     // the Pixi renderer. Keep the R5 smoothing, but retain that responsiveness
     // instead of normalizing against almost the whole viewport. The centre is
     // aligned with the visible face after the compact-canvas layout offset.
-    const centerX = rect.width * 0.56;
-    const centerY = rect.height * 0.43;
+    const centerX = canvasWidth * 0.56;
+    const centerY = canvasHeight * 0.43;
     const rangeX = Math.max(
-      rect.width * 1.35,
+      canvasWidth * 1.35,
       Math.min(window.innerWidth * 0.26, 420)
     );
     const rangeY = Math.max(
-      rect.height * 0.95,
+      canvasHeight * 0.95,
       Math.min(window.innerHeight * 0.36, 360)
     );
     const viewX = (pointX - centerX) / rangeX;

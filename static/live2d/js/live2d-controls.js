@@ -27,7 +27,8 @@
     size: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5M3 8l6-6m12 6-6-6M3 16l6 6m12-6-6 6"/></svg>',
     tracking: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 13.5 9-6.1 1.2L9 19.4 5 3Z"/><path d="m13 13 4 6"/></svg>',
     idle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v6h-6"/><path d="m10 9 5 3-5 3V9Z"/></svg>',
-    tips: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9l-5 4v-15Z"/><path d="M8 9h8M8 13h5"/></svg>'
+    tips: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9l-5 4v-15Z"/><path d="M8 9h8M8 13h5"/></svg>',
+    hide: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"/><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 5.5 9 5.5a15.4 15.4 0 0 1-3 3.7M6.6 6.6C4.4 8.1 3 10.5 3 10.5S6.5 16 12 16c1 0 1.9-.2 2.7-.5"/></svg>'
   };
 
   function clamp(value, min, max) {
@@ -119,6 +120,7 @@
     createButton("tracking", icons.tracking, "鼠标跟踪", state.mouseTracking);
     createButton("idle", icons.idle, "自动播放待机动画", state.idleMotion);
     createButton("tips", icons.tips, "Tips 文本框", state.tips);
+    createButton("hide", icons.hide, "隐藏看板娘");
 
     var status = document.createElement("span");
     status.className = "waifu-tool__status";
@@ -158,6 +160,27 @@
       applyTipsVisibility();
       updateButtons();
       if (state.tips) announce("Tips 文本框已开启");
+    });
+    buttons.hide.addEventListener("click", function () {
+      var effects = window.YusenEffects;
+      if (effects && typeof effects.setEffectEnabled === "function") {
+        effects.setEffectEnabled("live2d", false);
+        return;
+      }
+      try {
+        var storageKey = effects && effects.storageKey || "yusen-effect-settings-v1";
+        var effectSettings = JSON.parse(localStorage.getItem(storageKey) || "{}") || {};
+        effectSettings.live2d = false;
+        localStorage.setItem(storageKey, JSON.stringify(effectSettings));
+        window.dispatchEvent(new CustomEvent("yusen:effects-settings-change", {
+          detail: effectSettings
+        }));
+      } catch (error) {
+        widget.hidden = true;
+        if (typeof window.__setLive2dRenderingEnabled === "function") {
+          window.__setLive2dRenderingEnabled(false);
+        }
+      }
     });
   }
 

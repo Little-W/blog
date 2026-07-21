@@ -252,6 +252,16 @@ const config = {
             'theme-transition.js', 'jquery.min.js', 'jsrender.min.js', 'aplayer.js', 'animate.js',
           ];
           return {
+            headTags: [
+              {
+                tagName: 'link',
+                attributes: {rel: 'preconnect', href: 'https://aifasthub.com', crossorigin: 'anonymous'},
+              },
+              {
+                tagName: 'link',
+                attributes: {rel: 'preconnect', href: 'https://bitbucket.org', crossorigin: 'anonymous'},
+              },
+            ],
             postBodyTags: [
               {
                 tagName: 'script',

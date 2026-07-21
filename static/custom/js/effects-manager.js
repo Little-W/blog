@@ -137,12 +137,42 @@
     document.documentElement.dataset.yusenBlur = settings.blur === false ? "off" : "on";
   }
 
+  function applyLive2DPreference() {
+    var enabled = isEnabled("live2d");
+    var widget = document.getElementById("waifu");
+    if (widget) {
+      widget.hidden = !enabled;
+      widget.setAttribute("aria-hidden", String(!enabled));
+    }
+    if (typeof window.__setLive2dRenderingEnabled === "function") {
+      window.__setLive2dRenderingEnabled(enabled);
+    }
+  }
+
+  function setEffectEnabled(name, enabled) {
+    if (!Object.prototype.hasOwnProperty.call(DEFAULTS, name) || name === "enabled") {
+      return false;
+    }
+    var nextSettings = Object.assign({}, settings);
+    nextSettings[name] = !!enabled;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSettings));
+    } catch (error) {
+      // Storage can be unavailable in privacy mode; keep the setting for this page.
+    }
+    window.dispatchEvent(new CustomEvent("yusen:effects-settings-change", {
+      detail: nextSettings
+    }));
+    return true;
+  }
+
   function applyRuntimeSettings(nextSettings) {
     settings = normalizeSettings(nextSettings);
     if (window.YusenEffects) {
       window.YusenEffects.settings = Object.assign({}, settings);
     }
     applyBlurPreference();
+    applyLive2DPreference();
     lastInteractionAt = Date.now();
     setLowPowerMode(false);
     armLowPowerTimer();
@@ -273,6 +303,7 @@
     isBlurEnabled: function() { return settings.blur !== false; },
     getComplexity: function() { return settings.complexity; },
     getEffectComplexity: getEffectComplexity,
+    setEffectEnabled: setEffectEnabled,
     requestAnimationFrame: requestEffectAnimationFrame,
     cancelAnimationFrame: cancelEffectAnimationFrame,
     loaded: loaded

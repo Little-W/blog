@@ -161,7 +161,8 @@ export class LAppSubdelegate {
 
     // 描画更新
     this._view.render();
-    gl.flush();
+    // The browser submits the default framebuffer before compositing. Calling
+    // flush here forces an extra command-queue handoff on every Live2D frame.
   }
 
   /**
@@ -289,8 +290,16 @@ export class LAppSubdelegate {
     clientY: number,
     trackingEnabled: boolean
   ): void {
-    const { x: localX, y: localY } = this.toLocalPoint(clientX, clientY);
-    if (trackingEnabled) this._view.onPointerTracked(localX, localY);
+    const localPoint = this.toLocalPoint(clientX, clientY);
+    const { x: localX, y: localY } = localPoint;
+    if (trackingEnabled) {
+      this._view.onPointerTracked(
+        localX,
+        localY,
+        localPoint.width,
+        localPoint.height
+      );
+    }
     if (this._captured) this._view.onTouchesMoved(localX, localY);
   }
 
@@ -330,11 +339,16 @@ export class LAppSubdelegate {
     return this._glManager.getGl().isContextLost();
   }
 
-  private toLocalPoint(clientX: number, clientY: number): { x: number; y: number } {
+  private toLocalPoint(
+    clientX: number,
+    clientY: number
+  ): { x: number; y: number; width: number; height: number } {
     const rect = this._canvas.getBoundingClientRect();
     return {
       x: clientX - rect.left,
-      y: clientY - rect.top
+      y: clientY - rect.top,
+      width: rect.width,
+      height: rect.height
     };
   }
 

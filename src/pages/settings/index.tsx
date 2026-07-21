@@ -133,30 +133,33 @@ const EFFECTS: Array<{
   },
 ];
 
+function normalizeSettings(value: Partial<EffectSettings> | null | undefined): EffectSettings {
+  const frameRate = Number(value?.frameRate);
+  const live2dFrameRate = Number(value?.live2dFrameRate);
+  const lowPowerTimeout = Number(value?.lowPowerTimeout);
+  const complexity = COMPLEXITY_OPTIONS.some((option) => option.value === value?.complexity)
+    ? value.complexity as Complexity
+    : DEFAULT_SETTINGS.complexity;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...value,
+    blur: value?.blur !== false,
+    frameRate: FRAME_RATE_OPTIONS.some((option) => option.value === frameRate)
+      ? frameRate as FrameRate
+      : DEFAULT_SETTINGS.frameRate,
+    live2dFrameRate: LIVE2D_FRAME_RATE_OPTIONS.some((option) => option.value === live2dFrameRate)
+      ? live2dFrameRate as Live2DFrameRate
+      : DEFAULT_SETTINGS.live2dFrameRate,
+    lowPowerTimeout: LOW_POWER_TIMEOUT_OPTIONS.some((option) => option.value === lowPowerTimeout)
+      ? lowPowerTimeout as LowPowerTimeout
+      : DEFAULT_SETTINGS.lowPowerTimeout,
+    complexity,
+  };
+}
+
 function readSavedSettings(): EffectSettings {
   try {
-    const value = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}');
-    const frameRate = Number(value?.frameRate);
-    const live2dFrameRate = Number(value?.live2dFrameRate);
-    const lowPowerTimeout = Number(value?.lowPowerTimeout);
-    const complexity = COMPLEXITY_OPTIONS.some((option) => option.value === value?.complexity)
-      ? value.complexity as Complexity
-      : DEFAULT_SETTINGS.complexity;
-    return {
-      ...DEFAULT_SETTINGS,
-      ...value,
-      blur: value?.blur !== false,
-      frameRate: FRAME_RATE_OPTIONS.some((option) => option.value === frameRate)
-        ? frameRate as FrameRate
-        : DEFAULT_SETTINGS.frameRate,
-      live2dFrameRate: LIVE2D_FRAME_RATE_OPTIONS.some((option) => option.value === live2dFrameRate)
-        ? live2dFrameRate as Live2DFrameRate
-        : DEFAULT_SETTINGS.live2dFrameRate,
-      lowPowerTimeout: LOW_POWER_TIMEOUT_OPTIONS.some((option) => option.value === lowPowerTimeout)
-        ? lowPowerTimeout as LowPowerTimeout
-        : DEFAULT_SETTINGS.lowPowerTimeout,
-      complexity,
-    };
+    return normalizeSettings(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}'));
   } catch {
     return {...DEFAULT_SETTINGS};
   }
@@ -173,6 +176,22 @@ export default function SettingsPage(): JSX.Element {
     setSettings(saved);
     setSavedSnapshot(JSON.stringify(saved));
     setReady(true);
+
+    const syncSettings = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<EffectSettings>>).detail;
+      const synchronized = detail ? normalizeSettings(detail) : readSavedSettings();
+      setSettings((current) => ({...current, live2d: synchronized.live2d}));
+      setSavedSnapshot(JSON.stringify(synchronized));
+    };
+    const syncStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY) syncSettings(event);
+    };
+    window.addEventListener('yusen:effects-settings-change', syncSettings);
+    window.addEventListener('storage', syncStorage);
+    return () => {
+      window.removeEventListener('yusen:effects-settings-change', syncSettings);
+      window.removeEventListener('storage', syncStorage);
+    };
   }, []);
 
   const enabledCount = useMemo(
