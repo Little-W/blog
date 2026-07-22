@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.5';
+const AGENT_RUNTIME_VERSION = '2026-07-23.6';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -1295,6 +1295,28 @@ function resolveDirectConversationIntent(message) {
     return {
       type: 'visibility-limit',
       reply: '看不到。我只能使用博客页面明确提供的页面和播放器状态，无法看到你的电脑桌面或其他窗口。',
+    };
+  }
+  const preferredName = requestedPreferredName(text);
+  if (preferredName && !/[?？]/u.test(text)) {
+    return {
+      type: 'preferred-name',
+      reply: /(?:改|还是|不用|旧称呼)/u.test(text)
+        ? '记住了喵～之后叫你' + preferredName + '，旧称呼不用了。'
+        : '好，之后叫你' + preferredName + '。',
+    };
+  }
+  const projectFocus = text.match(/(?:这个|该|当前)?项目主要在(?:验证|研究|处理|解决)\s*([^，。！？!?]{2,100})/u);
+  if (projectFocus) {
+    return {
+      type: 'project-focus',
+      reply: '明白，这个项目的重点是' + cleanText(projectFocus[1], 100) + '。',
+    };
+  }
+  if (/(?:目前|现在|暂时).{0,8}网络面板.{0,16}(?:没有|没).{0,8}(?:新的|新增)?报错/u.test(text)) {
+    return {
+      type: 'no-new-network-error',
+      reply: '至少目前没有新增报错，先继续观察。',
     };
   }
   if (/(?:这个|本)?博客.{0,8}(?:是不是|是否)?只有音乐|这里.{0,8}(?:是不是|是否)?只有音乐/u.test(text)) {

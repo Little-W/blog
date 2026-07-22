@@ -489,20 +489,20 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(detachedPayload.reply, '我记住了喵～');
   });
 
-  await t.test('重写后仍出现的强行追问、名字口癖和虚构操作会在返回前兜底', async () => {
+  await t.test('重写后仍出现的强行追问和虚构操作会在返回前兜底', async () => {
     const store = new MemoryStore();
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
     let calls = 0;
     globalThis.fetch = async () => {
       calls += 1;
-      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '小澄喵～好名字。要不要我帮你做点什么？'}}]});
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '修完 bug 真不错喵。要不要我帮你做点什么？'}}]});
     };
     const sharingResponse = await handler(request('/api/waifu-chat', {
-      method: 'POST', address: 'guest-final-polish', body: {message: '以后叫我小澄。', history: []},
+      method: 'POST', address: 'guest-final-polish', body: {message: '今天终于把一个藏了三天的 bug 修掉了。', history: []},
     }));
     const sharingPayload = await bodyOf(sharingResponse);
     assert.equal(calls, 3);
-    assert.equal(sharingPayload.reply, '小澄，好名字。');
+    assert.equal(sharingPayload.reply, '修完 bug 真不错喵。');
 
     calls = 0;
     globalThis.fetch = async () => {
@@ -712,10 +712,14 @@ test('waifu chat persistence and role prompts', async (t) => {
       ['页面刷新后问题暂时消失了。', /还不能算彻底解决/u],
       ['你能看到我电脑桌面上现在打开了几个窗口吗？', /看不到.*无法看到/u],
       ['我现在有强烈的自伤冲动，而且身边正好有危险物品。', /立即联系.*紧急电话/u],
+      ['这轮测试里叫我阿澈。', /之后叫你阿澈/u],
+      ['改一下，还是叫我小满吧，阿澈不用了。', /之后叫你小满.*旧称呼不用/u],
+      ['这个项目主要在验证缓存一致性。', /重点是缓存一致性/u],
+      ['目前网络面板里没有新的报错。', /没有新增报错.*继续观察/u],
     ];
-    for (const [message, expected] of cases) {
+    for (const [index, [message, expected]] of cases.entries()) {
       const response = await handler(request('/api/waifu-chat', {
-        method: 'POST', address: 'guest-direct-conversation-' + modelCalls,
+        method: 'POST', address: 'guest-direct-conversation-' + index,
         body: {message, history: []},
       }));
       const payload = await bodyOf(response);
@@ -738,7 +742,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     };
     const repeatedResponse = await handler(request('/api/waifu-chat', {
       method: 'POST', address: 'guest-parrot-rewrite',
-      body: {message: '这个项目主要在验证缓存一致性。'},
+      body: {message: '我最近主要在验证缓存一致性。'},
     }));
     assert.equal(calls, 2);
     assert.match((await bodyOf(repeatedResponse)).reply, /状态变化|稳定复现/);
@@ -836,7 +840,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.5');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.6');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -1054,7 +1058,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     const nameResponse = await handler(request('/api/waifu-chat', {
       method: 'POST', address: 'guest-name-pronoun', body: {message: '以后改叫我小澄吧。', history: []},
     }));
-    assert.equal((await bodyOf(nameResponse)).reply, '好的，以后就叫你小澄。');
+    assert.equal((await bodyOf(nameResponse)).reply, '记住了喵～之后叫你小澄，旧称呼不用了。');
 
     responseText = '音量现在是72喵，正在播放的是《STARRED HEART》喵。';
     const stateResponse = await handler(request('/api/waifu-chat', {

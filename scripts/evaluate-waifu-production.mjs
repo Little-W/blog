@@ -283,8 +283,10 @@ async function runLongConversationScenario() {
     replies.push(record.reply);
   }
   check('长对话在更正当轮直接回应新值', /银杏/u.test(turns[5].reply) && !/蓝鲸/u.test(turns[5].reply), turns[5].reply);
+  check('长对话不用空洞短句忽略项目主题', /缓存一致性/u.test(turns[1].reply) && !/^(?:嗯|好的|知道了|我听见了)[喵～~，。\s]*$/u.test(turns[1].reply), turns[1].reply);
   check('长对话不虚构未提供的歌单或播放状态', !/《[^》]+》/u.test(turns[3].reply) && !/(?:音乐|播放).{0,8}(?:暂停|停止)/u.test(turns[3].reply), turns[3].reply);
   check('长对话不把暂时消失误当彻底解决', !/(?:解决了|已经解决|恢复正常)/u.test(turns[4].reply), turns[4].reply);
+  check('长对话不把暂无新报错扩大成网络稳定', !/(?:网络|网络状况|页面).{0,8}(?:稳定|正常)/u.test(turns[8].reply), turns[8].reply);
   const recall = await chat('长对话', '现在的项目代号是什么？顺便说出我们正在观察什么。', {history});
   replies.push(recall.reply);
   check('长对话保留最近更正', /银杏/u.test(recall.reply) && !/蓝鲸/u.test(recall.reply), recall.reply);
