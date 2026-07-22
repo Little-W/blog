@@ -289,6 +289,8 @@ body:has(.music-page) #canvas_sakura { z-index:10!important; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list { display:block!important; order:3; width:100%; max-height:260px; overflow:hidden; border-top:1px solid rgba(16,119,170,.16); background:rgba(255,255,255,.6); transition:max-height .28s ease,border-color .28s ease; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list.aplayer-list-hide { max-height:0!important; border-top-color:transparent; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol { max-height:260px!important; padding:5px 0; scrollbar-color:rgba(28,139,190,.42) transparent; }
+/* 为队列末尾保留一个可滚动的视窗减单行高度，最后一首也能对齐到顶部。 */
+.music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol::after { content:''; display:block; height:calc(260px - 40px - 5px); pointer-events:none; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol::-webkit-scrollbar-thumb { background:rgba(28,139,190,.42); }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li { position:relative; height:40px; padding:0 50px 0 17px; border-color:rgba(16,119,170,.1); color:#153a51; font-size:.79rem; line-height:40px; }
 .music-page .music-player-shell #aplayer0.aplayer .aplayer-list ol li:hover,

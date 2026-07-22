@@ -5378,10 +5378,26 @@ function register_music_floating_lyric_player(player, button) {
 function install_stable_queue_switch(player) {
   if (!player || !player.list || player.list.__yusenStableSwitch) return;
   var list = player.list;
+  function align_queue_entry_to_top(index) {
+    var queue = player.template && player.template.listOl;
+    var entry = queue && queue.querySelectorAll("li")[index];
+    if (!queue || !entry) return;
+    // li 的 offsetParent 是整个播放器外壳，不是 ol，直接使用 offsetTop 会
+    // 多算播放器上方的封面和控制区高度。使用视口坐标与当前 scrollTop
+    // 换算为列表内容坐标。手机版播放器使用 CSS zoom，因此还需要除以实际
+    // 显示高度与布局高度的比例，避免每次只移动剩余距离的 75%。
+    var queueRect = queue.getBoundingClientRect();
+    var entryRect = entry.getBoundingClientRect();
+    var scaleY = queue.clientHeight > 0 ? queueRect.height / queue.clientHeight : 1;
+    if (!Number.isFinite(scaleY) || scaleY <= 0) scaleY = 1;
+    var target = queue.scrollTop + (entryRect.top - queueRect.top) / scaleY;
+    var maximum = Math.max(0, queue.scrollHeight - queue.clientHeight);
+    queue.scrollTop = Math.max(0, Math.min(target, maximum));
+  }
   // APlayer 1.10.1 每次切歌都会启动一个 500ms 的 scrollTop 动画，且动画无法
   // 取消。用户先手动滚动队列再连续点歌时，旧动画会把列表拉回上一首，随后新动画
-  // 又拉到新歌。改为一次无动画定位，队列只会朝本次选中的歌曲移动。
-  list.switch = function(index, options) {
+  // 又拉到新歌。改为一次无动画定位，并把当前曲目放在队列顶部。
+  list.switch = function(index) {
     if (index === undefined || !this.audios[index]) return;
     this.player.events.trigger("listswitch", { index: index });
     this.index = index;
@@ -5396,13 +5412,7 @@ function install_stable_queue_switch(player) {
     var entry = entries[index];
     if (entry) {
       entry.classList.add("aplayer-list-light");
-      var queue = this.player.template.listOl;
-      // 用户已经手动滚动到目标行时，点击不应再次把队列拉回中间。否则惯性滚动
-      // 与自动定位会让第一次点击看起来像“只滚动了列表”，需要第二次才能选歌。
-      if (!options || !options.preserveQueuePosition) {
-        var target = entry.offsetTop - Math.max(0, (queue.clientHeight - entry.offsetHeight) / 2);
-        queue.scrollTop = Math.max(0, Math.min(target, queue.scrollHeight - queue.clientHeight));
-      }
+      align_queue_entry_to_top(index);
     }
     this.player.setAudio(audio);
     if (this.player.lrc) this.player.lrc.switch(index);
@@ -5411,8 +5421,8 @@ function install_stable_queue_switch(player) {
   };
 
   // APlayer 1.10.1 在气泡阶段按显示序号处理点击，并且必定调用 switch() 的
-  // 自动滚动逻辑。使用捕获阶段接管队列行的点击：以实际 li 的索引选歌，并保留
-  // 用户刚刚滚出的可视位置。这样滚动停止后的第一次点击就会直接切歌。
+  // 自动滚动逻辑。使用捕获阶段接管队列行的点击，以实际 li 索引选歌；
+  // 滚动停止后的第一次点击就会直接切歌，然后将新曲目对齐到顶部。
   var queuePanel = player.template.list;
   var queueList = player.template.listOl;
   queuePanel.addEventListener("click", function(event) {
@@ -5432,9 +5442,16 @@ function install_stable_queue_switch(player) {
       player.toggle();
       return;
     }
-    list.switch(index, { preserveQueuePosition: true });
+    list.switch(index);
     player.play();
   }, true);
+  // 收起期间切歌后再展开队列时，APlayer 默认会按旧的 33px 行高
+  // 重新计算位置。覆盖 show，继续使用实际行坐标。
+  list.show = function() {
+    this.player.events.trigger("listshow");
+    this.player.template.list.classList.remove("aplayer-list-hide");
+    align_queue_entry_to_top(this.index);
+  };
   list.__yusenStableSwitch = true;
 }
 
