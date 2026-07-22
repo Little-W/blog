@@ -9,6 +9,7 @@
     "build:bili-catalog": "node scripts/build-bili-parser-catalog.mjs --out ../blog_static/netlify/functions/catalog.mjs",
     "validate:media-data": "python3 tools/validate_media_data.py",
     "test:waifu-chat": "node --test tests/waifu-chat.test.mjs",
+    "evaluate:waifu-chat": "node scripts/evaluate-waifu-dialogue.mjs",
     "prestart": "npm run build:live2d",
     "prebuild": "npm run build:live2d",
     "start": "docusaurus start",

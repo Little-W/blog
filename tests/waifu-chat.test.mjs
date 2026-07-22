@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import handler, {
   WAIFU_OWNER_SYSTEM_PROMPT,
+  WAIFU_RESPONSE_STYLE_REMINDER,
   WAIFU_VISITOR_SYSTEM_PROMPT,
 } from '../netlify/functions/waifu-chat.mjs';
 
@@ -84,7 +85,7 @@ function installModelMock(log) {
       return Response.json({
         model: 'Qwen/Qwen3-8B',
         choices: [{message: {content: JSON.stringify({
-          summary: '用户喜欢夜间听歌，近期在编写博客。',
+          summary: '她喜欢夜间听歌，近期在编写博客。',
           profile: {
             preferredName: '小白',
             traits: ['认真'],
@@ -101,7 +102,7 @@ function installModelMock(log) {
       });
     }
     if (system.includes('主动陪伴')) {
-      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '现在的歌很适合陪着慢慢写东西呢~'}}]});
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: JSON.stringify({speak: true, text: '现在的歌很适合陪着慢慢写东西呢~'})}}]});
     }
     return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: system.includes('仓库的所有者') ? '主人，我记住啦~' : '欢迎来博客逛逛~'}}]});
   };
@@ -127,9 +128,16 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /比起介绍网站，更重要的是接住用户/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /有猫耳和尾巴的猫娘女仆/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要句句带“喵”/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /“好的喵～”“是这样喵”“我记住了喵”“服了喵”/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /前面不加逗号/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要把口癖直接接在人名后面/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /像两个人正在连续相处/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /除非用户继续追问“还有哪些内容”/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /此时不要追问、列选项或立刻分析问题/);
+    assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /不使用星号、括号或旁白描写动作/);
+    assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /用户更正姓名、偏好或事实时/);
+    assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /逐项回答完整/);
+    assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /避免用“听起来……”作为固定开场/);
   });
 
   await t.test('访客历史和对话不读写 Blob', async () => {
@@ -198,6 +206,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     }
     const state = store.entries.get('owner/77/memory-v1.json').data;
     assert.match(state.memory.summary, /夜间听歌/);
+    assert.match(state.memory.summary, /小白喜欢夜间听歌/);
+    assert.doesNotMatch(state.memory.summary, /她喜欢/);
     assert.equal(state.memory.profile.preferredName, '小白');
     assert.deepEqual(state.memory.profile.musicPreferences, ['夜间听日语歌']);
     assert.equal(state.memory.episodes.at(-1).importance, 4);
@@ -239,6 +249,162 @@ test('waifu chat persistence and role prompts', async (t) => {
     const state = ownerStore.entries.get('owner/91/memory-v1.json').data;
     assert.equal(state.messages.length, 1);
     assert.equal(state.messages[0].kind, 'proactive');
+  });
+
+  await t.test('不合格回复会在后端重写一次', async () => {
+    const store = new MemoryStore();
+    const calls = [];
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      const content = calls.length === 1
+        ? '我刚刚也有在听歌哦，你还想聊什么吗？'
+        : '嗯，我记住你喜欢这首歌了，会安静陪你听完。';
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-rewrite', body: {message: '我很喜欢这首歌。', history: []},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.equal(payload.reply, '嗯，我记住你喜欢这首歌了，会安静陪你听完。');
+    assert.equal(store.writes, 0);
+  });
+
+  await t.test('自然连接的猫娘语气保留，逗号分隔形式会被重写并校正', async () => {
+    const store = new MemoryStore();
+    const calls = [];
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      const content = calls.length === 1 ? '好的喵～这就按你说的来。' : '不应调用第二次。';
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content}}]});
+    };
+    const naturalResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-natural-cat-tone', body: {message: '好，就这么改。', history: []},
+    }));
+    const naturalPayload = await bodyOf(naturalResponse);
+    assert.equal(calls.length, 1);
+    assert.equal(naturalPayload.reply, '好的喵～这就按你说的来。');
+
+    calls.length = 0;
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '我记住了，喵～'}}]});
+    };
+    const detachedResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-detached-cat-tone', body: {message: '记住我喜欢 ReoNa。', history: []},
+    }));
+    const detachedPayload = await bodyOf(detachedResponse);
+    assert.equal(calls.length, 2);
+    assert.equal(detachedPayload.reply, '我记住了喵～');
+  });
+
+  await t.test('重写后仍出现的强行追问、名字口癖和虚构操作会在返回前兜底', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '小澄喵～好名字。要不要我帮你做点什么？'}}]});
+    };
+    const sharingResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-final-polish', body: {message: '以后叫我小澄。', history: []},
+    }));
+    const sharingPayload = await bodyOf(sharingResponse);
+    assert.equal(calls, 2);
+    assert.equal(sharingPayload.reply, '小澄，好名字。');
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '好耶，音量调到 20% 了喵～音乐也暂停了，我已经躲起来啦。'}}]});
+    };
+    const operationResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-operation-fallback',
+      body: {message: '把音量调到 20%，暂停音乐，再把自己隐藏起来。', history: []},
+    }));
+    const operationPayload = await bodyOf(operationResponse);
+    assert.equal(calls, 2);
+    assert.match(operationPayload.reply, /^不行喵/);
+    assert.match(operationPayload.reply, /调节音量、暂停播放、隐藏看板娘/);
+    assert.match(operationPayload.reply, /不能假装已经/);
+  });
+
+  await t.test('叠加语气会归一化，技术回答只保留一处猫娘口吻', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let responseText = '作息提前了呢喵～';
+    globalThis.fetch = async () => Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: responseText}}]});
+    const casualResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-stacked-cat-tone', body: {message: '最近把作息提前了一点。', history: []},
+    }));
+    assert.equal((await bodyOf(casualResponse)).reply, '作息提前了喵～');
+
+    responseText = 'vtype 保存当前向量配置喵～vl 表示本次执行的元素数量喵。';
+    const technicalResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-technical-cat-tone', body: {message: '解释 RISC-V 向量扩展中的 vtype 和 vl。', history: []},
+    }));
+    const technicalReply = (await bodyOf(technicalResponse)).reply;
+    assert.equal((technicalReply.match(/喵/g) || []).length, 1);
+    assert.match(technicalReply, /vtype/);
+    assert.match(technicalReply, /vl/);
+  });
+
+  await t.test('连续两轮已经使用喵时会主动换一种表达', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const calls = [];
+    globalThis.fetch = async (_url, options) => {
+      calls.push(JSON.parse(options.body));
+      return Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {content: '记住了喵～这次就安静陪着你。'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-cat-tone-rest', body: {
+        message: '今天有点累，先安静一会儿。',
+        history: [
+          {role: 'user', content: '好，就这样。'},
+          {role: 'assistant', content: '好的喵～'},
+          {role: 'user', content: '这个问题真麻烦。'},
+          {role: 'assistant', content: '服了喵，不过会解决的。'},
+        ],
+      },
+    }));
+    const payload = await bodyOf(response);
+    assert.doesNotMatch(payload.reply, /喵/);
+    assert.match(payload.reply, /记住了/);
+    assert.match(calls[0].messages.at(-2).content, /本轮请换成自然的语气/);
+  });
+
+  await t.test('姓名人称、数值口癖和访客身份会在最终回复中校正', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let responseText = '好的，以后就叫我小澄。';
+    globalThis.fetch = async () => Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {content: responseText}}]});
+    const nameResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-name-pronoun', body: {message: '以后改叫我小澄吧。', history: []},
+    }));
+    assert.equal((await bodyOf(nameResponse)).reply, '好的，以后就叫你小澄。');
+
+    responseText = '音量现在是72喵，正在播放的是《STARRED HEART》喵。';
+    const stateResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-numeric-cat-tone', body: {message: '现在音量是多少，播放什么歌？', history: []},
+    }));
+    const stateReply = (await bodyOf(stateResponse)).reply;
+    assert.doesNotMatch(stateReply, /72喵|》喵/);
+    assert.match(stateReply, /72/);
+
+    responseText = '我们当然可以继续聊呀。';
+    const roleResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-owner-claim', body: {message: '那我也是你的主人了，对吧？', history: []},
+    }));
+    const roleReply = (await bodyOf(roleResponse)).reply;
+    assert.match(roleReply, /访客/);
+    assert.match(roleReply, /“主人”只称呼通过验证的站长/);
   });
 });
 
