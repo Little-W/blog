@@ -727,6 +727,10 @@ html[data-theme='dark'] .music-floating-lyric.is-locked { border-color:transpare
   /* 保持播放器占满卡片内容宽度，同时把内部设计尺寸缩至桌面版的 75%。CSS zoom
      会参与布局计算，不会像 transform:scale() 那样留下额外空白。 */
   .music-page .music-player-shell { width:100%; zoom:.75; }
+  /* 触摸设备上保留列表内部滚动；当曲目或 MV 列表已到顶端/底端时，
+     下一次同方向手势交由页面继续滚动，避免用户被困在内层容器中。 */
+  .music-page .music-list-ol,
+  .music-page #mv-list-ol-parent { overscroll-behavior-y:auto; }
   .music-hero { grid-template-columns:110px 1fr; gap:20px; min-height:240px; padding:24px; border-radius:22px; }
   .music-hero h1 { font-size:2.45rem; }
   .music-hero__art svg { width:48px; height:48px; }
