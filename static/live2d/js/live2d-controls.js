@@ -109,52 +109,17 @@
 
   function updateToolbarOrigin(rect) {
     if (!toolbar || !widget) return;
-    var minY = Number(toolbar.dataset.arcMinY);
-    var maxY = Number(toolbar.dataset.arcMaxY);
-    if (!isFinite(minY) || !isFinite(maxY)) return;
     rect = rect || widget.getBoundingClientRect();
-    var buttonRadius = 18;
     var viewportMargin = 8;
     var originY = rect.top + rect.height / 2;
-    var minimumOffset = viewportMargin - (originY + minY - buttonRadius);
-    var maximumOffset = window.innerHeight - viewportMargin - (originY + maxY + buttonRadius);
-    var offset = minimumOffset <= maximumOffset
-      ? clamp(0, minimumOffset, maximumOffset)
-      : (minimumOffset + maximumOffset) / 2;
-    toolbar.style.setProperty("--waifu-tool-origin-offset", Math.round(offset) + "px");
-  }
-
-  function layoutToolbarButtons(side) {
-    if (!toolbar || !widget) return;
-    var items = Array.prototype.slice.call(toolbar.querySelectorAll(".waifu-tool__button"));
-    if (!items.length) return;
-    var radius = clamp(widget.offsetHeight * 0.43, 108, 126);
-    var minimumSpacing = 39;
-    var span = clamp((items.length - 1) * minimumSpacing / radius * 180 / Math.PI, 118, 146);
-    var centerAngle = side === "right" ? 0 : 180;
-    var startAngle = side === "right" ? centerAngle - span / 2 : centerAngle + span / 2;
-    var direction = side === "right" ? 1 : -1;
-    var step = items.length > 1 ? span / (items.length - 1) : 0;
-    var positions = [];
-
-    toolbar.style.setProperty("--waifu-tool-radius", Math.round(radius) + "px");
-    toolbar.style.setProperty("--waifu-tool-count", String(items.length));
-    items.forEach(function (button, index) {
-      var angle = (startAngle + direction * step * index) * Math.PI / 180;
-      var x = Math.round(Math.cos(angle) * radius * 10) / 10;
-      var y = Math.round(Math.sin(angle) * radius * 10) / 10;
-      positions.push({x: x, y: y});
-      button.style.setProperty("--waifu-tool-x", x + "px");
-      button.style.setProperty("--waifu-tool-y", y + "px");
-      button.style.setProperty("--waifu-tool-open-delay", (index * 24) + "ms");
-      button.style.setProperty("--waifu-tool-close-delay", ((items.length - index - 1) * 16) + "ms");
-      button.setAttribute("aria-posinset", String(index + 1));
-      button.setAttribute("aria-setsize", String(items.length));
-    });
-    toolbar.dataset.arcMinY = String(Math.min.apply(null, positions.map(function (position) { return position.y; })));
-    toolbar.dataset.arcMaxY = String(Math.max.apply(null, positions.map(function (position) { return position.y; })));
-    toolbar.dataset.arcReady = "true";
-    updateToolbarOrigin();
+    var toolbarHeight = toolbar.offsetHeight || 180;
+    var halfHeight = toolbarHeight / 2;
+    var minimumCenter = viewportMargin + halfHeight;
+    var maximumCenter = window.innerHeight - viewportMargin - halfHeight;
+    var targetY = minimumCenter <= maximumCenter
+      ? clamp(originY, minimumCenter, maximumCenter)
+      : window.innerHeight / 2;
+    toolbar.style.setProperty("--waifu-tool-origin-offset", Math.round(targetY - originY) + "px");
   }
 
   function createToolbar() {
@@ -180,7 +145,7 @@
     buttons.chat.setAttribute("aria-expanded", "false");
     createButton("tips", icons.tips, "Tips 文本框", state.tips);
     createButton("hide", icons.hide, "隐藏看板娘");
-    layoutToolbarButtons(widget.dataset.toolbarSide === "right" ? "right" : "left");
+    updateToolbarOrigin();
 
     var status = document.createElement("span");
     status.className = "waifu-tool__status";
@@ -393,13 +358,8 @@
     if (!widget) return;
     var rect = widget.getBoundingClientRect();
     var nextSide = rect.left < window.innerWidth * 0.42 ? "right" : "left";
-    var sideChanged = widget.dataset.toolbarSide !== nextSide;
     widget.dataset.toolbarSide = nextSide;
-    if (sideChanged || forceLayout || !toolbar || toolbar.dataset.arcReady !== "true") {
-      layoutToolbarButtons(nextSide);
-    } else {
-      updateToolbarOrigin(rect);
-    }
+    updateToolbarOrigin(rect);
   }
 
   function setMoveMode(enabled) {
