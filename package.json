@@ -11,6 +11,7 @@
     "validate:media-data": "python3 tools/validate_media_data.py",
     "test:waifu-chat": "node --test tests/waifu-chat.test.mjs",
     "evaluate:waifu-chat": "node scripts/evaluate-waifu-dialogue.mjs",
+    "evaluate:waifu-production": "node scripts/evaluate-waifu-production.mjs",
     "prestart": "npm run build:live2d && npm run build:agent-index",
     "prebuild": "npm run build:live2d && npm run build:agent-index",
     "start": "docusaurus start",

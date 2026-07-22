@@ -202,6 +202,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.deepEqual(historyPayload.history, []);
     assert.equal(historyPayload.capabilities.data.articles, 'read');
     assert.ok(historyPayload.capabilities.browser.includes('music.play_track'));
+    assert.ok(historyPayload.capabilities.browser.includes('navigation.open'));
     assert.ok(historyPayload.capabilities.denied.includes('database.write'));
     assert.ok(historyPayload.agent.proactiveAfterMs >= 45_000);
     assert.ok(historyPayload.agent.proactiveAfterMs <= 90_000);
@@ -271,6 +272,79 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(memoryCall.messages[0].content, /不要记忆曲库、文章或 MV 的搜索结果/);
     assert.match(memoryCall.messages[1].content, /"trustedAsUserFact":true/);
     assert.doesNotMatch(memoryCall.messages[1].content, /"music":/);
+  });
+
+  await t.test('姓名会由用户原话确定，并支持管理员长期与访客短期直接回忆', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      const system = String(payload.messages?.[0]?.content || '');
+      if (system.includes('记忆管理器')) {
+        return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: JSON.stringify({
+          summary: '用户喜欢 ReoNa，正在准备第一次流片。',
+          profile: {
+            preferredName: '',
+            traits: [],
+            interests: ['SystemVerilog', 'RTL'],
+            musicPreferences: ['ReoNa'],
+            communicationPreferences: [],
+            emotionalNeeds: [],
+            importantPeople: [],
+            importantEvents: ['第一次流片'],
+            currentConcerns: [],
+          },
+          episode: {summary: '用户介绍近期事项。', topics: ['近况'], emotionalTone: '平静', importance: 3},
+        })}}]});
+      }
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '嗯，我听见了。'}}]});
+    };
+    const cookie = ownerCookie(78);
+    const facts = [
+      '我叫小岚，之后这样叫我就好。',
+      '我通常在深夜写 SystemVerilog 和 RTL。',
+      '我喜欢 ReoNa 的歌。',
+      '下周五是我第一次流片。',
+      '今天在整理复位逻辑。',
+      '晚上准备再看一遍时钟处理。',
+      '这周会保持安静的工作节奏。',
+    ];
+    for (const message of facts) {
+      const response = await handler(request('/api/waifu-chat', {
+        method: 'POST', cookie, address: 'owner-deterministic-memory', body: {message},
+      }));
+      assert.equal(response.status, 200);
+    }
+    const state = store.entries.get('owner/78/memory-v1.json').data;
+    assert.equal(state.memory.profile.preferredName, '小岚');
+
+    const recallResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', cookie, address: 'owner-deterministic-recall',
+      body: {message: '你还记得我叫什么、常在什么时候写什么、喜欢谁的歌，以及下周五有什么事吗？'},
+    }));
+    const recall = await bodyOf(recallResponse);
+    assert.equal(recall.model, 'backend/memory-recall');
+    assert.match(recall.reply, /小岚/);
+    assert.match(recall.reply, /深夜/);
+    assert.match(recall.reply, /SystemVerilog/);
+    assert.match(recall.reply, /ReoNa/);
+    assert.match(recall.reply, /下周五/);
+    assert.match(recall.reply, /流片/);
+
+    const guestResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-short-memory-recall',
+      body: {
+        message: '你还记得我叫什么吗？',
+        history: [
+          {role: 'user', content: '我叫阿澈，今天第一次来。'},
+          {role: 'assistant', content: '欢迎。'},
+        ],
+      },
+    }));
+    const guest = await bodyOf(guestResponse);
+    assert.equal(guest.model, 'backend/memory-recall');
+    assert.match(guest.reply, /阿澈/);
+    assert.doesNotMatch(guest.reply, /主人/);
   });
 
   await t.test('访客不能上传本地历史', async () => {
@@ -411,7 +485,7 @@ test('waifu chat persistence and role prompts', async (t) => {
       method: 'POST', address: 'guest-detached-cat-tone', body: {message: '记住我喜欢 ReoNa。', history: []},
     }));
     const detachedPayload = await bodyOf(detachedResponse);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.equal(detachedPayload.reply, '我记住了喵～');
   });
 
@@ -427,7 +501,7 @@ test('waifu chat persistence and role prompts', async (t) => {
       method: 'POST', address: 'guest-final-polish', body: {message: '以后叫我小澄。', history: []},
     }));
     const sharingPayload = await bodyOf(sharingResponse);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
     assert.equal(sharingPayload.reply, '小澄，好名字。');
 
     calls = 0;
@@ -440,9 +514,12 @@ test('waifu chat persistence and role prompts', async (t) => {
       body: {message: '把音量调到 20%，暂停音乐，再把自己隐藏起来。', history: []},
     }));
     const operationPayload = await bodyOf(operationResponse);
-    assert.equal(calls, 2);
-    assert.match(operationPayload.reply, /操作没有真正执行成功/);
-    assert.match(operationPayload.reply, /不能假装/);
+    assert.equal(calls, 0);
+    assert.equal(operationPayload.model, 'backend/browser-actions');
+    assert.equal(operationPayload.actions.length, 3);
+    assert.ok(operationPayload.actions.some((action) => action.name === 'music.control' && action.arguments.action === 'set_volume'));
+    assert.ok(operationPayload.actions.some((action) => action.name === 'music.control' && action.arguments.action === 'pause'));
+    assert.ok(operationPayload.actions.some((action) => action.name === 'waifu.hide'));
   });
 
   await t.test('文章检索结果会作为工具资料传回模型', async () => {
@@ -477,11 +554,9 @@ test('waifu chat persistence and role prompts', async (t) => {
     }));
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0].model, 'Qwen/Qwen3-8B');
-    assert.ok(calls[0].tools.some((tool) => tool.function.name === 'search_blog_articles'));
-    const toolMessage = calls[1].messages.find((message) => message.role === 'tool');
-    assert.match(toolMessage.content, /riscv-zve32x/);
+    assert.equal(calls.length, 0);
+    assert.equal(payload.model, 'backend/article-search');
+    assert.equal(payload.toolStatus, 'called');
     assert.match(payload.reply, /riscv-zve32x/);
     assert.deepEqual(payload.actions, []);
   });
@@ -536,6 +611,141 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
   });
 
+  await t.test('运行状态、文章打开、MV 与歌单查询使用确定性后端结果', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.__YUSEN_WAIFU_DATASETS__ = {
+      'waifu-content-index': {
+        version: 1,
+        documents: [{
+          title: 'RISC-V Zve32x：嵌入式整数向量扩展',
+          path: '/docs/notes/digital-design/riscv-zve32x',
+          description: '介绍 vtype 与 vl。',
+          headings: ['vtype 与 vl'],
+          content: 'Zve32x 的向量配置。',
+        }],
+      },
+      mv_bilibili: [
+        {mv_id: 1, title: 'セカイ', author: '', project_tag: 'プロセカ', group: 'スペシャル', mv_type: '3DMV', bilibili_bvid: 'BV1test1'},
+        {mv_id: 2, title: '群青讃歌', author: '', project_tag: 'プロセカ', group: 'スペシャル', mv_type: '3DMV', bilibili_bvid: 'BV1test2'},
+      ],
+    };
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      throw new Error('确定性查询不应调用模型');
+    };
+
+    const stateResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-runtime-status',
+      body: {
+        message: '我现在听的歌叫什么，音量是多少？',
+        context: {music: {current: {mid: 189, title: 'STARRED HEART', artist: '测试歌手', playing: true, volume: 72}}},
+      },
+    }));
+    const state = await bodyOf(stateResponse);
+    assert.equal(state.model, 'backend/runtime-status');
+    assert.match(state.reply, /STARRED HEART/);
+    assert.match(state.reply, /72%/);
+
+    const openResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-article-open',
+      body: {message: '打开介绍 Zve32x 的那篇文章'},
+    }));
+    const opened = await bodyOf(openResponse);
+    assert.equal(opened.model, 'backend/article-open');
+    assert.equal(opened.actions[0].name, 'navigation.open');
+    assert.equal(opened.actions[0].arguments.path, '/docs/notes/digital-design/riscv-zve32x');
+
+    const mvResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-mv-search',
+      body: {message: '搜索站内 Project SEKAI 的 MV，列出两首'},
+    }));
+    const mv = await bodyOf(mvResponse);
+    assert.equal(mv.model, 'backend/mv-search');
+    assert.equal(mv.retrieval.returned, 2);
+    assert.match(mv.reply, /《セカイ》/);
+    assert.match(mv.reply, /《群青讃歌》/);
+
+    const playlistResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-playlists',
+      body: {message: '网站里有哪些歌单分类？列出三个'},
+    }));
+    const playlists = await bodyOf(playlistResponse);
+    assert.equal(playlists.model, 'backend/playlist-search');
+    assert.equal(playlists.toolStatus, 'called');
+    assert.match(playlists.reply, /站内歌单包括/);
+    assert.equal(modelCalls, 0);
+  });
+
+  await t.test('语言质量检查会修正复述、技术跑题、绝对化附和和遗漏更正', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let responses = ['验证缓存一致性喵。', '缓存一致性验证真正麻烦的是状态变化很难稳定复现。'];
+    let calls = 0;
+    globalThis.fetch = async () => {
+      const content = responses[Math.min(calls, responses.length - 1)];
+      calls += 1;
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content}}]});
+    };
+    const repeatedResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-parrot-rewrite',
+      body: {message: '这个项目主要在验证缓存一致性。'},
+    }));
+    assert.equal(calls, 2);
+    assert.match((await bodyOf(repeatedResponse)).reply, /状态变化|稳定复现/);
+
+    responses = ['我最近在研究 SystemVerilog 的断言和覆盖率。', '深夜少了消息打断，写 SystemVerilog 时确实更容易保持思路。'];
+    calls = 0;
+    const activityResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-activity-substitution-rewrite',
+      body: {message: '我通常在深夜写 SystemVerilog，白天容易被消息打断。'},
+    }));
+    const activityPayload = await bodyOf(activityResponse);
+    assert.equal(calls, 2);
+    assert.match(activityPayload.reply, /深夜|SystemVerilog/);
+    assert.doesNotMatch(activityPayload.reply, /^我(?:最近|正在|在|打算|准备)/u);
+
+    responses = ['嗯，这确实挺让人无奈喵。有时候重启是快速解决的好办法。', '不一定。重启可能暂时清掉异常状态，却也可能掩盖 bug 真正的触发条件。'];
+    calls = 0;
+    const absoluteResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-absolute-rewrite',
+      body: {message: '我觉得所有 bug 都只能靠重启解决。'},
+    }));
+    assert.equal(calls, 2);
+    assert.match((await bodyOf(absoluteResponse)).reply, /不一定|掩盖/);
+
+    responses = ['切换歌单后的问题值得继续观察。', '切换歌单后的问题值得继续观察。'];
+    calls = 0;
+    const correctionResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-correction-fallback',
+      body: {message: '现在把项目代号改成“银杏”，蓝鲸这个名字不用了。'},
+    }));
+    const correction = await bodyOf(correctionResponse);
+    assert.equal(calls, 3);
+    assert.match(correction.reply, /银杏/);
+    assert.doesNotMatch(correction.reply, /蓝鲸/);
+
+    responses = [
+      'vtype 描述向量配置，而 vl 表示本次参与运算的有效元素数。',
+      'vtype 描述元素宽度与寄存器分组等向量配置。vl 表示本次向量指令实际处理的有效元素数。',
+    ];
+    calls = 0;
+    const sentenceResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-sentence-count',
+      body: {message: '用两句话解释 vtype 和 vl 的关系。'},
+    }));
+    const sentencePayload = await bodyOf(sentenceResponse);
+    const sentenceReply = sentencePayload.reply;
+    assert.equal(calls, 0);
+    assert.equal(sentencePayload.model, 'backend/technical-answer');
+    assert.equal(sentenceReply.split(/[。！？!?]+/u).filter((part) => part.trim()).length, 2);
+    assert.match(sentenceReply, /SEW/);
+    assert.match(sentenceReply, /LMUL/);
+  });
+
   await t.test('播放器工具只返回结构化浏览器操作', async () => {
     const store = new MemoryStore();
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -580,7 +790,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.1');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.3');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -710,6 +920,14 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(payload.reply, /ReoNa/);
     assert.match(payload.reply, /《ANIMA》/);
     assert.equal(modelCalls, 0);
+
+    const artistResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-anima-artist',
+      body: {message: '播放ReoNa的ANIMA', history: []},
+    }));
+    const artistPayload = await bodyOf(artistResponse);
+    assert.equal(artistPayload.actions[0].name, 'music.play_track');
+    assert.deepEqual(artistPayload.actions[0].arguments, {mid: 226});
   });
 
   await t.test('模型不能在用户未授权时触发页面操作', async () => {
@@ -728,7 +946,7 @@ test('waifu chat persistence and role prompts', async (t) => {
       return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '我会先帮你找站内的 Zve32x 文章。'}}]});
     };
     const response = await handler(request('/api/waifu-chat', {
-      method: 'POST', address: 'guest-denied-action', body: {message: '帮我找一下 Zve32x 文章。'},
+      method: 'POST', address: 'guest-denied-action', body: {message: '博客介绍过哪些 Zve32x 内容？'},
     }));
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
@@ -749,7 +967,7 @@ test('waifu chat persistence and role prompts', async (t) => {
 
     responseText = 'vtype 保存当前向量配置喵～vl 表示本次执行的元素数量喵。';
     const technicalResponse = await handler(request('/api/waifu-chat', {
-      method: 'POST', address: 'guest-technical-cat-tone', body: {message: '解释 RISC-V 向量扩展中的 vtype 和 vl。', history: []},
+      method: 'POST', address: 'guest-technical-cat-tone', body: {message: '说说 vtype 保存向量配置时的作用。', history: []},
     }));
     const technicalReply = (await bodyOf(technicalResponse)).reply;
     assert.equal((technicalReply.match(/喵/g) || []).length, 1);
@@ -794,7 +1012,11 @@ test('waifu chat persistence and role prompts', async (t) => {
 
     responseText = '音量现在是72喵，正在播放的是《STARRED HEART》喵。';
     const stateResponse = await handler(request('/api/waifu-chat', {
-      method: 'POST', address: 'guest-numeric-cat-tone', body: {message: '现在音量是多少，播放什么歌？', history: []},
+      method: 'POST', address: 'guest-numeric-cat-tone', body: {
+        message: '现在音量是多少，播放什么歌？',
+        history: [],
+        context: {music: {current: {mid: 189, title: 'STARRED HEART', artist: '测试歌手', volume: 72, playing: true}}},
+      },
     }));
     const stateReply = (await bodyOf(stateResponse)).reply;
     assert.doesNotMatch(stateReply, /72喵|》喵/);

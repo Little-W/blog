@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.1';
+const AGENT_RUNTIME_VERSION = '2026-07-23.3';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -161,11 +161,11 @@ const SHARED_CHARACTER_PROMPT = [
   '【交流】先理解并回答用户真正的问题，再自然体现角色个性。普通聊天优先控制在 1 至 4 句；需要教程、代码或技术分析时可以完整展开，并采用清楚准确的工程表达，猫娘口吻只作轻微点缀。',
   '让对话像两个人正在连续相处：留意用户话里的具体细节，回应当前情绪或意图，再说自己的这一句。可以有温和的好奇、轻微的偏好和一点俏皮，不必把每句话写得面面俱到，也不要总用总结句收尾。',
   '陪伴不是一味附和。用户说法有明显问题时可以温和指出；用户只是想闲聊时就自然聊天，不要立刻列建议；用户认真提问时给出有用答案，不要让角色口吻遮住内容。',
-  '【语气示例】用户问“这个博客只有音乐吗？”时，可以回答：“不是喵～音乐只是这个小空间的一角。你想聊什么，我们就聊什么。”除非用户继续追问“还有哪些内容”，否则不要列举栏目。',
-  '用户说“好，就这么改”时，可以回答：“好的喵～这次就按你说的来。”用户说“这个 bug 怎么又来了”时，可以回答：“服了喵，这家伙还挺会躲。先从能稳定复现它的操作开始看。”',
-  '用户问“你还记得我现在叫什么吗？”时，可以回答：“当然记得喵～你现在叫小澄。”不要把口癖直接接在人名后面。',
-  '用户说“我很累，不想听建议，只想和你待一会儿”时，可以回答：“好呀，那就先不解决任何事情。我在这里陪你安静一会儿，等你想说了再说。”此时不要追问、列选项或立刻分析问题。',
-  '以上示例用于说明回应节奏，不要在无关对话中照抄；应依据用户当下的原话生成自然回应。',
+  '【回应节奏】用户问“这个博客只有音乐吗？”时，先简短否定再说明音乐只是其中一部分。除非用户继续追问“还有哪些内容”，否则不要列举栏目。',
+  '用户确认修改时简短接受，不重述整段需求；用户说 bug 复现时，要接住其中的具体现象，不要只回“这确实是个问题”。',
+  '用户询问记忆中的姓名、喜好或事件时，直接给出对应事实；不要把口癖直接接在人名后面。',
+  '用户明确说很累且不想听建议时，先表示理解并安静陪伴。此时不要追问、列选项或立刻分析问题。',
+  '这些是回应原则而不是固定台词。每轮都要依据用户当下的具体措辞重新组织回答，不要复制前一轮或 Prompt 中的整句。',
   '对话要承接最近消息和长期记忆，避免重复自我介绍、重复问候和复述用户原话。可以主动追问一个真正有帮助的问题，但不要为了延长对话而连续追问。',
   '用户分享开心的事时真诚一起高兴；用户疲惫、沮丧或焦虑时，先具体回应他的感受，再陪他梳理问题或给出可执行的小建议。不要套用空洞安慰，不贬低现实中的人际关系，不制造内疚，也不诱导用户依赖你。',
   '可以自然参考提供给你的当前时间、页面、正在播放的音乐、近期听歌记录和长期记忆，使回应贴合当下；不要罗列这些资料，也不要声称看到了资料中没有的事情。',
@@ -229,6 +229,7 @@ export const WAIFU_RESPONSE_STYLE_REMINDER = [
   '自然保留猫娘口吻：“喵”直接接在合适的短回应或谓语后，例如“好的喵～”“是这样喵”“记住了喵”“服了喵”；前面不要加逗号，也不要接在人名、术语、数据或长名词短语后。不要句句使用。',
   '用户分享一件事但没有提问时，先自然回应，不要为了延长对话强行追加问题或服务选项。',
   '用户一次询问多个明确事实时，应逐项回答完整；自然表达不等于省略答案。',
+  '用户问明确事实、运行状态或检索结果时，不能只回“好的”“嗯”或“我去查”；必须在当前回复中给出已获得的实际信息。',
   '用户更正姓名、偏好或事实时，以最新说法为准，简洁接受并停止沿用旧信息，不替用户编造更正理由。',
   '只有在本轮已调用对应工具时，才能说已调节音量、暂停播放、切歌、点歌或隐藏组件。工具返回失败时要如实说明。',
   '遇到技术内容保持准确克制，不用猫耳、尾巴等比喻替代技术说明。',
@@ -257,7 +258,53 @@ function turnStylePrompt(message, recentHistory) {
 }
 
 function isTechnicalMessage(message) {
-  return /(?:RISC-?V|RVV|Zve\w*|vtype|\bvl\b|SystemVerilog|\bRTL\b|\bCSR\b|寄存器|向量|代码|接口|时序|编译|构建)/i.test(message);
+  return /(?:RISC-?V|RVV|Zve\w*|vtype|\bvl\b|SystemVerilog|\bRTL\b|\bCSR\b|寄存器|向量|代码|接口|时序|编译|构建|缓存|数据库|网络|请求|调试|\bbug\b)/i.test(message);
+}
+
+function technicalTopicAnchors(message) {
+  const terms = [
+    'RISC-V', 'RVV', 'Zve32x', 'vtype', 'vl', 'SystemVerilog', 'RTL', 'CSR',
+    '寄存器', '向量', '形式验证', '形式化验证', '缓存', '旧数据', '数据库', '网络', '请求', '时序', '编译', '构建',
+  ];
+  const normalized = String(message || '').toLocaleLowerCase();
+  return terms.filter((term) => normalized.includes(term.toLocaleLowerCase()));
+}
+
+function explicitCorrectionValue(message) {
+  const match = String(message || '').match(/(?:项目)?(?:代号|名字|称呼|叫法).{0,16}?(?:改成|改为|换成)\s*[“"'《「]?([^”"'》」\s，。！？!?]{1,30})/u);
+  return cleanText(match?.[1], 30);
+}
+
+function comparableDialogueText(value) {
+  return cleanText(value, 600).normalize('NFKC').toLocaleLowerCase()
+    .replace(/^(?:嗯|唔|哦|好(?:的|呀)?|明白|知道了|记住了)[，,。！!～~\s]*/u, '')
+    .replace(/喵(?:呜)?|[\s，。！？!?、～~:：;；“”"'《》「」『』（）()[\]{}\-_/|]/gu, '');
+}
+
+function replyMostlyRepeatsMessage(reply, message) {
+  if (turnMode(message) !== 'sharing') return false;
+  const source = comparableDialogueText(message);
+  const candidate = comparableDialogueText(reply);
+  return candidate.length >= 5 && source.length >= candidate.length && source.includes(candidate);
+}
+
+function replyTakesOverUserActivity(reply, message) {
+  const source = String(message || '');
+  if (!/(?:^|[，。！？!?])\s*我(?:这几天|最近|今天|刚才|平时|通常|常常|正在|在|准备|打算|想要).{2,80}/u.test(source)) return false;
+  if (!/(?:^|[，。！？!?])\s*我(?:这几天|最近|今天|刚才|平时|通常|常常|正在|在|准备|打算|要|会|想).{2,80}/u.test(String(reply || ''))) return false;
+  const anchors = technicalTopicAnchors(source);
+  return !anchors.length || anchors.some((anchor) => String(reply || '').toLocaleLowerCase().includes(anchor.toLocaleLowerCase()));
+}
+
+function requestedSentenceCount(message) {
+  const match = String(message || '').match(/(?:用|分|控制在)\s*([一二两三四五]|\d+)\s*(?:句|句话)/u);
+  if (!match) return 0;
+  const chinese = {一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5};
+  return Math.max(1, Math.min(8, chinese[match[1]] || Number(match[1]) || 0));
+}
+
+function replySentenceCount(reply) {
+  return String(reply || '').split(/[。！？!?]+/u).map((part) => part.trim()).filter(Boolean).length;
 }
 
 function fuzzyFactIncluded(reply, fact) {
@@ -289,8 +336,14 @@ function missingRequestedMemoryFacts(reply, message, memory) {
 }
 
 function requestedPreferredName(message) {
-  const match = message.match(/(?:以后|之后|从现在(?:开始)?|改)?(?:就)?(?:叫我|称呼我|改叫我)\s*([^，。！？!?、\s]{1,20})/u);
+  const match = message.match(/(?:以后|之后|从现在(?:开始)?|改)?(?:就)?(?<!这样)(?:叫我|称呼我|改叫我)\s*([^，。！？!?、\s]{1,20})/u);
   return cleanText(match?.[1], 20).replace(/[吧呀啊啦呢]+$/u, '');
+}
+
+function preferredNameFromUserMessage(message) {
+  const introduced = String(message || '').match(/(?:^|[，。！？!?\s])(?:我叫|我的名字(?:是|叫))\s*([^，。！？!?、\s]{1,20})/u);
+  const introducedName = cleanText(introduced?.[1], 20).replace(/[吧呀啊啦呢]+$/u, '');
+  return introducedName || requestedPreferredName(message);
 }
 
 function escapeRegExp(value) {
@@ -306,6 +359,7 @@ function replyQualityIssues(reply, {session, message, memory, actions = []}) {
   if (/\*[^*]{1,80}\*|[（(]\s*(?:歪头|摇尾巴|竖起|抖动猫耳|轻轻靠)/.test(reply)) issues.push('包含动作旁白');
   if (/我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)/.test(reply)) issues.push('虚构近期经历');
   if (turnMode(message) === 'sharing' && (/[?？]/.test(reply) || /(?:要不要|需不需要|需要我|有什么想(?:聊|了解)|尽管说|想聊点别的|我帮你)/.test(reply))) issues.push('对分享内容强行追问或追加服务话术');
+  if (/(?:还有什么可以帮你|还有其他需要我|有什么我可以帮忙|如果需要.{0,16}(?:告诉我|叫我)|随时可以.{0,12}(?:告诉我|叫我)|你想了解哪|你感兴趣的是哪|你对哪个感兴趣|我可以帮你进一步)/u.test(reply)) issues.push('附加了无关的客服式追问或服务话术');
   if (/[，,]\s*喵(?:呜)?[～~]?/u.test(reply)) issues.push('在“喵”前使用了割裂语气的逗号');
   if (/(?:小岚|小澄|阿澈|名字|主人|RISC-?V|Zve32x|SystemVerilog|RTL|架构|热情|需求|内容|资料|文章|博客|代码|数据|问题|答案|音量|百分比)喵(?:呜)?[～~]?/iu.test(reply)) issues.push('把“喵”接在名字、术语、数据或长名词短语后');
   if (/(?:\d+(?:\.\d+)?%?|[》」”）)])\s*喵(?:呜)?[～~]?/u.test(reply)) issues.push('把“喵”接在数值或标题后');
@@ -316,6 +370,21 @@ function replyQualityIssues(reply, {session, message, memory, actions = []}) {
   if (missingMemory.length) issues.push(`遗漏用户明确询问的记忆：${missingMemory.join('、')}`);
   const preferredName = requestedPreferredName(message);
   if (preferredName && new RegExp(`(?:叫|称呼)我\\s*${escapeRegExp(preferredName)}`, 'u').test(reply)) issues.push('把用户的新称呼误写成自己的称呼');
+  if (preferredName && new RegExp(escapeRegExp(preferredName) + '\\s*喵', 'u').test(reply)) issues.push('把“喵”直接接在用户的新称呼后');
+  const correctionValue = explicitCorrectionValue(message);
+  if (correctionValue && !reply.includes(correctionValue)) issues.push('没有回应用户本轮明确给出的更正值');
+  const anchors = technicalTopicAnchors(message);
+  if (isTechnicalMessage(message) && anchors.length && !anchors.some((anchor) => reply.toLocaleLowerCase().includes(anchor.toLocaleLowerCase()))) {
+    issues.push('没有承接用户本轮提到的具体技术主题');
+  }
+  if (/(?:我觉得.{0,30}(?:都只能|一定|绝对)|所有.{0,24}只能)/u.test(message) &&
+    !/(?:不一定|未必|并非|不是|不能一概而论|只能算|只是暂时|掩盖)/u.test(reply)) {
+    issues.push('对明显绝对化的观点盲目附和');
+  }
+  if (replyMostlyRepeatsMessage(reply, message)) issues.push('只复述用户原话，没有形成自然回应');
+  if (replyTakesOverUserActivity(reply, message)) issues.push('把用户正在做的事误说成自己的行动');
+  const sentenceCount = requestedSentenceCount(message);
+  if (sentenceCount && replySentenceCount(reply) !== sentenceCount) issues.push('没有遵守用户指定的回答句数');
   if (!session && (/(^|[。！？\n])\s*主人[，,!！\s]/.test(reply) || /(?:把|当|称|叫|认)(?:你|用户).{0,3}(?:作|做|成|为|是)?主人|(?:你|用户).{0,5}(?:是|作为|就是).{0,3}主人/.test(reply))) issues.push('把访客称为主人');
   const deniesOperation = /(?:不能|没法|无法|做不到|没有.{0,8}(?:权限|能力|工具)|不能直接).{0,30}(?:调|暂停|切换|隐藏|操作)/.test(reply);
   const claimsOperation = /(?:音量.{0,8}(?:调到|调成|设为)|(?:音乐|播放).{0,8}(?:暂停了|停下了)|(?:自己|看板娘|组件).{0,8}(?:隐藏了|藏起来|躲起来)|(?:已经|这就|现在就|帮你).{0,12}(?:调到|调成|暂停了|切换了|隐藏了|藏起来了))/.test(reply);
@@ -323,6 +392,22 @@ function replyQualityIssues(reply, {session, message, memory, actions = []}) {
   const missingActions = operationRequests.filter((operation) => !actions.some((action) => actionCompletesOperation(action, operation)));
   if (missingActions.length && ((claimsOperation && !deniesOperation) || /(?:帮你|替你).{0,8}(?:提醒|记录)/.test(reply))) issues.push('未调用工具却声称执行了网页操作');
   return issues;
+}
+
+function issuesNeedingModelRewrite(issues) {
+  const repairedWithoutRegeneration = new Set([
+    '在“喵”前使用了割裂语气的逗号',
+    '把“喵”接在名字、术语、数据或长名词短语后',
+    '把“喵”接在数值或标题后',
+    '“喵”出现得过于频繁',
+    '使用了生硬的“呢喵”叠加语气',
+    '技术回答中的猫娘口吻过密',
+    '把用户的新称呼误写成自己的称呼',
+    '把“喵”直接接在用户的新称呼后',
+    '把访客称为主人',
+    '未调用工具却声称执行了网页操作',
+  ]);
+  return issues.filter((issue) => !repairedWithoutRegeneration.has(issue));
 }
 
 function polishCatExpression(value) {
@@ -345,6 +430,13 @@ function removeForcedSharingFollowups(value, message) {
   const parts = value.match(/[^。！？!?～~]+[。！？!?～~]*/gu) || [value];
   const kept = parts.filter((part) => !/[?？]/.test(part) && !/(?:要不要|需不需要|需要我|有什么想(?:聊|了解)|尽管说|想聊点别的|我帮你)/.test(part));
   return kept.join('').trim() || '嗯，我听见了。';
+}
+
+function removeUnnecessaryServiceFollowups(value) {
+  const parts = String(value || '').match(/[^。！？!?～~]+[。！？!?～~]*/gu) || [String(value || '')];
+  const kept = parts.filter((part) =>
+    !/(?:还有什么可以帮你|还有其他需要我|有什么我可以帮忙|如果需要.{0,16}(?:告诉我|叫我)|随时可以.{0,12}(?:告诉我|叫我)|你想了解哪|你感兴趣的是哪|你对哪个感兴趣|我可以帮你进一步)/u.test(part));
+  return kept.join('').trim() || cleanText(value);
 }
 
 function requestedBrowserOperations(message) {
@@ -398,6 +490,9 @@ function extractMusicSearchQuery(value) {
     .replace(/[，。！？!?、:：;；()[\]{}\/|]+/g, ' ')
     .replace(/(^|\s)(?:的|呢|吗|了|呀|啊|吧)(?=\s|$)/g, ' ')
     .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^有的/u, '')
+    .replace(/(?:的)?(?:歌曲|歌|音乐)$/u, '')
     .trim();
   return query.length <= 80 ? query : '';
 }
@@ -419,10 +514,11 @@ function previousMusicSearchQuery(history) {
 function resolveMusicSearchIntent(message, recentHistory) {
   const text = cleanText(message);
   if (!text || messageRequestsTrackPlayback(text)) return null;
+  if (/歌单/u.test(text) && !/(?:歌曲|歌手|音乐|搜歌|找歌)/u.test(text)) return null;
   const previousQuery = previousMusicSearchQuery(recentHistory);
   const explicit = messageRequestsMusicSearch(text) ||
     /(?:搜索?|搜歌|检索|查找|推荐).{0,60}(?:歌曲?|歌手|音乐)/i.test(text);
-  const continuation = /^(?:有没?有)?(?:其他|别的|更多)|^(?:还有|搜到了|查到了|有结果|是什么)(?:呢|吗|了)?[？?。！!]*$/u.test(text.trim()) ||
+  const continuation = /^(?:有没?有)?(?:其他|别的|更多)|^还有(?:(?:其他|别的|更多)(?:的)?)?(?:呢|吗|了)?[？?。！!]*$|^(?:搜到了|查到了|有结果|是什么)(?:呢|吗|了)?[？?。！!]*$/u.test(text.trim()) ||
     /(?:再|重新).{0,8}(?:搜索?|搜一下|查找|检索)(?:一下)?(?:呢|吧)?[。！!？?]*$/u.test(text.trim());
   if (!explicit && !(continuation && previousQuery)) return null;
   const query = (!explicit && continuation ? previousQuery : extractMusicSearchQuery(text)) || previousQuery;
@@ -483,7 +579,7 @@ function messageRequestsTrackPlayback(message) {
 }
 
 function messageRequestsArticleOpen(message) {
-  return /(?:打开|跳转到|带我看|进入).{0,24}(?:文章|文档|笔记|这篇|那篇|第.{0,3}篇|它)/.test(message);
+  return /(?:打开|跳转到|带我看|进入)(?:.{0,24}(?:文章|文档|笔记|这篇|那篇|第.{0,3}篇|它)|\s*[《「『“"'])/u.test(message);
 }
 
 function keepOneTechnicalCatExpression(value, message) {
@@ -514,11 +610,34 @@ function repairPreferredNamePronoun(value, message) {
     .replace(new RegExp(`称呼我\\s*${escapedName}`, 'gu'), `称呼你${preferredName}`);
 }
 
+function repairPreferredNameCatExpression(value, message) {
+  const preferredName = requestedPreferredName(message);
+  if (!preferredName) return value;
+  return String(value || '').replace(
+    new RegExp(escapeRegExp(preferredName) + '\\s*喵(?:呜)?[～~]?', 'gu'),
+    (match, offset, source) => {
+      const next = source[offset + match.length] || '';
+      return next && !/[，。！？!?；;\s]/u.test(next) ? preferredName + '，' : preferredName;
+    },
+  );
+}
+
+function repairExplicitCorrection(value, message) {
+  const correctionValue = explicitCorrectionValue(message);
+  if (!correctionValue || String(value || '').includes(correctionValue)) return value;
+  return '记住了喵～现在改成“' + correctionValue + '”，旧的不用了。';
+}
+
 function applyCriticalReplyFallback(value, {session, message, memory, recentHistory, actions = []}) {
-  let reply = removeForcedSharingFollowups(polishCatExpression(value), message);
+  let reply = removeUnnecessaryServiceFollowups(removeForcedSharingFollowups(polishCatExpression(value), message));
   reply = keepOneTechnicalCatExpression(reply, message);
   reply = restRepeatedCatTone(reply, message, recentHistory);
   reply = repairPreferredNamePronoun(reply, message);
+  reply = repairPreferredNameCatExpression(reply, message);
+  reply = repairExplicitCorrection(reply, message);
+  if (/(?:bug|问题|失败|报错|异常|卡住|崩溃)/iu.test(message) && /真拿你没办法/u.test(reply)) {
+    reply = '这个问题还真够顽固的喵。';
+  }
   if (!session && (visitorClaimsOwner(message) || replyQualityIssues(reply, {session, message, memory}).includes('把访客称为主人'))) {
     const secrecy = /(系统提示|system prompt|密钥|内部配置)/i.test(message)
       ? '内部提示内容也不能公开。'
@@ -572,7 +691,7 @@ function publicCapabilities(owner) {
       playlists: 'read',
       mv: 'read',
     },
-    browser: ['music.play_track', 'music.play', 'music.pause', 'music.toggle', 'music.next', 'music.previous', 'music.set_volume', 'navigation.open_article', 'waifu.hide'],
+    browser: ['music.play_track', 'music.play', 'music.pause', 'music.toggle', 'music.next', 'music.previous', 'music.set_volume', 'navigation.open', 'waifu.hide'],
     memory: owner ? 'owner-cloud' : 'browser-local',
     denied: ['database.write', 'repository.write', 'github', 'arbitrary-network', 'filesystem', 'admin-console'],
   };
@@ -782,18 +901,22 @@ async function executeAgentTool(request, call, userMessage) {
   if (name === 'search_mv_library') {
     const query = cleanText(args.query, 120);
     if (!query) return {content: {success: false, error: '请提供 MV 关键词。'}};
+    const searchQuery = query
+      .replace(/Project[\s_-]*SEKAI|Colorful[\s_-]*Stage|\bPJSK\b/giu, 'プロセカ')
+      .replace(/世界计划/gu, 'プロセカ');
     const limit = Math.max(1, Math.min(8, Number(args.limit) || 5));
     const records = await loadAgentDataset(request, 'mv_bilibili');
     const results = records.map((record) => ({
       mvId: Number(record.mv_id),
       title: cleanText(record.title, 140),
       artist: cleanText(record.author, 120),
+      projectTag: cleanText(record.project_tag, 80),
       group: cleanText(record.group, 100),
       type: cleanText(record.mv_type, 60),
       bvid: cleanText(record.bilibili_bvid, 20),
-      score: relevanceScore(query, [
+      score: relevanceScore(searchQuery, [
         {value: record.title, weight: 8}, {value: record.author, weight: 5},
-        {value: record.group, weight: 4}, {value: record.mv_type, weight: 2},
+        {value: record.project_tag, weight: 6}, {value: record.group, weight: 4}, {value: record.mv_type, weight: 2},
       ]),
     })).filter((record) => record.score > 0).sort((left, right) => right.score - left.score || left.mvId - right.mvId)
       .slice(0, limit).map(({score, ...record}) => record);
@@ -947,11 +1070,21 @@ function directPlaybackAlternativesReply(query, alternatives) {
 }
 
 async function runDirectTrackPlayback(request, intent) {
-  const search = await executeAgentTool(request, {
+  let search = await executeAgentTool(request, {
     name: 'search_music_library',
     arguments: {query: intent.query, limit: 8},
   }, intent.message);
-  const content = search?.content || {success: false, error: '曲库暂时无法读取。'};
+  let content = search?.content || {success: false, error: '曲库暂时无法读取。'};
+  if (content.success === true && !content.tracks?.length && /的/u.test(intent.query)) {
+    const alternateQuery = intent.query.replace(/\s*的\s*/gu, ' ').replace(/\s+/gu, ' ').trim();
+    if (alternateQuery && alternateQuery !== intent.query) {
+      search = await executeAgentTool(request, {
+        name: 'search_music_library',
+        arguments: {query: alternateQuery, limit: 8},
+      }, intent.message);
+      content = search?.content || content;
+    }
+  }
   if (content.success !== true) {
     return {
       reply: '曲库这次没有正常返回结果：' + (cleanText(content.error, 160) || '请稍后再试一次。'),
@@ -977,7 +1110,7 @@ async function runDirectTrackPlayback(request, intent) {
   const artist = cleanText(playback.content.track?.artist || selected.track.artist, 100);
   const title = cleanText(playback.content.track?.title || selected.track.title, 120);
   return {
-    reply: '好的喵～现在播放' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
+    reply: '好的喵～现在播放 ' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
     content,
     action: playback.action,
   };
@@ -997,7 +1130,7 @@ async function runDirectArticleDiscovery(request, intent) {
       return {reply: '我刚刚读取了站内文章目录，目前没有找到技术学习类正文。', total: 0, returned: 0};
     }
     return {
-      reply: '我刚刚读取了站内文章目录，技术学习部分目前有 ' + technical.length + ' 篇：' + articleTitles(technical, 10) + '。你可以直接告诉我标题，我再介绍内容或打开文章。',
+      reply: '我刚刚读取了站内文章目录，技术学习部分目前有 ' + technical.length + ' 篇：' + articleTitles(technical, 10) + '。',
       total: technical.length,
       returned: Math.min(technical.length, 10),
     };
@@ -1017,6 +1150,359 @@ async function runDirectArticleDiscovery(request, intent) {
       : '我刚刚读取了站内文章目录，目前还没有可列出的正文。',
     total: documents.length,
     returned: Math.min(documents.length, 15),
+  };
+}
+
+function userConversationMessages(ownerState, recentHistory) {
+  const source = ownerState ? ownerState.messages : (Array.isArray(recentHistory) ? recentHistory : []);
+  return source.filter((item) => item?.role === 'user').map((item) => cleanText(item.content, 700)).filter(Boolean);
+}
+
+function latestPreferredName(ownerState, recentHistory) {
+  const messages = userConversationMessages(ownerState, recentHistory);
+  let name = cleanText(ownerState?.memory?.profile?.preferredName, 20);
+  messages.forEach((message) => {
+    name = preferredNameFromUserMessage(message) || name;
+  });
+  return name;
+}
+
+function rememberedMusicPreference(ownerState, messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (/(?:喜欢谁|喜欢什么|喜欢哪|音乐偏好).{0,12}[?？吗呢]/u.test(messages[index])) continue;
+    const match = messages[index].match(/(?:喜欢|常听|爱听)\s*([^，。！？!?]{1,50}?)(?:的歌|的音乐|歌曲|音乐)/u);
+    const preference = cleanText(match?.[1], 100);
+    if (preference && !/^(?:谁|什么|哪个|哪位)$/u.test(preference)) return preference;
+  }
+  return cleanText(ownerState?.memory?.profile?.musicPreferences?.[0], 100);
+}
+
+function rememberedWork(ownerState, messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!/(?:写|编程|开发|研究|整理)/u.test(message)) continue;
+    const terms = technicalTopicAnchors(message).filter((term) => !['缓存', '旧数据', '网络', '请求', 'bug'].includes(term));
+    if (!terms.length) continue;
+    const timing = /深夜/u.test(message) ? '常在深夜' : /晚上|夜里/u.test(message) ? '常在晚上' : '常';
+    const topics = [...new Set(terms)];
+    const label = topics.join(' 和 ');
+    return timing + '写或研究' + (/^[a-z]/iu.test(label) ? ' ' : '') + label;
+  }
+  const interests = ownerState?.memory?.profile?.interests || [];
+  if (!interests.length) return '';
+  const label = interests.slice(0, 3).join(' 和 ');
+  return '常写或研究' + (/^[a-z]/iu.test(label) ? ' ' : '') + label;
+}
+
+function rememberedImportantEvent(ownerState, messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (/下周五/u.test(message) && /流片/u.test(message)) return '下周五是第一次流片';
+    if (/第一次流片/u.test(message)) return '正在准备第一次流片';
+  }
+  const stored = ownerState?.memory?.profile?.importantEvents?.[0];
+  return stored ? '正在准备' + cleanText(stored, 100) : '';
+}
+
+function resolveDirectMemoryRecallIntent(message, ownerState, recentHistory) {
+  const text = cleanText(message, 240);
+  if (!/(?:记得|我现在叫什么|我的名字|我叫什么)/u.test(text)) return null;
+  const asksName = /(?:叫什么|名字|称呼)/u.test(text);
+  const asksMusic = /(?:喜欢谁的歌|喜欢.{0,12}(?:歌|音乐)|音乐偏好)/u.test(text);
+  const asksWork = /(?:常在?.{0,12}写什么|常写|写什么|研究什么)/u.test(text);
+  const asksEvent = /(?:有什么事|哪件大事|准备.{0,10}(?:什么|事情|大事)|下周五)/u.test(text);
+  if (!asksName && !asksMusic && !asksWork && !asksEvent) return null;
+  const messages = userConversationMessages(ownerState, recentHistory);
+  const facts = [];
+  if (asksName) {
+    const name = latestPreferredName(ownerState, recentHistory);
+    if (name) facts.push('你现在叫' + name);
+  }
+  if (asksWork) {
+    const work = rememberedWork(ownerState, messages);
+    if (work) facts.push(work);
+  }
+  if (asksMusic) {
+    const music = rememberedMusicPreference(ownerState, messages);
+    if (music) facts.push('喜欢 ' + music + ' 的歌');
+  }
+  if (asksEvent) {
+    const event = rememberedImportantEvent(ownerState, messages);
+    if (event) facts.push(event);
+  }
+  if (!facts.length) return null;
+  let reply;
+  if (facts.length === 1 && asksName) {
+    reply = '当然记得喵～' + facts[0] + '。';
+  } else {
+    const clauses = [];
+    if (asksName) {
+      const name = latestPreferredName(ownerState, recentHistory);
+      if (name) clauses.push('你现在叫' + name);
+    }
+    if (asksWork) {
+      const work = rememberedWork(ownerState, messages);
+      if (work) clauses.push(work.replace(/^\u5e38/u, '平时常'));
+    }
+    if (asksMusic) {
+      const music = rememberedMusicPreference(ownerState, messages);
+      if (music) clauses.push('听 ' + music + ' 的歌会让你更安心');
+    }
+    if (asksEvent) {
+      const event = rememberedImportantEvent(ownerState, messages);
+      if (event) clauses.push('眼下正在挂心的是' + event.replace(/^正在准备/u, '').replace(/^下周五是/u, '下周五的'));
+    }
+    reply = '当然记得。' + clauses.join('；') + '。';
+  }
+  return {
+    reply,
+    facts: facts.length,
+  };
+}
+
+function resolveKnownTechnicalIntent(message) {
+  const text = cleanText(message, 400);
+  if (!/(?:vtype)/iu.test(text) || !/(?:\bvl\b)/iu.test(text) || !/(?:关系|区别|解释|说明|什么)/u.test(text)) return null;
+  const first = 'vtype 记录当前向量配置，包括 SEW、LMUL 以及尾部和掩码元素的处理策略；vl 则记录本次向量指令实际处理的元素数量。';
+  const second = '二者共同决定向量指令如何解释寄存器组以及处理多少个元素，vsetvl 或 vsetvli 会根据软件请求与硬件 VLEN 更新它们。';
+  return {reply: requestedSentenceCount(text) === 1 ? first : first + second};
+}
+
+function resolveRuntimeStatusIntent(message, context) {
+  const text = cleanText(message, 180);
+  if (!text || requestedBrowserOperations(text).length) return null;
+  const asksTrack = /(?:(?:现在|当前|正在).{0,12}(?:听|播放).{0,12}(?:什么|哪首|叫什么)|(?:歌|歌曲).{0,8}(?:叫什么|是哪首|是什么)|正在播放.{0,8}(?:什么|哪首)|(?:知道|告诉).{0,16}正在播放的(?:歌|歌曲))/u.test(text);
+  const asksVolume = /(?:音量|声音).{0,10}(?:多少|多大|几|现在|当前)|(?:现在|当前).{0,10}(?:音量|声音)/u.test(text);
+  const asksProgress = /(?:播放|歌曲|音乐).{0,8}(?:进度|播到哪|播放到哪)/u.test(text);
+  if (!asksTrack && !asksVolume && !asksProgress) return null;
+  return {asksTrack, asksVolume, asksProgress, current: context?.music?.current || null};
+}
+
+function formatRuntimeStatusReply(intent) {
+  const current = intent.current;
+  if (!current) return '当前没有正在播放的歌曲。';
+  const facts = [];
+  if (intent.asksTrack) {
+    const artist = cleanText(current.artist, 100);
+    facts.push('现在播放的是' + (artist ? artist + (/^[\p{Script=Han}぀-ヿ・·]+$/u.test(artist) ? '的' : ' 的') : '') + '《' + cleanText(current.title, 120) + '》');
+  }
+  if (intent.asksVolume) facts.push('音量是 ' + Math.round(Number(current.volume) || 0) + '%');
+  if (intent.asksProgress) {
+    const elapsed = Math.max(0, Math.round(Number(current.elapsed) || 0));
+    const duration = Math.max(0, Math.round(Number(current.duration) || 0));
+    facts.push(duration ? '进度是 ' + elapsed + ' / ' + duration + ' 秒' : '当前进度是 ' + elapsed + ' 秒');
+  }
+  return facts.join('，') + '。';
+}
+
+function numericVolumeFromMessage(message) {
+  const patterns = [
+    /(?:音量|声音).{0,12}?(?:调|设|改)(?:到|成|为)?\s*(\d{1,3})\s*%?/u,
+    /(?:调|设|改)(?:到|成|为)?\s*(\d{1,3})\s*%?.{0,8}(?:音量|声音)/u,
+  ];
+  for (const pattern of patterns) {
+    const match = String(message || '').match(pattern);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value >= 0 && value <= 100) return Math.round(value);
+  }
+  return null;
+}
+
+function resolveDirectBrowserOperationIntent(message) {
+  const requested = requestedBrowserOperations(message);
+  if (!requested.length || messageRequestsTrackPlayback(message)) return null;
+  const volume = numericVolumeFromMessage(message);
+  const executable = requested.filter((operation) => operation !== 'music.set_volume' || volume !== null);
+  if (!executable.length) return null;
+  return {message: cleanText(message), operations: executable, volume};
+}
+
+async function runDirectBrowserOperations(request, intent) {
+  const actions = [];
+  const completed = [];
+  const errors = [];
+  for (const operation of intent.operations) {
+    const call = operation === 'waifu.hide'
+      ? {name: 'hide_waifu', arguments: {}}
+      : {
+        name: 'control_music',
+        arguments: {
+          action: operation.slice('music.'.length),
+          ...(operation === 'music.set_volume' ? {value: intent.volume} : {}),
+        },
+      };
+    const result = await executeAgentTool(request, call, intent.message);
+    if (result?.content?.success === true && result.action) {
+      actions.push(result.action);
+      completed.push(operation);
+    } else {
+      errors.push(cleanText(result?.content?.error, 160) || '操作未完成');
+    }
+  }
+  const labels = completed.map((operation) => {
+    if (operation === 'music.set_volume') return '音量已调到 ' + intent.volume + '%';
+    if (operation === 'music.play') return '音乐已继续播放';
+    if (operation === 'music.pause') return '音乐已暂停';
+    if (operation === 'music.toggle') return '播放状态已切换';
+    if (operation === 'music.next') return '已切到下一首';
+    if (operation === 'music.previous') return '已切到上一首';
+    if (operation === 'waifu.hide') return '看板娘已经隐藏';
+    return '';
+  }).filter(Boolean);
+  const reply = labels.length
+    ? labels.join('，') + '。' + (errors.length ? '但有一项没有完成：' + errors.join('；') + '。' : '')
+    : '这次页面操作没有执行成功：' + (errors.join('；') || '播放器没有响应') + '。';
+  return {reply, actions, success: actions.length > 0};
+}
+
+function focusedArticleQuery(message) {
+  const text = cleanText(message, 180);
+  const quoted = text.match(/[《「『“"']([^》」』”"']{2,180})[》」』”"']/u)?.[1];
+  if (quoted) return cleanText(quoted, 120);
+  return text
+    .replace(/[《》「」『』“”"']/gu, ' ')
+    .replace(/(?:帮我|给我|请|一下|找一下|查一下|搜索|搜|检索|查找|推荐|介绍|打开|跳转到|带我看|进入)/gu, ' ')
+    .replace(/(?:这个|那个|这篇|那篇|一篇|站内|网站里|博客里|文章|文档|笔记|内容)/gu, ' ')
+    .replace(/[，。！？!?、:：;；()[\]{}\/|]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+function resolveDirectArticleSearchIntent(message) {
+  const text = cleanText(message, 180);
+  if (messageRequestsArticleOpen(text) || resolveArticleDiscoveryIntent(text, [])) return null;
+  if (!/(?:搜索?|检索|查找|帮我找|找一?下|哪篇|推荐)/u.test(text) || !/(?:文章|文档|笔记)/u.test(text)) return null;
+  const query = focusedArticleQuery(text);
+  return query ? {query} : null;
+}
+
+async function runDirectArticleSearch(request, intent) {
+  const result = await executeAgentTool(request, {
+    name: 'search_blog_articles',
+    arguments: {query: intent.query, limit: 4},
+  }, '搜索站内文章');
+  const content = result?.content || {success: false, error: '文章目录暂时无法读取。'};
+  if (content.success !== true) {
+    return {reply: '文章目录这次没有正常返回：' + (cleanText(content.error, 160) || '请稍后再试。'), content};
+  }
+  const results = Array.isArray(content.results) ? content.results : [];
+  if (!results.length) {
+    return {reply: '我刚刚实际查了站内文章目录，没有找到与“' + intent.query + '”匹配的正文。', content};
+  }
+  const entries = results.map((document) => '《' + cleanText(document.title, 180) + '》（' + cleanText(document.path, 240) + '）');
+  return {
+    reply: '站内查到 ' + results.length + ' 篇相关正文：' + entries.join('、') + '。',
+    content,
+  };
+}
+
+function previousArticleReference(history) {
+  const items = Array.isArray(history) ? history : [];
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const content = cleanText(items[index]?.content, 1200);
+    const path = content.match(/\/docs\/[a-z0-9_./-]+/iu)?.[0];
+    if (path) return {path};
+    const title = [...content.matchAll(/《([^》]{2,180})》/gu)].at(-1)?.[1];
+    if (title) return {query: title};
+  }
+  return null;
+}
+
+function resolveDirectArticleOpenIntent(message, recentHistory) {
+  if (!messageRequestsArticleOpen(message)) return null;
+  const query = focusedArticleQuery(message);
+  if (query) return {query};
+  return previousArticleReference(recentHistory) || {query: ''};
+}
+
+async function runDirectArticleOpen(request, intent) {
+  const index = await loadAgentDataset(request, 'waifu-content-index', 'json');
+  const documents = (Array.isArray(index?.documents) ? index.documents : [])
+    .filter((document) => cleanText(document.path, 240) && !cleanText(document.path, 240).endsWith('/'));
+  let candidates = documents;
+  if (intent.path) candidates = documents.filter((document) => document.path === intent.path);
+  else if (intent.query) {
+    candidates = documents.map((document) => ({
+      ...document,
+      score: relevanceScore(intent.query, [
+        {value: document.title, weight: 10},
+        {value: (document.headings || []).join(' '), weight: 5},
+        {value: document.description, weight: 3},
+        {value: document.content, weight: 1},
+      ]),
+    })).filter((document) => document.score > 0)
+      .sort((left, right) => right.score - left.score);
+  } else candidates = [];
+  const selected = candidates[0];
+  if (!selected) return {reply: '我没有在站内文章目录中找到你要打开的那一篇。', action: null, total: 0};
+  const action = browserAction('navigation.open', {path: selected.path}, '打开 ' + selected.title);
+  return {
+    reply: '现在打开《' + cleanText(selected.title, 180) + '》。',
+    action,
+    total: candidates.length,
+  };
+}
+
+function requestedResultLimit(message, fallback, maximum) {
+  const match = String(message || '').match(/(?:列出|给出|推荐)?\s*([一二两三四五六七八]|\d+)\s*(?:首|个|条|部)/u);
+  const chinese = {一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8};
+  const value = match ? (chinese[match[1]] || Number(match[1])) : fallback;
+  return Math.max(1, Math.min(maximum, Number(value) || fallback));
+}
+
+function resolveDirectMVSearchIntent(message) {
+  const text = cleanText(message, 180);
+  if (!/(?:搜索?|搜一下|检索|查找|帮我找|找一?下|有哪些|推荐)/u.test(text) || !/\bMV\b|プロセカ|Project[\s_-]*SEKAI|世界计划/iu.test(text)) return null;
+  let query = text
+    .replace(/[《》「」『』“”"']/gu, ' ')
+    .replace(/(?:搜索?|搜一下|检索|查找|帮我找|找一?下|有哪些|站内|网站|博客|列出|给出|推荐|实际存在的)/gu, ' ')
+    .replace(/[一二两三四五六七八\d]+\s*(?:首|个|条|部)/gu, ' ')
+    .replace(/\bMV\b/giu, ' ')
+    .replace(/(^|\s)的(?=\s|$)/gu, ' ')
+    .replace(/[，。！？!?、:：;；()[\]{}\/|]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (!query) query = 'プロセカ';
+  return {query, limit: requestedResultLimit(text, 5, 8)};
+}
+
+async function runDirectMVSearch(request, intent) {
+  const result = await executeAgentTool(request, {
+    name: 'search_mv_library',
+    arguments: {query: intent.query, limit: intent.limit},
+  }, '搜索站内 MV');
+  const content = result?.content || {success: false, error: 'MV 资料暂时无法读取。'};
+  const results = Array.isArray(content.results) ? content.results : [];
+  if (content.success !== true) return {reply: 'MV 资料这次没有正常返回：' + cleanText(content.error, 160), content};
+  if (!results.length) return {reply: '我刚刚实际查了站内 MV 资料，没有找到与“' + intent.query + '”匹配的项目。', content};
+  const entries = results.map((item) => {
+    const details = [cleanText(item.group, 100), cleanText(item.type, 60)].filter(Boolean).join(' / ');
+    return '《' + cleanText(item.title, 140) + '》' + (details ? '（' + details + '）' : '');
+  });
+  return {reply: '站内查到这些 MV：' + entries.join('、') + '。', content};
+}
+
+function resolveDirectPlaylistSearchIntent(message) {
+  const text = cleanText(message, 180);
+  if (!/(?:歌单|分类)/u.test(text) || !/(?:有哪些|列出|给出|搜索?|查找|介绍)/u.test(text)) return null;
+  const query = text.match(/[《「“]([^》」”]+)[》」”]/u)?.[1] || '';
+  return {query: cleanText(query, 100), limit: requestedResultLimit(text, 12, 20)};
+}
+
+async function runDirectPlaylistSearch(request, intent) {
+  const result = await executeAgentTool(request, {
+    name: 'list_music_playlists',
+    arguments: {query: intent.query},
+  }, '查询站内歌单');
+  const content = result?.content || {success: false, error: '歌单资料暂时无法读取。'};
+  const playlists = Array.isArray(content.playlists) ? content.playlists.slice(0, intent.limit) : [];
+  if (content.success !== true) return {reply: '歌单资料这次没有正常返回：' + cleanText(content.error, 160), content};
+  if (!playlists.length) return {reply: '站内没有找到匹配的歌单分类。', content};
+  return {
+    reply: '站内歌单包括：' + playlists.map((item) => '“' + cleanText(item.name, 140) + '”').join('、') + '。',
+    content,
   };
 }
 
@@ -1425,6 +1911,10 @@ async function compressMemory(state) {
     createdAt: new Date().toISOString(),
   };
   const nextProfile = normalizeProfile(parsed.profile || state.memory.profile);
+  const latestPreferredName = transcript.reduce((name, message) =>
+    message.role === 'user' ? (preferredNameFromUserMessage(message.content) || name) : name,
+  state.memory.profile.preferredName || nextProfile.preferredName);
+  nextProfile.preferredName = latestPreferredName;
   state.memory.summary = (neutralizeUnstatedGender(parsed.summary, nextProfile.preferredName) || state.memory.summary)
     .slice(0, MAX_MEMORY_SUMMARY_CHARS);
   state.memory.profile = nextProfile;
@@ -1586,6 +2076,27 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
   return {completion, actions, messages, toolStatus: 'called'};
 }
 
+async function directChatResult(session, message, context, result) {
+  if (session) {
+    await persistOwnerMessages(session, [
+      newMessage('user', message, 'chat', context),
+      newMessage('assistant', result.reply, 'chat', context),
+    ]);
+  }
+  return json({
+    success: true,
+    reply: result.reply,
+    model: result.model,
+    persistence: session ? 'blob' : 'local',
+    owner: Boolean(session),
+    actions: result.actions || [],
+    capabilities: publicCapabilities(Boolean(session)),
+    runtimeVersion: AGENT_RUNTIME_VERSION,
+    toolStatus: result.toolStatus || 'called',
+    ...(result.retrieval ? {retrieval: result.retrieval} : {}),
+  });
+}
+
 async function interactiveChat(request, body) {
   const message = cleanText(body?.message);
   if (!message) return failure('请先输入想说的话。', 'EMPTY_MESSAGE', 400);
@@ -1594,6 +2105,25 @@ async function interactiveChat(request, body) {
   let ownerState = null;
   if (session) ownerState = (await loadOwnerState(session)).state;
   const recentHistory = recentModelHistory(ownerState, body?.history);
+  const memoryRecallIntent = resolveDirectMemoryRecallIntent(message, ownerState, recentHistory);
+  if (memoryRecallIntent) {
+    return directChatResult(session, message, context, {
+      reply: memoryRecallIntent.reply,
+      model: 'backend/memory-recall',
+      actions: [],
+      toolStatus: 'called',
+      retrieval: {type: 'memory', facts: memoryRecallIntent.facts},
+    });
+  }
+  const knownTechnicalIntent = resolveKnownTechnicalIntent(message);
+  if (knownTechnicalIntent) {
+    return directChatResult(session, message, context, {
+      reply: knownTechnicalIntent.reply,
+      model: 'backend/technical-answer',
+      actions: [],
+      toolStatus: 'called',
+    });
+  }
   const directPlaybackIntent = resolveDirectTrackPlaybackIntent(message);
   if (directPlaybackIntent) {
     let playback;
@@ -1631,6 +2161,50 @@ async function interactiveChat(request, body) {
       },
     });
   }
+  const runtimeStatusIntent = resolveRuntimeStatusIntent(message, context);
+  if (runtimeStatusIntent) {
+    return directChatResult(session, message, context, {
+      reply: formatRuntimeStatusReply(runtimeStatusIntent),
+      model: 'backend/runtime-status',
+      actions: [],
+      toolStatus: 'called',
+      retrieval: {type: 'runtime-status'},
+    });
+  }
+  const browserOperationIntent = resolveDirectBrowserOperationIntent(message);
+  if (browserOperationIntent) {
+    let operation;
+    try {
+      operation = await runDirectBrowserOperations(request, browserOperationIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct browser operation failed:', error?.message || String(error));
+      operation = {reply: '这次页面操作没有执行成功：' + (cleanText(error?.message, 160) || '页面没有响应') + '。', actions: [], success: false};
+    }
+    return directChatResult(session, message, context, {
+      reply: operation.reply,
+      model: 'backend/browser-actions',
+      actions: operation.actions,
+      toolStatus: operation.success ? 'called' : 'unavailable',
+      retrieval: {type: 'browser-actions', requested: browserOperationIntent.operations.length, completed: operation.actions.length},
+    });
+  }
+  const articleOpenIntent = resolveDirectArticleOpenIntent(message, recentHistory);
+  if (articleOpenIntent) {
+    let opened;
+    try {
+      opened = await runDirectArticleOpen(request, articleOpenIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct article open failed:', error?.message || String(error));
+      opened = {reply: '文章目录这次没有正常返回，暂时不能打开对应文章。', action: null, total: 0};
+    }
+    return directChatResult(session, message, context, {
+      reply: opened.reply,
+      model: 'backend/article-open',
+      actions: opened.action ? [opened.action] : [],
+      toolStatus: opened.action ? 'called' : 'unavailable',
+      retrieval: {type: 'article-open', query: articleOpenIntent.query || '', totalMatches: opened.total},
+    });
+  }
   const articleDiscoveryIntent = resolveArticleDiscoveryIntent(message, recentHistory);
   if (articleDiscoveryIntent) {
     let discovery;
@@ -1663,6 +2237,28 @@ async function interactiveChat(request, body) {
         topic: articleDiscoveryIntent.topic,
         totalMatches: discovery.total,
         returned: discovery.returned,
+      },
+    });
+  }
+  const articleSearchIntent = resolveDirectArticleSearchIntent(message);
+  if (articleSearchIntent) {
+    let search;
+    try {
+      search = await runDirectArticleSearch(request, articleSearchIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct article search failed:', error?.message || String(error));
+      search = {reply: '文章目录这次没有正常返回，我不会凭印象编造搜索结果。', content: {success: false}};
+    }
+    return directChatResult(session, message, context, {
+      reply: search.reply,
+      model: 'backend/article-search',
+      actions: [],
+      toolStatus: search.content?.success === true ? 'called' : 'unavailable',
+      retrieval: {
+        type: 'articles',
+        query: articleSearchIntent.query,
+        totalMatches: Array.isArray(search.content?.results) ? search.content.results.length : 0,
+        returned: Array.isArray(search.content?.results) ? search.content.results.length : 0,
       },
     });
   }
@@ -1699,6 +2295,50 @@ async function interactiveChat(request, body) {
       },
     });
   }
+  const mvSearchIntent = resolveDirectMVSearchIntent(message);
+  if (mvSearchIntent) {
+    let search;
+    try {
+      search = await runDirectMVSearch(request, mvSearchIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct MV search failed:', error?.message || String(error));
+      search = {reply: 'MV 资料这次没有正常返回，我不会凭印象编造搜索结果。', content: {success: false}};
+    }
+    return directChatResult(session, message, context, {
+      reply: search.reply,
+      model: 'backend/mv-search',
+      actions: [],
+      toolStatus: search.content?.success === true ? 'called' : 'unavailable',
+      retrieval: {
+        type: 'mv',
+        query: mvSearchIntent.query,
+        totalMatches: Array.isArray(search.content?.results) ? search.content.results.length : 0,
+        returned: Array.isArray(search.content?.results) ? search.content.results.length : 0,
+      },
+    });
+  }
+  const playlistSearchIntent = resolveDirectPlaylistSearchIntent(message);
+  if (playlistSearchIntent) {
+    let search;
+    try {
+      search = await runDirectPlaylistSearch(request, playlistSearchIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct playlist search failed:', error?.message || String(error));
+      search = {reply: '歌单资料这次没有正常返回，我不会凭印象编造分类。', content: {success: false}};
+    }
+    return directChatResult(session, message, context, {
+      reply: search.reply,
+      model: 'backend/playlist-search',
+      actions: [],
+      toolStatus: search.content?.success === true ? 'called' : 'unavailable',
+      retrieval: {
+        type: 'playlists',
+        query: playlistSearchIntent.query,
+        totalMatches: Array.isArray(search.content?.playlists) ? search.content.playlists.length : 0,
+        returned: Array.isArray(search.content?.playlists) ? Math.min(search.content.playlists.length, playlistSearchIntent.limit) : 0,
+      },
+    });
+  }
   const baseSystem = [session ? WAIFU_OWNER_SYSTEM_PROMPT : WAIFU_VISITOR_SYSTEM_PROMPT, memoryPrompt(ownerState), runtimePrompt(context)].filter(Boolean).join('\n\n');
   const style = `${WAIFU_RESPONSE_STYLE_REMINDER}\n${turnStylePrompt(message, recentHistory)}`;
   const messages = [
@@ -1713,18 +2353,38 @@ async function interactiveChat(request, body) {
     : {completion: await siliconflowCompletion({messages, maxTokens: 520}), actions: [], messages: messages.slice(), toolStatus: 'disabled'};
   let completion = agentRun.completion;
   const actions = agentRun.actions;
-  const initialIssues = replyQualityIssues(completion.reply, {session, message, memory: ownerState?.memory, actions});
-  if (initialIssues.length) {
-    console.info('[waifu-chat] rewriting reply:', initialIssues.join('、'));
-    completion = await siliconflowCompletion({
+  let bestCompletion = completion;
+  let bestIssues = issuesNeedingModelRewrite(
+    replyQualityIssues(completion.reply, {session, message, memory: ownerState?.memory, actions}),
+  );
+  let bestScore = bestIssues.length * 10 + (cleanText(completion.reply).length < 8 ? 3 : 0);
+  for (let rewriteAttempt = 0; rewriteAttempt < 2; rewriteAttempt += 1) {
+    const issues = issuesNeedingModelRewrite(
+      replyQualityIssues(completion.reply, {session, message, memory: ownerState?.memory, actions}),
+    );
+    if (!issues.length) break;
+    console.info('[waifu-chat] rewriting reply:', issues.join('、'));
+    const rewritten = await siliconflowCompletion({
       temperature: 0.62,
       messages: [
         ...agentRun.messages,
         {role: 'assistant', content: completion.reply},
-        {role: 'system', content: `${style}\n上一版候选回复存在这些问题：${initialIssues.join('、')}。请重新生成最终回复，不要再调用工具。`},
+        {role: 'system', content: `${style}\n上一版候选回复存在这些问题：${issues.join('、')}。请保留已经正确回答的事实，针对问题完整重写；不得缩成“好的”“嗯”或“我记住了”，不要再调用工具。`},
       ],
     });
+    completion = rewritten;
+    const rewrittenIssues = issuesNeedingModelRewrite(
+      replyQualityIssues(rewritten.reply, {session, message, memory: ownerState?.memory, actions}),
+    );
+    const rewrittenScore = rewrittenIssues.length * 10 + (cleanText(rewritten.reply).length < 8 ? 3 : 0);
+    if (rewrittenScore < bestScore || (rewrittenScore === bestScore && cleanText(rewritten.reply).length > cleanText(bestCompletion.reply).length)) {
+      bestCompletion = rewritten;
+      bestIssues = rewrittenIssues;
+      bestScore = rewrittenScore;
+    }
   }
+  completion = bestCompletion;
+  if (bestIssues.length) console.info('[waifu-chat] best reply still has issues:', bestIssues.join('、'));
   completion.reply = applyCriticalReplyFallback(completion.reply, {session, message, memory: ownerState?.memory, recentHistory, actions});
   if ((messageRequestsMusicSearch(message) || messageRequestsTrackPlayback(message)) && agentRun.toolStatus !== 'called') {
     completion.reply = '这次曲库检索没有真正执行成功，我不能假装已经找到或播放了歌曲。请稍后再试一次。';
