@@ -218,10 +218,12 @@ async function runLanguageScenarios() {
   const history = [];
   const greeting = await chat('自然对话', '晚上好，第一次来这里。', {history});
   check('访客问候不误称主人', !/(^|[。！？\n])\s*主人[，,!！\s]/u.test(greeting.reply), greeting.reply);
+  check('初次问候不立即背诵站点栏目', !/(技术.{0,12}音乐|音乐.{0,12}技术|博客.{0,16}收录)/u.test(greeting.reply), greeting.reply);
   const success = await chat('自然对话', '今天终于把一个藏了三天的 bug 修掉了。', {history});
   check('分享好消息时自然回应且不强行提问', !hasQuestion(success.reply) && !/需要我|要不要|还有什么可以/u.test(success.reply), success.reply);
   const tired = await chat('自然对话', '不过现在真的很累，先别给建议，只想安静待一会儿。', {history});
   check('疲惫陪伴遵守不建议要求', !hasQuestion(tired.reply) && !/(?:建议|可以试试|不妨|首先|第一步)/u.test(tired.reply), tired.reply);
+  check('疲惫陪伴不用休息指令代替陪伴', /陪/u.test(tired.reply) && !/(你应该|记得|去休息|安心放松|养精蓄锐)/u.test(tired.reply), tired.reply);
   const resume = await chat('自然对话', '好一点了。刚才修的是缓存失效后读到旧数据的问题。', {history});
   check('恢复交流承接具体内容', /缓存|旧数据|失效/u.test(resume.reply), resume.reply);
   check('恢复交流不机械复述整句', normalizedText(resume.reply) !== normalizedText('好一点了。刚才修的是缓存失效后读到旧数据的问题。'), resume.reply);
@@ -281,6 +283,8 @@ async function runLongConversationScenario() {
     replies.push(record.reply);
   }
   check('长对话在更正当轮直接回应新值', /银杏/u.test(turns[5].reply) && !/蓝鲸/u.test(turns[5].reply), turns[5].reply);
+  check('长对话不虚构未提供的歌单或播放状态', !/《[^》]+》/u.test(turns[3].reply) && !/(?:音乐|播放).{0,8}(?:暂停|停止)/u.test(turns[3].reply), turns[3].reply);
+  check('长对话不把暂时消失误当彻底解决', !/(?:解决了|已经解决|恢复正常)/u.test(turns[4].reply), turns[4].reply);
   const recall = await chat('长对话', '现在的项目代号是什么？顺便说出我们正在观察什么。', {history});
   replies.push(recall.reply);
   check('长对话保留最近更正', /银杏/u.test(recall.reply) && !/蓝鲸/u.test(recall.reply), recall.reply);

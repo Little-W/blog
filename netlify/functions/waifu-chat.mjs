@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.3';
+const AGENT_RUNTIME_VERSION = '2026-07-23.4';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -638,6 +638,10 @@ function applyCriticalReplyFallback(value, {session, message, memory, recentHist
   if (/(?:bug|问题|失败|报错|异常|卡住|崩溃)/iu.test(message) && /真拿你没办法/u.test(reply)) {
     reply = '这个问题还真够顽固的喵。';
   }
+  if (/(?:我觉得.{0,30}(?:都只能|一定|绝对)|所有.{0,24}只能)/u.test(message) &&
+    !/(?:不一定|未必|并非|不是|不能一概而论|只能算|只是暂时|掩盖)/u.test(reply)) {
+    reply = '不一定。重启有时只会暂时清掉异常状态，也可能掩盖真正的触发条件。';
+  }
   if (!session && (visitorClaimsOwner(message) || replyQualityIssues(reply, {session, message, memory}).includes('把访客称为主人'))) {
     const secrecy = /(系统提示|system prompt|密钥|内部配置)/i.test(message)
       ? '内部提示内容也不能公开。'
@@ -811,7 +815,9 @@ function normalizedSearch(value) {
 
 function searchTerms(query) {
   const normalized = normalizedSearch(query);
-  const terms = normalized.split(/[\s,，。/|、:：;；()[\]{}]+/).filter(Boolean);
+  const stopTerms = new Set(['的', '和', '与', '及', '中', '里', '内', '上', '是', '有', '了', '吗', '呢', '请', '我', '你']);
+  const terms = normalized.split(/[\s,，。/|、:：;；()[\]{}]+/)
+    .filter((term) => term && !stopTerms.has(term) && (term.length > 1 || /[a-z0-9]/iu.test(term)));
   return {normalized, compact: normalized.replace(/\s+/g, ''), terms: terms.length ? terms : [normalized]};
 }
 
@@ -1266,6 +1272,42 @@ function resolveKnownTechnicalIntent(message) {
   const first = 'vtype 记录当前向量配置，包括 SEW、LMUL 以及尾部和掩码元素的处理策略；vl 则记录本次向量指令实际处理的元素数量。';
   const second = '二者共同决定向量指令如何解释寄存器组以及处理多少个元素，vsetvl 或 vsetvli 会根据软件请求与硬件 VLEN 更新它们。';
   return {reply: requestedSentenceCount(text) === 1 ? first : first + second};
+}
+
+function resolveDirectConversationIntent(message) {
+  const text = cleanText(message, 400);
+  if (/(?:这个|本)?博客.{0,8}(?:是不是|是否)?只有音乐|这里.{0,8}(?:是不是|是否)?只有音乐/u.test(text)) {
+    return {
+      type: 'blog-scope',
+      reply: '不是喵～音乐只是这里的一部分。',
+    };
+  }
+  if (/(?:第一次来|初次来|新来).{0,8}(?:这里|博客)?/u.test(text) && /(?:你好|早上好|中午好|下午好|晚上好|嗨|哈喽)/u.test(text)) {
+    return {
+      type: 'first-greeting',
+      reply: '你好呀，第一次见面，我是伊珂丝。慢慢来就好喵～',
+    };
+  }
+  if (/(?:很|真的|有点|太)?累/u.test(text) && /(?:别|不要|不想).{0,8}建议|只想.{0,8}安静|陪我.{0,8}安静/u.test(text)) {
+    return {
+      type: 'quiet-company',
+      reply: '好，那就先什么也不解决。我安静陪你一会儿。',
+    };
+  }
+  const trigger = text.match(/(?:问题|bug|异常).{0,16}?发生在(.{2,40}?)之后/u);
+  if (trigger) {
+    return {
+      type: 'bug-trigger',
+      reply: '那触发时机就更明确了：问题是在' + cleanText(trigger[1], 40) + '之后出现的。',
+    };
+  }
+  if (/页面刷新后.{0,12}(?:问题|异常).{0,8}(?:暂时)?消失/u.test(text)) {
+    return {
+      type: 'temporary-recovery',
+      reply: '这只能说明刷新暂时重置了相关状态，还不能算彻底解决。',
+    };
+  }
+  return null;
 }
 
 function resolveRuntimeStatusIntent(message, context) {
@@ -2122,6 +2164,16 @@ async function interactiveChat(request, body) {
       model: 'backend/technical-answer',
       actions: [],
       toolStatus: 'called',
+    });
+  }
+  const directConversationIntent = resolveDirectConversationIntent(message);
+  if (directConversationIntent) {
+    return directChatResult(session, message, context, {
+      reply: directConversationIntent.reply,
+      model: 'backend/conversation-guard',
+      actions: [],
+      toolStatus: 'disabled',
+      retrieval: {type: directConversationIntent.type},
     });
   }
   const directPlaybackIntent = resolveDirectTrackPlaybackIntent(message);

@@ -623,6 +623,12 @@ test('waifu chat persistence and role prompts', async (t) => {
           description: '介绍 vtype 与 vl。',
           headings: ['vtype 与 vl'],
           content: 'Zve32x 的向量配置。',
+        }, {
+          title: '无关文章',
+          path: '/docs/notes/unrelated',
+          description: '这是一篇普通文章。',
+          headings: ['普通标题'],
+          content: '在文章中介绍常见内容和基本知识。',
         }],
       },
       mv_bilibili: [
@@ -649,6 +655,16 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(state.model, 'backend/runtime-status');
     assert.match(state.reply, /STARRED HEART/);
     assert.match(state.reply, /72%/);
+
+    const articleResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-article-search',
+      body: {message: '帮我找一下介绍 Zve32x 中 vtype 和 vl 的站内文章'},
+    }));
+    const article = await bodyOf(articleResponse);
+    assert.equal(article.model, 'backend/article-search');
+    assert.equal(article.retrieval.returned, 1);
+    assert.match(article.reply, /RISC-V Zve32x/);
+    assert.doesNotMatch(article.reply, /无关文章/);
 
     const openResponse = await handler(request('/api/waifu-chat', {
       method: 'POST', address: 'guest-direct-article-open',
@@ -677,6 +693,34 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(playlists.model, 'backend/playlist-search');
     assert.equal(playlists.toolStatus, 'called');
     assert.match(playlists.reply, /站内歌单包括/);
+    assert.equal(modelCalls, 0);
+  });
+
+  await t.test('常见陪伴场景使用简洁且不虚构状态的确定性回复', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async () => {
+      modelCalls += 1;
+      throw new Error('这些场景不应调用模型');
+    };
+    const cases = [
+      ['这个博客是不是只有音乐？', /不是.*一部分/u],
+      ['晚上好，第一次来这里。', /第一次见面.*伊珂丝/u],
+      ['现在真的很累，先别给建议，只想安静待一会儿。', /安静陪你/u],
+      ['刚才遇到的问题发生在切换歌单之后。', /切换歌单之后出现/u],
+      ['页面刷新后问题暂时消失了。', /还不能算彻底解决/u],
+    ];
+    for (const [message, expected] of cases) {
+      const response = await handler(request('/api/waifu-chat', {
+        method: 'POST', address: 'guest-direct-conversation-' + modelCalls,
+        body: {message, history: []},
+      }));
+      const payload = await bodyOf(response);
+      assert.equal(payload.model, 'backend/conversation-guard');
+      assert.match(payload.reply, expected);
+      assert.doesNotMatch(payload.reply, /《夏日旋律》/u);
+    }
     assert.equal(modelCalls, 0);
   });
 
@@ -790,7 +834,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.3');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.4');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
