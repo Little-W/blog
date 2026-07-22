@@ -424,12 +424,16 @@ test('waifu chat persistence and role prompts', async (t) => {
     const response = await handler(request('/api/waifu-chat', {
       method: 'POST', address: 'guest-short-music-search', body: {message: '搜歌 ReoNa ANIMA'},
     }));
+    const responsePayload = await bodyOf(response);
     assert.equal(response.status, 200);
     assert.equal(calls.length, 2);
     assert.equal(calls[0].model, 'Qwen/Qwen3-8B');
     assert.ok(calls[0].tools.some((tool) => tool.function.name === 'search_music_library'));
     assert.match(calls[0].messages.at(-2).content, /必须调用 search_music_library/);
     assert.match(calls[1].messages.at(-1).content, /请现在立即调用/);
+    assert.equal(responsePayload.toolStatus, 'not_called');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-22.2');
+    assert.match(responsePayload.reply, /不能假装已经找到/);
   });
 
   await t.test('点歌会先查曲库再安排浏览器播放', async () => {
@@ -470,6 +474,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(searchResult.tracks[0].mid, 123);
     assert.equal(searchResult.tracks[0].title, 'リボン');
     assert.equal(payload.actions.length, 1);
+    assert.equal(payload.toolStatus, 'called');
     assert.equal(payload.actions[0].name, 'music.play_track');
     assert.deepEqual(payload.actions[0].arguments, {mid: 123});
   });

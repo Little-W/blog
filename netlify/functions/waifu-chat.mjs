@@ -5,6 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
+const AGENT_RUNTIME_VERSION = '2026-07-22.2';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -1235,6 +1236,7 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
   if (instruction) messages.splice(Math.max(0, messages.length - 1), 0, {role: 'system', content: instruction});
   const actions = [];
   const seen = new Set();
+  let toolCalled = false;
   let completion = null;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     try {
@@ -1243,7 +1245,7 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
       if (round !== 0) throw error;
       console.warn('[waifu-chat] tool model unavailable, falling back to plain chat:', error?.message || String(error));
       completion = await siliconflowCompletion({messages: initialMessages, maxTokens: 520});
-      return {completion, actions, messages: initialMessages.slice()};
+      return {completion, actions, messages: initialMessages.slice(), toolStatus: 'unavailable'};
     }
     if (!completion.toolCalls.length) {
       if (round === 0 && instruction) {
@@ -1251,8 +1253,9 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
         messages.push({role: 'system', content: `${instruction}\n上一次回复没有调用要求的工具。请现在立即调用，不要先输出自然语言回复。`});
         continue;
       }
-      return {completion, actions, messages};
+      return {completion, actions, messages, toolStatus: toolCalled ? 'called' : 'not_called'};
     }
+    toolCalled = true;
     messages.push({
       role: 'assistant',
       content: completion.reply || null,
@@ -1285,7 +1288,7 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
   }
   messages.push({role: 'system', content: '工具调用次数已达上限。请使用现有结果直接回答，不再调用工具。'});
   completion = await siliconflowCompletion({messages, maxTokens: 520});
-  return {completion, actions, messages};
+  return {completion, actions, messages, toolStatus: 'called'};
 }
 
 async function interactiveChat(request, body) {
@@ -1304,9 +1307,10 @@ async function interactiveChat(request, body) {
     {role: 'system', content: style},
     {role: 'user', content: message},
   ];
-  const agentRun = messageMayNeedTools(message)
+  const useTools = messageMayNeedTools(message);
+  const agentRun = useTools
     ? await toolEnabledCompletion(request, messages, message)
-    : {completion: await siliconflowCompletion({messages, maxTokens: 520}), actions: [], messages: messages.slice()};
+    : {completion: await siliconflowCompletion({messages, maxTokens: 520}), actions: [], messages: messages.slice(), toolStatus: 'disabled'};
   let completion = agentRun.completion;
   const actions = agentRun.actions;
   const initialIssues = replyQualityIssues(completion.reply, {session, message, memory: ownerState?.memory, actions});
@@ -1322,6 +1326,9 @@ async function interactiveChat(request, body) {
     });
   }
   completion.reply = applyCriticalReplyFallback(completion.reply, {session, message, memory: ownerState?.memory, recentHistory, actions});
+  if ((messageRequestsMusicSearch(message) || messageRequestsTrackPlayback(message)) && agentRun.toolStatus !== 'called') {
+    completion.reply = '这次曲库检索没有真正执行成功，我不能假装已经找到或播放了歌曲。请稍后再试一次。';
+  }
   if (session) {
     await persistOwnerMessages(session, [
       newMessage('user', message, 'chat', context),
@@ -1336,6 +1343,8 @@ async function interactiveChat(request, body) {
     owner: Boolean(session),
     actions,
     capabilities: publicCapabilities(Boolean(session)),
+    runtimeVersion: AGENT_RUNTIME_VERSION,
+    toolStatus: agentRun.toolStatus,
   });
 }
 
