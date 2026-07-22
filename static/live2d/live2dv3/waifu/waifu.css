@@ -83,46 +83,42 @@
 
 .waifu-tool {
     position: absolute;
-    top: 50%;
+    top: calc(50% + var(--waifu-tool-origin-offset, 0px));
     right: calc(100% - 18px);
     z-index: 5;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    align-items: center;
-    padding: 4px;
-    opacity: 0;
+    display: block;
+    width: 1px;
+    height: 1px;
+    padding: 0;
     visibility: hidden;
     pointer-events: none;
-    transform: translate(8px, -50%) scale(.96);
-    transform-origin: center right;
-    transition: opacity .2s ease, transform .24s ease, visibility .2s;
+    transform: translateY(-50%);
+    transition: visibility 0s linear .48s;
 }
 
 .waifu[data-toolbar-side="right"] .waifu-tool {
     right: auto;
     left: calc(100% - 18px);
-    transform: translate(-8px, -50%) scale(.96);
-    transform-origin: center left;
+    transform: translateY(-50%);
 }
 
 .waifu:hover .waifu-tool,
 .waifu:focus-within .waifu-tool,
 .waifu--move-mode .waifu-tool,
 .waifu--dragging .waifu-tool {
-    opacity: 1;
     visibility: visible;
-    pointer-events: auto;
-    transform: translate(0, -50%) scale(1);
+    transition-delay: 0s;
 }
 
 .waifu-tool__button {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     display: grid;
     place-items: center;
     width: 36px;
     height: 36px;
-    margin: 0;
+    margin: -18px 0 0 -18px;
     padding: 0;
     color: #446483;
     background: rgba(247, 252, 255, .91);
@@ -130,9 +126,46 @@
     border-radius: 50%;
     box-shadow: 0 7px 20px rgba(29, 91, 154, .15), inset 0 1px 0 rgba(255, 255, 255, .92);
     cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
     backdrop-filter: blur(12px) saturate(145%);
-    transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease, opacity .18s ease;
+    transform: translate(0, 0) scale(.22) rotate(-18deg);
+    transform-origin: center;
+    transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease,
+        transform .34s cubic-bezier(.2, .78, .24, 1), opacity .2s ease;
+    transition-delay: 0s, 0s, 0s, 0s, var(--waifu-tool-close-delay, 0ms), var(--waifu-tool-close-delay, 0ms);
     -webkit-tap-highlight-color: transparent;
+}
+
+.waifu[data-toolbar-side="right"] .waifu-tool__button {
+    transform: translate(0, 0) scale(.22) rotate(18deg);
+}
+
+.waifu:hover .waifu-tool__button,
+.waifu:focus-within .waifu-tool__button,
+.waifu--move-mode .waifu-tool__button,
+.waifu--dragging .waifu-tool__button {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(var(--waifu-tool-x, 0), var(--waifu-tool-y, 0)) scale(1) rotate(0);
+    transition-timing-function: ease, ease, ease, ease, cubic-bezier(.18, .88, .24, 1.12), ease;
+    transition-delay: 0s, 0s, 0s, 0s, var(--waifu-tool-open-delay, 0ms), var(--waifu-tool-open-delay, 0ms);
+}
+
+.waifu.waifu--chat-open .waifu-tool {
+    visibility: hidden;
+    transition-delay: .48s;
+}
+
+.waifu.waifu--chat-open .waifu-tool__button {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(0, 0) scale(.22) rotate(-18deg);
+    transition-delay: 0s, 0s, 0s, 0s, var(--waifu-tool-close-delay, 0ms), var(--waifu-tool-close-delay, 0ms);
+}
+
+.waifu.waifu--chat-open[data-toolbar-side="right"] .waifu-tool__button {
+    transform: translate(0, 0) scale(.22) rotate(18deg);
 }
 
 .waifu-tool__button svg {
@@ -154,7 +187,7 @@
     border-color: rgba(22, 135, 248, .62);
     box-shadow: 0 9px 25px rgba(22, 113, 205, .24), 0 0 0 3px rgba(22, 135, 248, .1);
     outline: none;
-    transform: translateY(-1px) scale(1.055);
+    transform: translate(var(--waifu-tool-x, 0), calc(var(--waifu-tool-y, 0) - 1px)) scale(1.055) rotate(0);
 }
 
 .waifu-tool__button.is-active {
