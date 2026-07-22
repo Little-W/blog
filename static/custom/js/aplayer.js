@@ -60,7 +60,7 @@ var PLAYER_SETTINGS_KEY = 'yusen-player-settings-v1';
 var DEFAULT_PLAYER_SETTINGS = {
   // playlist 保存的是实际播放队列，而不是界面当前浏览的歌单。这样刷新页面后，
   // 用户仍会回到相同的队列、曲目和播放进度。
-  music: { quality: 0, volume: 0.5, loop: 'all', order: 'list', playlist: null, tagSort: 'default', trackSort: 'default' },
+  music: { quality: 0, volume: 0.5, loop: 'all', order: 'list', playlist: null, browseList: 2, tagSort: 'default', trackSort: 'default' },
   mv: { theme: 'sea', volume: 0.6, view: 'grid', group: '全部', qualityCode: 'dash-64' }
 };
 
@@ -95,8 +95,8 @@ var target = origin + "/music";
 var target2 = origin + "/music/";
 let page_loaded = false;
 let ap_list_ptr = new Array();
-// 当前浏览的歌单只是页面视图状态，不再作为播放器恢复状态的一部分。
-let current_list = 2;
+// 当前浏览的歌单与实际播放队列分别保存，刷新页面时两者互不影响。
+let current_list = Number.isInteger(Number(music_player_settings.browseList)) ? Number(music_player_settings.browseList) : 2;
 let list_count = 2;
 let mv_player = null;
 var target_x_list = new Array();
@@ -160,13 +160,33 @@ function init_with_database()
   music_playlist_restore_state = read_saved_music_playlist();
   var savedIds = music_playlist_restore_state ? music_playlist_restore_state.ids : [];
   var tagsPromise = load_music_tags();
+  var initialTracksPromise = tagsPromise.then(function(tags) {
+    var requestedList = Number(current_list);
+    var requestedListExists = requestedList === 0 || (Array.isArray(tags) && tags.some(function(tag) {
+      return Number(tag.tag_id) === requestedList;
+    }));
+    if (!requestedListExists) {
+      var defaultTag = (tags || []).find(function(tag) { return Number(tag.tag_id) === 2; }) || (tags || [])[0];
+      current_list = defaultTag ? Number(defaultTag.tag_id) : 2;
+      update_player_settings('music', {browseList: current_list});
+    }
+    if (current_list === 0) {
+      if (!savedIds.length) {
+        var countTag = (tags || []).find(function(tag) { return Number(tag.tag_id) === 2; }) || (tags || [])[0];
+        if (!countTag) return {records: [], playlistIds: [], totalLibrary: 0};
+        return fetch_music_tracks({quality: quality, listId: Number(countTag.tag_id), sort: 'default'}).then(function(data) {
+          return Object.assign({}, data, {records: [], playlistIds: []});
+        });
+      }
+      return fetch_music_tracks({quality: quality, ids: savedIds, sort: 'default'});
+    }
+    return fetch_music_tracks({quality: quality, listId: current_list, ids: savedIds, sort: 'default'});
+  });
   Promise.all([
     tagsPromise,
     // 先读取标签接口返回的部署版本，再查询歌单。这样每次新部署都会使用新的
     // Cache Storage 键，不会继续显示上一次发布前的曲目顺序。
-    tagsPromise.then(function() {
-      return fetch_music_tracks({quality: quality, listId: current_list, ids: savedIds, sort: 'default'});
-    }),
+    initialTracksPromise,
     load_static_data('mv_bilibili'),
   ]).then(function (sets) {
     music_tags = sets[0].sort(objectSort('tag_order'));
@@ -175,10 +195,14 @@ function init_with_database()
     music_library_count = Number(sets[1].totalLibrary) || initialList.length;
     var libraryCount = document.getElementById('music-library-count');
     if (libraryCount) libraryCount.innerText = music_library_count;
-    music_list_all[current_list] = Array.isArray(sets[1].playlistIds)
-      ? sets[1].playlistIds.map(Number)
-      : initialList.filter(function(song) { return Array.isArray(song.list) && song.list.map(Number).indexOf(current_list) !== -1; })
-        .map(function(song) { return Number(song.mid); });
+    if (current_list === 0) {
+      music_list_all[0] = savedIds.filter(function(mid) { return Boolean(get_music_record(mid)); });
+    } else {
+      music_list_all[current_list] = Array.isArray(sets[1].playlistIds)
+        ? sets[1].playlistIds.map(Number)
+        : initialList.filter(function(song) { return Array.isArray(song.list) && song.list.map(Number).indexOf(current_list) !== -1; })
+          .map(function(song) { return Number(song.mid); });
+    }
     if (music_playlist_restore_state) {
       music_playlist_restore_state.ids = music_playlist_restore_state.ids.filter(function(mid) { return Boolean(get_music_record(mid)); });
       if (music_playlist_restore_state.ids.indexOf(music_playlist_restore_state.currentId) === -1) {
@@ -294,6 +318,7 @@ function refresh_visible_music_data() {
     if (!state.changed || !page_loaded || current_list === 0) return false;
     if (!music_tags.some(function(tag) { return Number(tag.tag_id) === Number(current_list); })) {
       current_list = music_tags.length ? Number(music_tags[0].tag_id) : 2;
+      update_player_settings('music', {browseList: current_list});
     }
     return get_music_list_from_current_revision(current_list, true).then(function() { return true; });
   }).finally(function() {
@@ -515,9 +540,10 @@ var music_hf_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
 var music_hf_probe_promise = null;
 var music_hf_cover_host_priority = MUSIC_HF_SOURCE_HOSTS.slice();
 var music_hf_cover_probe_promise = null;
-var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
+var MUSIC_HF_DATASET_PREFIX = '/datasets/Yusen/music/resolve/';
 var MUSIC_AUDIO_FILE_RE = /\.(mp3|flac|m4a|aac|ogg|opus|wav)$/i;
 var MUSIC_COVER_FILE_RE = /\.(avif|bmp|gif|jpe?g|png|webp)$/i;
+var MUSIC_LYRIC_FILE_RE = /\.lrc$/i;
 var MUSIC_SOURCE_TIMEOUT_MS = 2500;
 var MUSIC_SOURCE_RETRIES_PER_MIRROR = 1;
 var MUSIC_SOURCE_PROBE_TIMEOUT_MS = 3500;
@@ -532,6 +558,10 @@ function music_hf_dataset_path(value, filePattern) {
     var pathname = decodeURIComponent(source.pathname);
     if (source.protocol !== 'https:' || MUSIC_HF_SOURCE_HOSTS.indexOf(host) === -1) return null;
     if (pathname.indexOf(MUSIC_HF_DATASET_PREFIX) !== 0 || /\/\.\.\//.test(pathname)) return null;
+    var resolvePath = pathname.slice(MUSIC_HF_DATASET_PREFIX.length);
+    var revisionEnd = resolvePath.indexOf('/');
+    var revision = revisionEnd > 0 ? resolvePath.slice(0, revisionEnd) : '';
+    if (!/^[A-Za-z0-9._-]{1,120}$/.test(revision)) return null;
     if (!filePattern.test(pathname)) return null;
     return {
       pathname: source.pathname,
@@ -548,6 +578,10 @@ function music_hf_source_path(value) {
 
 function music_hf_cover_path(value) {
   return music_hf_dataset_path(value, MUSIC_COVER_FILE_RE);
+}
+
+function music_hf_lyric_path(value) {
+  return music_hf_dataset_path(value, MUSIC_LYRIC_FILE_RE);
 }
 
 function music_hf_urls(path, download, priority) {
@@ -4748,18 +4782,15 @@ function render_bilingual_lyrics(player) {
 }
 
 /*
- * APlayer 1.10.1 对 lrcType: 3 只做一次 XMLHttpRequest：请求经过
- * hf-mirror 的 308 跳转后会落到 Hugging Face。前一个 308 响应没有 CORS
- * 响应头，浏览器会把这次请求判定为网络错误；直接在地址栏打开却没有问题。
- *
- * 新导入的歌词统一经过同源的 /api/music-lyrics 读取。该端点只转发本曲库的
- * .lrc 文件，服务端可以正常跟随镜像跳转。函数短暂不可用时，再退回允许 CORS
- * 的 huggingface.co 原始地址。失败不写入 parsed 缓存，下一次切回同一首歌
- * 会重新请求，而不是永久显示“不可用”。
+ * APlayer 1.10.1 对 lrcType: 3 只做一次 XMLHttpRequest，镜像跳转或
+ * 中国大陆网络下的官方站访问异常都会直接导致无歌词。封面可以直接显示，
+ * 但 fetch 读取歌词文本会受 CORS 限制，因此 HF 曲库的 .lrc 统一由同源
+ * /api/music-lyrics 通过 hf-mirror 读取，浏览器不再直连 huggingface.co。
+ * 失败不写入 parsed 缓存，下一次切回同一首歌会重新请求。
  */
 var music_lyric_text_cache = Object.create(null);
 var music_lyric_pending_cache = Object.create(null);
-var MUSIC_LYRIC_TIMEOUT_MS = 8000;
+var MUSIC_LYRIC_TIMEOUT_MS = 6000;
 var MUSIC_LYRIC_PROXY_ATTEMPTS = 3;
 
 function music_lyric_error(message, status) {
@@ -4790,19 +4821,13 @@ function music_lyric_fetch_targets(source) {
   var upstream = normalise_music_lyric_source(source);
   if (!upstream) return [];
   var targets = [];
-  var hostname = upstream.hostname.toLowerCase();
-  var is_yusen_hf_dataset = (hostname === "hf-mirror.com" || hostname === "huggingface.co") &&
-    upstream.pathname.indexOf("/datasets/Yusen/music/resolve/main/") === 0;
+  var lyricPath = music_hf_lyric_path(upstream.href);
 
-  if (is_yusen_hf_dataset) {
-    // 与静态数据保持 hf-mirror 地址不变；仅歌词请求走同源 Function，避免镜像
-    // 重定向响应缺少 CORS 头。第二个目标供本地开发或 Function 临时失效时使用。
-    targets.push({url: music_lyric_proxy_url(upstream.href), sameOrigin: true, attempts: MUSIC_LYRIC_PROXY_ATTEMPTS});
-    var direct = new URL(upstream.href);
-    direct.protocol = "https:";
-    direct.hostname = "huggingface.co";
-    direct.port = "";
-    targets.push({url: direct.href, sameOrigin: false, attempts: 1});
+  if (lyricPath) {
+    // 固定为 hf-mirror 上游，避免数据库未来切换域名后把其他镜像的
+    // 跳转或 CORS 响应带进浏览器。
+    var proxySource = music_hf_urls(lyricPath, false, ['hf-mirror.com'])[0] || upstream.href;
+    targets.push({url: music_lyric_proxy_url(proxySource), sameOrigin: true, attempts: MUSIC_LYRIC_PROXY_ATTEMPTS});
   } else {
     targets.push({url: upstream.href, sameOrigin: upstream.origin === window.location.origin, attempts: 2});
   }
@@ -6128,6 +6153,8 @@ load_music_lists = function(skipTrackRender) {
     if (oldButton) oldButton.remove();
   });
   div.innerHTML = '';
+  var currentQueueButton = document.getElementById('ap_list0');
+  if (currentQueueButton) currentQueueButton.classList.toggle('--activated', current_list === 0);
   bind_playlist_sort_controls();
   sync_playlist_sort_controls();
   subdiv = document.createElement('div');
@@ -6200,9 +6227,9 @@ load_music_lists = function(skipTrackRender) {
     rows[rowIndex].appendChild(createTagButton(tag));
     rowWidths[rowIndex] += (rowWidths[rowIndex] ? rowGap : 0) + tagWidth;
   });
-  var initialTag = music_tags.find(function(tag) { return tag.tag_id === current_list; });
+  var initialTag = music_tags.find(function(tag) { return Number(tag.tag_id) === Number(current_list); });
   var playlistName = document.getElementById('current_playlist_name');
-  if (initialTag && playlistName) playlistName.innerText = initialTag.tag_name;
+  if (playlistName) playlistName.innerText = current_list === 0 ? '当前播放列表' : (initialTag ? initialTag.tag_name : '默认歌单');
 
   function createPager(id, pathData) {
     var pager = document.createElement('div');
@@ -6245,7 +6272,24 @@ load_music_lists = function(skipTrackRender) {
       }
     }, 520);
   }
-  setTimeout(rebuildTagPages, 0);
+  setTimeout(function() {
+    rebuildTagPages();
+    var activeButton = subdiv.querySelector('.sytle-button.--activated');
+    var activeGroup = activeButton && activeButton.closest('.playlist-tag-group');
+    if (!activeGroup) return;
+    var activeOffset = Math.max(0, activeGroup.offsetLeft - 8);
+    var closestPage = 0;
+    var closestDistance = Number.POSITIVE_INFINITY;
+    target_x_list.forEach(function(offset, index) {
+      var distance = Math.abs(offset - activeOffset);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestPage = index;
+      }
+    });
+    current_page = closestPage;
+    subdiv.scrollTo({left: target_x_list[current_page] || activeOffset, behavior: 'auto'});
+  }, 0);
   formerPage.addEventListener('click', function() {
     rebuildTagPages();
     if (current_page > 0) current_page--;
@@ -6315,6 +6359,7 @@ function setup_music_lists() {
     var searchbox = document.getElementById('music-searbox');
     if (searchbox) searchbox.value = '';
     current_list = nextList;
+    update_player_settings('music', {browseList: current_list});
     sync_music_order_controls();
     get_music_list(current_list, true);
   });

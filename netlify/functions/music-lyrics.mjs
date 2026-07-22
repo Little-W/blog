@@ -1,7 +1,7 @@
 const MAX_LYRIC_BYTES = 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 10_000;
-const DATASET_PREFIX = '/datasets/Yusen/music/resolve/main/';
-const ALLOWED_HOSTS = new Set(['hf-mirror.com', 'huggingface.co']);
+const DATASET_PREFIX = '/datasets/Yusen/music/resolve/';
+const ALLOWED_HOSTS = new Set(['aifasthub.com', 'hf-cdn.sufy.com', 'hf-mirror.com', 'huggingface.co']);
 
 export const config = {
   path: '/api/music-lyrics',
@@ -34,6 +34,10 @@ function allowedLyricURL(value) {
     return null;
   }
   if (!pathname.startsWith(DATASET_PREFIX) || pathname.includes('/../') || !pathname.toLowerCase().endsWith('.lrc')) return null;
+  const resolvePath = pathname.slice(DATASET_PREFIX.length);
+  const revisionEnd = resolvePath.indexOf('/');
+  const revision = revisionEnd > 0 ? resolvePath.slice(0, revisionEnd) : '';
+  if (!/^[A-Za-z0-9._-]{1,120}$/.test(revision)) return null;
   return url;
 }
 
