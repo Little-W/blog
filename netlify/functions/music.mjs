@@ -171,7 +171,8 @@ async function queryTracks(request) {
   } catch (error) {
     return fail(error instanceof Error ? error.message : '曲目编号无效。', 'INVALID_TRACK_IDS');
   }
-  const query = String(body.query || '').trim().slice(0, MAX_QUERY_LENGTH).toLocaleLowerCase();
+  const query = String(body.query || '').trim().slice(0, MAX_QUERY_LENGTH).normalize('NFKC').toLocaleLowerCase();
+  const queryTerms = query.split(/[\s,，。/|、:：;；()[\]{}《》「」“”-]+/).filter(Boolean);
   const sort = ['default', 'name', 'id'].includes(body.sort) ? body.sort : 'default';
   let selected;
   let playlistIds = null;
@@ -195,8 +196,8 @@ async function queryTracks(request) {
     selected = ids.map((id) => byId.get(id)).filter(Boolean);
   } else if (query) {
     const matches = records.filter((record) => {
-      const text = String(record.z_full_name || `${record.author || ''} - ${record.title || ''}`).toLocaleLowerCase();
-      return text.includes(query);
+      const text = String(record.z_full_name || `${record.author || ''} - ${record.title || ''}`).normalize('NFKC').toLocaleLowerCase();
+      return text.includes(query) || queryTerms.every((term) => text.includes(term));
     });
     const page = Math.max(0, Math.min(10000, Number.parseInt(body.page, 10) || 0));
     const pageSize = Math.max(1, Math.min(MAX_SEARCH_PAGE_SIZE,

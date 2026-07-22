@@ -412,6 +412,26 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(payload.reply, /35%/);
   });
 
+  await t.test('“搜歌”简写会进入曲库工具流程', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const calls = [];
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '请稍等，我正在搜索。'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-short-music-search', body: {message: '搜歌 ReoNa ANIMA'},
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].model, 'Qwen/Qwen3-8B');
+    assert.ok(calls[0].tools.some((tool) => tool.function.name === 'search_music_library'));
+    assert.match(calls[0].messages.at(-2).content, /必须调用 search_music_library/);
+    assert.match(calls[1].messages.at(-1).content, /请现在立即调用/);
+  });
+
   await t.test('点歌会先查曲库再安排浏览器播放', async () => {
     const store = new MemoryStore();
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -446,7 +466,9 @@ test('waifu chat persistence and role prompts', async (t) => {
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
     assert.equal(modelCalls.length, 3);
-    assert.match(modelCalls[1].messages.find((message) => message.role === 'tool').content, /リボン/);
+    const searchResult = JSON.parse(modelCalls[1].messages.find((message) => message.role === 'tool').content);
+    assert.equal(searchResult.tracks[0].mid, 123);
+    assert.equal(searchResult.tracks[0].title, 'リボン');
     assert.equal(payload.actions.length, 1);
     assert.equal(payload.actions[0].name, 'music.play_track');
     assert.deepEqual(payload.actions[0].arguments, {mid: 123});

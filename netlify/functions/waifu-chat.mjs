@@ -359,9 +359,24 @@ function messageMayNeedTools(message) {
   if (requestedBrowserOperations(text).length) return true;
   if (messageRequestsTrackPlayback(text)) return true;
   if (messageRequestsArticleOpen(text)) return true;
-  const retrievalVerb = /(?:搜索|搜一下|搜搜|检索|查找|帮我找|有没有|有哪些|哪篇|写过|介绍过|推荐)/.test(text);
-  const librarySubject = /(?:站内|博客|文章|文档|笔记|曲库|歌单|歌曲|歌手|音乐|MV)/i.test(text);
+  const retrievalVerb = /(?:搜索?|搜一下|搜搜|检索|查找|帮我找|找一?下|找首歌|有没有|有哪些|哪篇|写过|介绍过|推荐)/.test(text);
+  const librarySubject = /(?:站内|博客|文章|文档|笔记|曲库|歌单|歌曲?|歌手|音乐|MV)/i.test(text);
   return retrievalVerb && librarySubject;
+}
+
+function messageRequestsMusicSearch(message) {
+  return /(?:搜索?|搜一下|搜搜|检索|查找|帮我找|找一?下|找首歌|有没有|推荐)/.test(message) &&
+    /(?:曲库|歌单|歌曲?|歌手|音乐)/.test(message);
+}
+
+function toolTurnInstruction(message) {
+  if (messageRequestsTrackPlayback(message)) {
+    return '本轮是点歌请求。必须先调用 search_music_library 确认曲目；匹配唯一时再调用 play_music_track，不得只说“我去找”却不调用工具。';
+  }
+  if (messageRequestsMusicSearch(message)) {
+    return '本轮明确要求搜索曲库。必须调用 search_music_library 后根据返回结果回答，不得只承诺稍后搜索。未要求播放时不要自动点歌。';
+  }
+  return '';
 }
 
 function messageRequestsTrackPlayback(message) {
@@ -1216,6 +1231,8 @@ function providerToolCall(call) {
 
 async function toolEnabledCompletion(request, initialMessages, userMessage) {
   const messages = initialMessages.slice();
+  const instruction = toolTurnInstruction(userMessage);
+  if (instruction) messages.splice(Math.max(0, messages.length - 1), 0, {role: 'system', content: instruction});
   const actions = [];
   const seen = new Set();
   let completion = null;
@@ -1228,7 +1245,14 @@ async function toolEnabledCompletion(request, initialMessages, userMessage) {
       completion = await siliconflowCompletion({messages: initialMessages, maxTokens: 520});
       return {completion, actions, messages: initialMessages.slice()};
     }
-    if (!completion.toolCalls.length) return {completion, actions, messages};
+    if (!completion.toolCalls.length) {
+      if (round === 0 && instruction) {
+        messages.push({role: 'assistant', content: completion.reply});
+        messages.push({role: 'system', content: `${instruction}\n上一次回复没有调用要求的工具。请现在立即调用，不要先输出自然语言回复。`});
+        continue;
+      }
+      return {completion, actions, messages};
+    }
     messages.push({
       role: 'assistant',
       content: completion.reply || null,
