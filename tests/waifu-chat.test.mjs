@@ -128,6 +128,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /有猫耳和尾巴的猫娘女仆/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要句句带“喵”/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /像两个人正在连续相处/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /除非用户继续追问“还有哪些内容”/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /此时不要追问、列选项或立刻分析问题/);
   });
 
   await t.test('访客历史和对话不读写 Blob', async () => {
