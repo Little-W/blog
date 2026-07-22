@@ -342,8 +342,10 @@
     if (pending || !text) return;
     setPending(true);
     ready.then(function () {
-      var previousHistory = history.slice(-MAX_REQUEST_HISTORY).map(function (item) {
-        return {role: item.role, content: item.content};
+      var previousHistory = history.filter(function (item) {
+        return item.kind !== "proactive";
+      }).slice(-MAX_REQUEST_HISTORY).map(function (item) {
+        return {role: item.role, content: item.content, kind: item.kind};
       });
       var userMessage = newLocalMessage("user", text, "chat");
       history.push(userMessage);
@@ -399,7 +401,9 @@
         method: "POST",
         headers: {"content-type": "application/json", accept: "application/json"},
         body: JSON.stringify({
-          history: history.slice(-8).map(function (item) { return {role: item.role, content: item.content}; }),
+          history: history.slice(-12).map(function (item) {
+            return {role: item.role, content: item.content, kind: item.kind};
+          }),
           context: runtimeContext(),
           hitokoto: hitokoto
         })
