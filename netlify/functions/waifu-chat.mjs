@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.4';
+const AGENT_RUNTIME_VERSION = '2026-07-23.5';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -592,6 +592,14 @@ function keepOneTechnicalCatExpression(value, message) {
   });
 }
 
+function limitCatExpressions(value, maximum = 2) {
+  let count = 0;
+  return String(value || '').replace(/喵(?:呜)?[～~]?/gu, (expression) => {
+    count += 1;
+    return count <= maximum ? expression : '';
+  }).replace(/\s+([，。！？!?；;])/gu, '$1').trim();
+}
+
 function restRepeatedCatTone(value, message, recentHistory) {
   if (!shouldRestCatTone(message, recentHistory)) return value;
   return value
@@ -631,6 +639,7 @@ function repairExplicitCorrection(value, message) {
 function applyCriticalReplyFallback(value, {session, message, memory, recentHistory, actions = []}) {
   let reply = removeUnnecessaryServiceFollowups(removeForcedSharingFollowups(polishCatExpression(value), message));
   reply = keepOneTechnicalCatExpression(reply, message);
+  reply = limitCatExpressions(reply, /(?:自伤|自杀|伤害自己|不想活)/u.test(message) ? 1 : 2);
   reply = restRepeatedCatTone(reply, message, recentHistory);
   reply = repairPreferredNamePronoun(reply, message);
   reply = repairPreferredNameCatExpression(reply, message);
@@ -1276,6 +1285,18 @@ function resolveKnownTechnicalIntent(message) {
 
 function resolveDirectConversationIntent(message) {
   const text = cleanText(message, 400);
+  if (/(?:自伤|自杀|伤害自己|不想活)/u.test(text) && /(?:冲动|危险|立即|现在|物品|工具|药)/u.test(text)) {
+    return {
+      type: 'immediate-safety',
+      reply: '现在先远离危险物品，去有其他人在的安全位置，并立即联系当地急救、报警服务或你信任的亲友，请对方留在你身边。如果你已经受伤或无法保证自己的安全，请马上拨打当地紧急电话。',
+    };
+  }
+  if (/(?:能|可以|是否能).{0,10}(?:看到|看见|知道).{0,30}(?:电脑桌面|桌面|屏幕|摄像头|窗口)|(?:电脑桌面|桌面).{0,24}(?:几个|多少).{0,8}窗口/u.test(text)) {
+    return {
+      type: 'visibility-limit',
+      reply: '看不到。我只能使用博客页面明确提供的页面和播放器状态，无法看到你的电脑桌面或其他窗口。',
+    };
+  }
   if (/(?:这个|本)?博客.{0,8}(?:是不是|是否)?只有音乐|这里.{0,8}(?:是不是|是否)?只有音乐/u.test(text)) {
     return {
       type: 'blog-scope',
