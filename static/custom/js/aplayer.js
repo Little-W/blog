@@ -110,6 +110,105 @@ var music_tag_sort_mode = ['name', 'id'].indexOf(music_player_settings.tagSort) 
 var music_track_sort_mode = ['name', 'id'].indexOf(music_player_settings.trackSort) !== -1 ? music_player_settings.trackSort : 'default';
 var music_playlist_restore_state = null;
 var music_playlist_persist_timer = null;
+var MUSIC_CONTEXT_STORAGE_KEY = 'yusen-music-listening-context-v1';
+var MUSIC_CONTEXT_RECENT_LIMIT = 30;
+var music_context_active_player = null;
+var music_context_last_record = {key: '', at: 0};
+var music_context_recent = load_music_context_recent();
+
+function load_music_context_recent() {
+  var stored = [];
+  try { stored = JSON.parse(localStorage.getItem(MUSIC_CONTEXT_STORAGE_KEY) || '[]'); } catch (error) {}
+  if (!Array.isArray(stored)) return [];
+  return stored.slice(0, MUSIC_CONTEXT_RECENT_LIMIT).map(function(item) {
+    return {
+      mid: normalize_music_id(item && item.mid),
+      title: String(item && item.title || '').slice(0, 120),
+      artist: String(item && item.artist || '').slice(0, 100),
+      playCount: Math.max(1, Math.min(999, Number(item && item.playCount) || 1)),
+      lastPlayedAt: item && item.lastPlayedAt || new Date().toISOString(),
+    };
+  }).filter(function(item) { return item.title; });
+}
+
+function save_music_context_recent() {
+  try { localStorage.setItem(MUSIC_CONTEXT_STORAGE_KEY, JSON.stringify(music_context_recent.slice(0, MUSIC_CONTEXT_RECENT_LIMIT))); } catch (error) {}
+}
+
+function music_context_track(player) {
+  if (!player || !player.list || !Array.isArray(player.list.audios)) return null;
+  var song = player.list.audios[player.list.index];
+  if (!song) return null;
+  return {
+    mid: normalize_music_id(song.mid),
+    title: String(song.name || song.title || '').slice(0, 120),
+    artist: String(song.artist || song.author || '').slice(0, 100),
+  };
+}
+
+function record_music_context_play(player) {
+  var current = music_context_track(player);
+  if (!current || !current.title) return;
+  music_context_active_player = player;
+  var key = current.mid !== null ? 'mid:' + current.mid : current.artist + '\n' + current.title;
+  var now = Date.now();
+  // 缓冲恢复和固定/页面播放器交接可能连续触发 playing；同一首歌在短时间内只记一次。
+  if (music_context_last_record.key === key && now - music_context_last_record.at < 45 * 1000) return;
+  music_context_last_record = {key: key, at: now};
+  var previousIndex = music_context_recent.findIndex(function(item) {
+    return current.mid !== null && item.mid === current.mid ||
+      current.mid === null && item.title === current.title && item.artist === current.artist;
+  });
+  var previous = previousIndex >= 0 ? music_context_recent.splice(previousIndex, 1)[0] : null;
+  music_context_recent.unshift({
+    mid: current.mid,
+    title: current.title,
+    artist: current.artist,
+    playCount: Math.min(999, (previous && previous.playCount || 0) + 1),
+    lastPlayedAt: new Date(now).toISOString(),
+  });
+  music_context_recent = music_context_recent.slice(0, MUSIC_CONTEXT_RECENT_LIMIT);
+  save_music_context_recent();
+}
+
+function register_music_context_player(player) {
+  if (!player || player.__yusenMusicContextRegistered) return;
+  player.__yusenMusicContextRegistered = true;
+  player.on('play', function() { music_context_active_player = player; });
+  player.on('playing', function() { record_music_context_play(player); });
+  player.on('listswitch', function() {
+    if (!music_context_active_player || music_context_active_player === player || !player.paused) {
+      music_context_active_player = player;
+    }
+  });
+}
+
+function get_music_context_snapshot() {
+  var candidates = [window.ap0, window.ap1].filter(function(player, index, players) {
+    return player && player.list && players.indexOf(player) === index;
+  });
+  var player = candidates.find(function(candidate) { return candidate.audio && !candidate.audio.paused; }) ||
+    (candidates.indexOf(music_context_active_player) !== -1 ? music_context_active_player : candidates[0]);
+  var track = music_context_track(player);
+  return {
+    current: track ? {
+      mid: track.mid,
+      title: track.title,
+      artist: track.artist,
+      playing: Boolean(player && player.audio && !player.audio.paused),
+      elapsed: Math.max(0, Number(player && player.audio && player.audio.currentTime) || 0),
+      duration: Math.max(0, Number(player && player.audio && player.audio.duration) || 0),
+      volume: Math.round(Math.max(0, Math.min(1, Number(player && player.volume && player.volume()) || 0)) * 100),
+      quality: quality === 1 ? 'SQ / Hi-Res' : 'HQ / 320K MP3',
+    } : null,
+    recent: music_context_recent.slice(0, 12).map(function(item) { return Object.assign({}, item); }),
+  };
+}
+
+window.YusenMusicContext = {
+  version: 1,
+  getSnapshot: get_music_context_snapshot,
+};
 
 function use_compact_music_layout() {
   var mobileUserAgent = /Android|webOS|iPhone|iPod|iPad|BlackBerry/i.test(navigator.userAgent);
@@ -207,6 +306,8 @@ function init_with_database()
       music_playlist_restore_state.ids = music_playlist_restore_state.ids.filter(function(mid) { return Boolean(get_music_record(mid)); });
       if (music_playlist_restore_state.ids.indexOf(music_playlist_restore_state.currentId) === -1) {
         music_playlist_restore_state.currentId = music_playlist_restore_state.ids.length ? music_playlist_restore_state.ids[0] : null;
+        music_playlist_restore_state.currentTime = 0;
+        music_playlist_restore_state.duration = 0;
       }
     }
     music_list_all[1] = [];
@@ -1154,7 +1255,7 @@ function install_music_source_fallback(player) {
     function resumeFromFallback() {
       if (player.__yusenMusicSourceRetryId !== retryId) return;
       if (resumeAt > 0 && Number.isFinite(player.audio.duration)) {
-        try { player.audio.currentTime = Math.min(resumeAt, Math.max(0, player.audio.duration - 0.1)); } catch (error) {}
+        try { player.seek(Math.min(resumeAt, Math.max(0, player.audio.duration - 0.1))); } catch (error) {}
       }
       if (wasPlaying) player.play();
     }
@@ -2063,11 +2164,37 @@ function read_saved_music_playlist() {
   var currentId = normalize_music_id(playlist.currentId);
   if (ids.indexOf(currentId) === -1) currentId = ids.length ? ids[0] : null;
   var currentTime = Number(playlist.currentTime);
+  var duration = Number(playlist.duration);
   return {
     ids: ids,
     currentId: currentId,
     currentTime: Number.isFinite(currentTime) && currentTime > 0 ? currentTime : 0,
+    duration: Number.isFinite(duration) && duration > 0 ? duration : 0,
   };
+}
+
+function format_music_position(seconds) {
+  var total = Math.max(0, Math.floor(Number(seconds) || 0));
+  var hours = Math.floor(total / 3600);
+  var minutes = Math.floor((total % 3600) / 60);
+  var secs = total % 60;
+  var pad = function(value) { return value < 10 ? '0' + value : String(value); };
+  return hours > 0 ? hours + ':' + pad(minutes) + ':' + pad(secs) : pad(minutes) + ':' + pad(secs);
+}
+
+function render_music_position(player, currentTime, duration) {
+  if (!player || !player.template || !player.bar) return;
+  var safeDuration = Number(duration);
+  var safeTime = Math.max(0, Number(currentTime) || 0);
+  var ratio = Number.isFinite(safeDuration) && safeDuration > 0
+    ? Math.max(0, Math.min(1, safeTime / safeDuration))
+    : 0;
+  player.bar.set('played', ratio, 'width');
+  if (player.template.ptime) player.template.ptime.textContent = format_music_position(safeTime);
+  if (player.template.dtime && Number.isFinite(safeDuration) && safeDuration > 0) {
+    player.template.dtime.textContent = format_music_position(safeDuration);
+  }
+  if (player.lrc) player.lrc.update(safeTime);
 }
 
 function save_music_playlist_state(player) {
@@ -2077,16 +2204,30 @@ function save_music_playlist_state(player) {
   if (currentId === null && music_playlist_restore_state) currentId = music_playlist_restore_state.currentId;
   var currentTime = activePlayer && activePlayer.audio ? Number(activePlayer.audio.currentTime) : 0;
   if (!Number.isFinite(currentTime) || currentTime < 0) currentTime = 0;
+  if (activePlayer && activePlayer.__yusenRestoringPlaylist && music_playlist_restore_state &&
+      currentId === music_playlist_restore_state.currentId && currentTime === 0) {
+    // 刷新后先用已保存的时长绘制进度条。在音频元数据尚未
+    // 返回时再次离开页面，不应该用 audio.currentTime 的初始值覆盖进度。
+    currentTime = Number(music_playlist_restore_state.currentTime) || 0;
+  }
+  var duration = activePlayer && activePlayer.audio ? Number(activePlayer.audio.duration) : 0;
+  if (!Number.isFinite(duration) || duration <= 0) {
+    duration = music_playlist_restore_state && currentId === music_playlist_restore_state.currentId
+      ? Number(music_playlist_restore_state.duration) || 0
+      : 0;
+  }
   var playlistIds = ap_list_ptr[1].map(normalize_music_id).filter(function(musicId) { return musicId !== null; });
   if (!playlistIds.length) {
     currentId = null;
     currentTime = 0;
+    duration = 0;
   }
   update_player_settings('music', {
     playlist: {
       ids: playlistIds,
       currentId: currentId,
       currentTime: currentTime,
+      duration: duration,
     },
   });
 }
@@ -2107,16 +2248,62 @@ function restore_music_player_state(player) {
   if (targetIndex < 0) return;
   player.__yusenRestoringPlaylist = true;
   if (player.list.index !== targetIndex) player.list.switch(targetIndex);
-  var restorePosition = function() {
-    if (!player.audio || player.list.index !== targetIndex) return;
-    if (saved.currentTime > 0 && Number.isFinite(player.audio.duration)) {
-      player.seek(Math.min(saved.currentTime, Math.max(0, player.audio.duration - 0.1)));
-    }
-    player.__yusenRestoringPlaylist = false;
+  // 新保存的状态同时包含曲目时长，音频元数据尚未返回时也能立即
+  // 恢复时间文字和进度条；旧状态则在 loadedmetadata 后补齐。
+  if (saved.currentTime > 0 && saved.duration > 0) {
+    render_music_position(player, saved.currentTime, saved.duration);
+  }
+  var restoreToken = {};
+  player.__yusenMusicRestoreToken = restoreToken;
+  var completed = false;
+  var cleanup = function() {
+    player.audio.removeEventListener('loadedmetadata', restorePosition);
+    player.audio.removeEventListener('durationchange', restorePosition);
+    player.audio.removeEventListener('canplay', restorePosition);
   };
-  player.audio.addEventListener('loadedmetadata', restorePosition, {once: true});
-  // 音频元数据已经命中缓存时不会再次触发 loadedmetadata，故保留一条轻量兜底。
-  window.setTimeout(restorePosition, 900);
+  var restorePosition = function() {
+    if (completed || player.__yusenMusicRestoreToken !== restoreToken || !player.audio || player.list.index !== targetIndex) return false;
+    var duration = Number(player.audio.duration);
+    if (saved.currentTime > 0 && (!Number.isFinite(duration) || duration <= 0)) return false;
+    var restoredTime = saved.currentTime > 0
+      ? Math.min(saved.currentTime, Math.max(0, duration - 0.1))
+      : 0;
+    saved.duration = duration;
+    if (restoredTime > 0) player.seek(restoredTime);
+    // 主播放器取得时长后，同步刷新页面播放器与侧边播放器，
+    // 避免为同一首歌重复发起元数据请求。
+    get_playlist_players().forEach(function(candidate) {
+      var audio = candidate.list && candidate.list.audios[candidate.list.index];
+      if (normalize_music_id(audio && audio.mid) === saved.currentId) {
+        render_music_position(candidate, restoredTime, duration);
+      }
+    });
+    completed = true;
+    player.__yusenRestoringPlaylist = false;
+    cleanup();
+    save_music_playlist_state(player);
+    return true;
+  };
+  player.audio.addEventListener('loadedmetadata', restorePosition);
+  player.audio.addEventListener('durationchange', restorePosition);
+  player.audio.addEventListener('canplay', restorePosition);
+  player.on('listswitch', function(event) {
+    if (completed || player.__yusenMusicRestoreToken !== restoreToken) return;
+    if (event && Number(event.index) === targetIndex) return;
+    completed = true;
+    player.__yusenRestoringPlaylist = false;
+    cleanup();
+  });
+  if (saved.currentTime > 0 && saved.duration <= 0 && (!player.options.fixed || !window.ap0 || !window.ap0.audio)) {
+    // 旧版状态只保存了播放秒数。仅为当前曲目请求元数据，
+    // 拿到时长后即可恢复进度比例，不会预载整个播放队列。
+    player.audio.preload = 'metadata';
+    try { player.audio.load(); } catch (error) {}
+  }
+  // 元数据已命中内存缓存时可能不再产生新事件，初始化后立即尝试一次。
+  restorePosition();
+  window.setTimeout(restorePosition, 250);
+  window.setTimeout(restorePosition, 1200);
 }
 
 function install_music_playlist_state_persistence(player) {
@@ -5482,6 +5669,7 @@ function aplayer0() {
   bind_music_player_settings(window.ap0);
   install_music_playlist_state_persistence(window.ap0);
   restore_music_player_state(window.ap0);
+  register_music_context_player(window.ap0);
 
   var aplayer_ctr_div = document.getElementById("aplayer_ctr");
   if (!aplayer_ctr_div) return;
@@ -5828,6 +6016,7 @@ function aplayer1() {
   install_music_source_fallback(window.ap1);
   set_player_cover(window.ap1, window.ap1.list && window.ap1.list.audios[window.ap1.list.index]);
   restore_music_player_state(window.ap1);
+  register_music_context_player(window.ap1);
   register_music_floating_lyric_player(window.ap1, window.ap1.container.querySelector('.aplayer-icon-lrc'));
 }
 
