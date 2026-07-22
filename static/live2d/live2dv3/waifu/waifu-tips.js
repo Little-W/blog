@@ -23,6 +23,9 @@ function renderTipText(template, context){
 function live2dTipsEnabled(){
 	return !window.YusenLive2DControls || window.YusenLive2DControls.getState().tips !== false;
 }
+function live2dAgentModeEnabled(){
+	return !!(window.YusenLive2DControls && window.YusenLive2DControls.getState().agentMode === true);
+}
 for(var i=0;i<norunAI.length;i++){
 	if(userAgent.indexOf(norunAI[i]) > -1){
 		norunFlag = true;
@@ -61,6 +64,16 @@ if(Array.isArray(window.__yusenWaifuTipQueue)){
 }
 function showHitokoto(){
 	if(!live2dTipsEnabled()) return;
+	if(live2dAgentModeEnabled()){
+		if(window.__yusenWaifuChat && typeof window.__yusenWaifuChat.proactive === 'function'){
+			window.__yusenWaifuChat.proactive();
+		}else if(window.YusenLive2DControls && typeof window.YusenLive2DControls.ensureAgentRuntime === 'function'){
+			window.YusenLive2DControls.ensureAgentRuntime().then(function(agent){
+				if(agent && typeof agent.proactive === 'function') agent.proactive();
+			}).catch(function(){});
+		}
+		return;
+	}
 	if(sessionStorage.getItem("Onblur")!=="1"){
 		$.getJSON('https://v1.hitokoto.cn/',function(result){
 			showMessage(result.hitokoto, 4000);

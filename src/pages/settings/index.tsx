@@ -401,6 +401,7 @@ export default function SettingsPage(): JSX.Element {
               {EFFECTS.map((effect) => (
                 <article
                   key={effect.key}
+                  data-effect={effect.key}
                   className={`${styles.effectCard} ${ready && settings[effect.key] ? styles.effectCardActive : ''} ${ready && !settings.enabled ? styles.effectCardPaused : ''}`}>
                   <div className={styles.effectTopline}>
                     <span className={styles.effectIcon} aria-hidden="true">{effect.icon}</span>
@@ -412,7 +413,9 @@ export default function SettingsPage(): JSX.Element {
                   </div>
                   <div className={styles.effectFooter}>
                     <span>{!ready ? '读取中' : settings[effect.key] ? '已开启' : '已关闭'}</span>
-                    <label className={styles.switch}>
+                    <label
+                      className={styles.switch}
+                      data-waifu-toggle={effect.key === 'live2d' ? 'true' : undefined}>
                       <input
                         type="checkbox"
                         checked={ready && settings[effect.key]}

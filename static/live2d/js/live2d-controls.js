@@ -9,6 +9,7 @@
     scale: 1,
     mouseTracking: true,
     idleMotion: true,
+    agentMode: false,
     tips: true,
     position: null
   };
@@ -27,6 +28,8 @@
     size: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5m13 5h5v-5M3 8l6-6m12 6-6-6M3 16l6 6m12-6-6 6"/></svg>',
     tracking: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 13.5 9-6.1 1.2L9 19.4 5 3Z"/><path d="m13 13 4 6"/></svg>',
     idle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v6h-6"/><path d="m10 9 5 3-5 3V9Z"/></svg>',
+    agent: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-4 4v1H7a3 3 0 0 0-3 3v3a3 3 0 0 0 3 3h1v2h8v-2h1a3 3 0 0 0 3-3v-3a3 3 0 0 0-3-3h-1V7a4 4 0 0 0-4-4Z"/><path d="M9 12h.01M15 12h.01M9.5 16h5"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9l-5 4v-15Z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>',
     tips: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v11H9l-5 4v-15Z"/><path d="M8 9h8M8 13h5"/></svg>',
     hide: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"/><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9 5.5 9 5.5a15.4 15.4 0 0 1-3 3.7M6.6 6.6C4.4 8.1 3 10.5 3 10.5S6.5 16 12 16c1 0 1.9-.2 2.7-.5"/></svg>'
   };
@@ -53,6 +56,7 @@
       scale: scale,
       mouseTracking: candidate.mouseTracking !== false,
       idleMotion: candidate.idleMotion !== false,
+      agentMode: candidate.agentMode === true,
       tips: candidate.tips !== false,
       position: position
     };
@@ -82,6 +86,7 @@
       scale: state.scale,
       mouseTracking: state.mouseTracking,
       idleMotion: state.idleMotion,
+      agentMode: state.agentMode,
       tips: state.tips,
       position: state.position ? {x: state.position.x, y: state.position.y} : null
     };
@@ -119,6 +124,10 @@
     createButton("size", icons.size, "调整大小");
     createButton("tracking", icons.tracking, "鼠标跟踪", state.mouseTracking);
     createButton("idle", icons.idle, "自动播放待机动画", state.idleMotion);
+    createButton("agent", icons.agent, "智能体模式", state.agentMode);
+    createButton("chat", icons.chat, "和看板娘聊天");
+    buttons.chat.dataset.runtimeLoader = "true";
+    buttons.chat.setAttribute("aria-expanded", "false");
     createButton("tips", icons.tips, "Tips 文本框", state.tips);
     createButton("hide", icons.hide, "隐藏看板娘");
 
@@ -153,6 +162,22 @@
       applyRuntimeSettings();
       updateButtons();
       announce(state.idleMotion ? "待机动画自动播放已开启" : "待机动画自动播放已关闭");
+    });
+    buttons.agent.addEventListener("click", function () {
+      state.agentMode = !state.agentMode;
+      saveState();
+      updateButtons();
+      if (state.agentMode) ensureAgentRuntime();
+      announce(state.agentMode
+        ? "智能体模式已开启，我会结合时间、页面和音乐偶尔陪你聊一句~"
+        : "智能体模式已关闭，恢复普通一言");
+    });
+    buttons.chat.addEventListener("click", function () {
+      ensureAgentRuntime().then(function (agent) {
+        if (agent && typeof agent.toggle === "function") agent.toggle();
+      }).catch(function () {
+        announce("对话组件暂时没有加载成功，请稍后再试");
+      });
     });
     buttons.tips.addEventListener("click", function () {
       state.tips = !state.tips;
@@ -195,6 +220,7 @@
     setPressed(buttons.move, moveMode);
     setPressed(buttons.tracking, state.mouseTracking);
     setPressed(buttons.idle, state.idleMotion);
+    setPressed(buttons.agent, state.agentMode);
     setPressed(buttons.tips, state.tips);
     if (buttons.size) {
       var percent = Math.round(state.scale * 100);
@@ -212,6 +238,26 @@
     if (state.tips && typeof window.showMessage === "function") {
       window.showMessage(message, 2200);
     }
+  }
+
+  function ensureAgentRuntime() {
+    if (window.__yusenWaifuChat) return Promise.resolve(window.__yusenWaifuChat);
+    if (window.__yusenWaifuChatPromise) return window.__yusenWaifuChatPromise;
+    window.__yusenWaifuChatPromise = new Promise(function (resolve, reject) {
+      var script = document.createElement("script");
+      script.src = "/live2d/js/live2d-chat.js";
+      script.async = true;
+      script.onload = function () {
+        if (window.__yusenWaifuChat) resolve(window.__yusenWaifuChat);
+        else reject(new Error("agent runtime did not initialize"));
+      };
+      script.onerror = function () { reject(new Error("agent runtime could not be loaded")); };
+      document.head.appendChild(script);
+    }).catch(function (error) {
+      window.__yusenWaifuChatPromise = null;
+      throw error;
+    });
+    return window.__yusenWaifuChatPromise;
   }
 
   function getBaseSize() {
@@ -389,6 +435,7 @@
     version: 1,
     init: init,
     getState: getState,
+    ensureAgentRuntime: ensureAgentRuntime,
     isMoveMode: function () { return moveMode; },
     resetPosition: function () {
       state.position = null;
