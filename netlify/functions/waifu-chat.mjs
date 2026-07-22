@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-22.4';
+const AGENT_RUNTIME_VERSION = '2026-07-23.1';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -434,6 +434,23 @@ function resolveMusicSearchIntent(message, recentHistory) {
   };
 }
 
+function recentConversationMentionsArticles(history) {
+  return (Array.isArray(history) ? history : []).slice(-6).some((item) =>
+    /(?:网站|站内|博客|文章|文档|笔记)/u.test(cleanText(item?.content, 600)));
+}
+
+function resolveArticleDiscoveryIntent(message, recentHistory) {
+  const text = cleanText(message, 180).replace(/[。！？!?]+$/gu, '').trim();
+  if (!text) return null;
+  const generic = /(?:(?:网站|站内|博客)(?:里面|里|中|上)?(?:大概)?(?:有|收录)(?:什么|哪些)(?:样的)?(?:文章|内容)|(?:告诉我|介绍一下)?(?:大概)?(?:有|收录)(?:什么|哪些)(?:样的)?文章)/u.test(text);
+  if (generic) return {topic: 'all'};
+  const technical = /^(?:技术学习笔记|技术笔记|技术文章|学习笔记|数字\s*IC(?:设计)?|RISC-?V(?:文章|笔记)?)(?:有(?:什么|哪些))?$/iu.test(text);
+  if (technical && (recentConversationMentionsArticles(recentHistory) || /(?:文章|笔记|数字|RISC)/iu.test(text))) {
+    return {topic: 'technical'};
+  }
+  return null;
+}
+
 function toolTurnInstruction(message) {
   if (messageRequestsTrackPlayback(message)) {
     return '本轮是点歌请求。必须先调用 search_music_library 确认曲目；匹配唯一时再调用 play_music_track，不得只说“我去找”却不调用工具。';
@@ -444,8 +461,25 @@ function toolTurnInstruction(message) {
   return '';
 }
 
+function extractDirectTrackPlaybackQuery(value) {
+  const text = cleanText(value, 180);
+  if (!text) return '';
+  const match = text.match(/^(?:(?:请|帮我|给我|麻烦你|能不能|可以)\s*)?(?:播放|放)\s*(?:(?:一下|一首)\s*)?(?:(?:歌曲|音乐)\s*)?[：:]?\s*(.+?)\s*[。！!]*$/u);
+  if (!match) return '';
+  const query = cleanText(match[1], 120)
+    .replace(/^[《「『“"'\s]+|[》」』”"'。！!\s]+$/gu, '')
+    .trim();
+  if (!query || /^(?:一首|歌|歌曲|音乐|当前|状态|列表|队列|下一首|上一首)$/u.test(query)) return '';
+  return query;
+}
+
+function resolveDirectTrackPlaybackIntent(message) {
+  const query = extractDirectTrackPlaybackQuery(message);
+  return query ? {query, message: cleanText(message)} : null;
+}
+
 function messageRequestsTrackPlayback(message) {
-  return /(?:点歌|来一首|放一首|播放一首|想听|(?:播放|放)(?:歌曲|音乐)?\s*[《「“])/u.test(message);
+  return Boolean(extractDirectTrackPlaybackQuery(message)) || /(?:点歌|来一首|放一首|播放一首|想听|(?:播放|放)(?:歌曲|音乐)?\s*[《「“])/u.test(message);
 }
 
 function messageRequestsArticleOpen(message) {
@@ -879,6 +913,111 @@ async function runDirectMusicSearch(request, intent, recentHistory) {
     return {reply: `曲库这次没有正常返回结果：${cleanText(content.error, 160) || '请稍后再试一次。'}`, content};
   }
   return {reply: formatMusicSearchReply(intent, content, recentHistory), content};
+}
+
+function compactTrackLookup(value) {
+  return normalizedSearch(value).replace(/[\s,，。、:：;；()[\]{}《》「」『』“”"'·・\-_/|]+/gu, '');
+}
+
+function selectDirectPlaybackTrack(query, tracks) {
+  const candidates = Array.isArray(tracks) ? tracks : [];
+  const queryKey = compactTrackLookup(query);
+  const exactTitles = candidates.filter((track) => compactTrackLookup(track.title) === queryKey);
+  if (exactTitles.length === 1) return {track: exactTitles[0], alternatives: []};
+  if (exactTitles.length > 1) return {track: null, alternatives: exactTitles};
+  const combinedQueryKey = queryKey.replace(/的/gu, '');
+  const exactCombined = candidates.filter((track) => {
+    const artist = compactTrackLookup(track.artist);
+    const title = compactTrackLookup(track.title);
+    return artist + title === combinedQueryKey || title + artist === combinedQueryKey;
+  });
+  if (exactCombined.length === 1) return {track: exactCombined[0], alternatives: []};
+  if (exactCombined.length > 1) return {track: null, alternatives: exactCombined};
+  if (candidates.length === 1) return {track: candidates[0], alternatives: []};
+  return {track: null, alternatives: candidates.slice(0, 5)};
+}
+
+function directPlaybackAlternativesReply(query, alternatives) {
+  if (!alternatives.length) return '我刚刚实际查了站内曲库，没有找到《' + query + '》，暂时不能替你播放。';
+  const names = alternatives.map((track) => {
+    const artist = cleanText(track.artist, 100);
+    return '《' + cleanText(track.title, 120) + '》' + (artist ? '（' + artist + '）' : '');
+  });
+  return '找到了几首可能匹配“' + query + '”的歌：' + names.join('、') + '。告诉我具体歌名或歌手，我再播放。';
+}
+
+async function runDirectTrackPlayback(request, intent) {
+  const search = await executeAgentTool(request, {
+    name: 'search_music_library',
+    arguments: {query: intent.query, limit: 8},
+  }, intent.message);
+  const content = search?.content || {success: false, error: '曲库暂时无法读取。'};
+  if (content.success !== true) {
+    return {
+      reply: '曲库这次没有正常返回结果：' + (cleanText(content.error, 160) || '请稍后再试一次。'),
+      content,
+      action: null,
+    };
+  }
+  const selected = selectDirectPlaybackTrack(intent.query, content.tracks);
+  if (!selected.track) {
+    return {reply: directPlaybackAlternativesReply(intent.query, selected.alternatives), content, action: null};
+  }
+  const playback = await executeAgentTool(request, {
+    name: 'play_music_track',
+    arguments: {mid: selected.track.mid},
+  }, intent.message);
+  if (playback?.content?.success !== true || !playback.action) {
+    return {
+      reply: '找到了《' + selected.track.title + '》，但播放器这次没有接收到播放指令。',
+      content: playback?.content || content,
+      action: null,
+    };
+  }
+  const artist = cleanText(playback.content.track?.artist || selected.track.artist, 100);
+  const title = cleanText(playback.content.track?.title || selected.track.title, 120);
+  return {
+    reply: '好的喵～现在播放' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
+    content,
+    action: playback.action,
+  };
+}
+
+function articleTitles(documents, limit = 8) {
+  return documents.slice(0, limit).map((document) => '《' + cleanText(document.title, 180) + '》').join('、');
+}
+
+async function runDirectArticleDiscovery(request, intent) {
+  const index = await loadAgentDataset(request, 'waifu-content-index', 'json');
+  const documents = (Array.isArray(index?.documents) ? index.documents : [])
+    .filter((document) => cleanText(document.path, 240) && !cleanText(document.path, 240).endsWith('/'));
+  const technical = documents.filter((document) => /^\/docs\/notes\/digital-design\//u.test(document.path));
+  if (intent.topic === 'technical') {
+    if (!technical.length) {
+      return {reply: '我刚刚读取了站内文章目录，目前没有找到技术学习类正文。', total: 0, returned: 0};
+    }
+    return {
+      reply: '我刚刚读取了站内文章目录，技术学习部分目前有 ' + technical.length + ' 篇：' + articleTitles(technical, 10) + '。你可以直接告诉我标题，我再介绍内容或打开文章。',
+      total: technical.length,
+      returned: Math.min(technical.length, 10),
+    };
+  }
+  const media = documents.filter((document) => /^\/docs\/etc\//u.test(document.path));
+  const language = documents.filter((document) => /^\/docs\/notes\/Japanese\//u.test(document.path));
+  const sections = [];
+  if (technical.length) sections.push('数字 IC 与 RISC-V 等技术文章包括' + articleTitles(technical, 5));
+  if (media.length) sections.push('博客功能与媒体相关内容包括' + articleTitles(media, 4));
+  if (language.length) sections.push('语言学习部分有' + articleTitles(language, 3));
+  const covered = new Set([...technical, ...media, ...language]);
+  const other = documents.filter((document) => !covered.has(document));
+  if (other.length) sections.push('另外还有' + articleTitles(other, 3));
+  return {
+    reply: documents.length
+      ? '我刚刚读取了站内文章目录，目前有 ' + documents.length + ' 篇正文。' + sections.join('；') + '。'
+      : '我刚刚读取了站内文章目录，目前还没有可列出的正文。',
+    total: documents.length,
+    returned: Math.min(documents.length, 15),
+  };
 }
 
 async function readBody(request) {
@@ -1455,6 +1594,78 @@ async function interactiveChat(request, body) {
   let ownerState = null;
   if (session) ownerState = (await loadOwnerState(session)).state;
   const recentHistory = recentModelHistory(ownerState, body?.history);
+  const directPlaybackIntent = resolveDirectTrackPlaybackIntent(message);
+  if (directPlaybackIntent) {
+    let playback;
+    try {
+      playback = await runDirectTrackPlayback(request, directPlaybackIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct track playback failed:', error?.message || String(error));
+      playback = {
+        reply: '曲库或播放器这次没有正常响应，我不会只说已经播放却不执行。请稍后再试一次。',
+        content: {success: false},
+        action: null,
+      };
+    }
+    if (session) {
+      await persistOwnerMessages(session, [
+        newMessage('user', message, 'chat', context),
+        newMessage('assistant', playback.reply, 'chat', context),
+      ]);
+    }
+    return json({
+      success: true,
+      reply: playback.reply,
+      model: 'backend/music-playback',
+      persistence: session ? 'blob' : 'local',
+      owner: Boolean(session),
+      actions: playback.action ? [playback.action] : [],
+      capabilities: publicCapabilities(Boolean(session)),
+      runtimeVersion: AGENT_RUNTIME_VERSION,
+      toolStatus: playback.content?.success === true ? 'called' : 'unavailable',
+      retrieval: {
+        type: 'music-playback',
+        query: directPlaybackIntent.query,
+        totalMatches: Number(playback.content?.totalMatches) || 0,
+        returned: Array.isArray(playback.content?.tracks) ? playback.content.tracks.length : 0,
+      },
+    });
+  }
+  const articleDiscoveryIntent = resolveArticleDiscoveryIntent(message, recentHistory);
+  if (articleDiscoveryIntent) {
+    let discovery;
+    let toolStatus = 'called';
+    try {
+      discovery = await runDirectArticleDiscovery(request, articleDiscoveryIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct article discovery failed:', error?.message || String(error));
+      discovery = {reply: '文章目录这次没有正常返回，我不会凭印象编造站内文章。请稍后再试一次。', total: 0, returned: 0};
+      toolStatus = 'unavailable';
+    }
+    if (session) {
+      await persistOwnerMessages(session, [
+        newMessage('user', message, 'chat', context),
+        newMessage('assistant', discovery.reply, 'chat', context),
+      ]);
+    }
+    return json({
+      success: true,
+      reply: discovery.reply,
+      model: 'backend/article-catalog',
+      persistence: session ? 'blob' : 'local',
+      owner: Boolean(session),
+      actions: [],
+      capabilities: publicCapabilities(Boolean(session)),
+      runtimeVersion: AGENT_RUNTIME_VERSION,
+      toolStatus,
+      retrieval: {
+        type: 'articles',
+        topic: articleDiscoveryIntent.topic,
+        totalMatches: discovery.total,
+        returned: discovery.returned,
+      },
+    });
+  }
   const musicSearchIntent = resolveMusicSearchIntent(message, recentHistory);
   if (musicSearchIntent) {
     let search;

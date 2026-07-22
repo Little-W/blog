@@ -486,6 +486,56 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.deepEqual(payload.actions, []);
   });
 
+  await t.test('站内文章概览和分类追问直接读取真实文章目录', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.__YUSEN_WAIFU_DATASETS__ = {
+      'waifu-content-index': {
+        version: 1,
+        documents: [
+          {title: '数字 IC 设计', path: '/docs/notes/digital-design/', description: '', headings: [], content: ''},
+          {title: 'RISC-V Zve32x：嵌入式整数向量扩展', path: '/docs/notes/digital-design/riscv-zve32x', description: '', headings: [], content: ''},
+          {title: 'SystemVerilog Assertion：从时序描述到可维护的断言', path: '/docs/notes/digital-design/systemverilog-assertions', description: '', headings: [], content: ''},
+          {title: '音乐与 MV 系统说明', path: '/docs/etc/music-mv-player', description: '', headings: [], content: ''},
+          {title: '词汇', path: '/docs/notes/Japanese/Vocabulary', description: '', headings: [], content: ''},
+        ],
+      },
+    };
+    let modelCalls = 0;
+    globalThis.fetch = async () => {
+      modelCalls += 1;
+      throw new Error('文章概览不应调用模型');
+    };
+    const overviewResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-article-overview',
+      body: {message: '网站里面有什么文章呢', history: []},
+    }));
+    const overview = await bodyOf(overviewResponse);
+    assert.equal(overviewResponse.status, 200);
+    assert.equal(overview.model, 'backend/article-catalog');
+    assert.equal(overview.toolStatus, 'called');
+    assert.equal(overview.retrieval.totalMatches, 4);
+    assert.match(overview.reply, /《RISC-V Zve32x：嵌入式整数向量扩展》/);
+    assert.match(overview.reply, /《音乐与 MV 系统说明》/);
+
+    const technicalResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-article-category',
+      body: {
+        message: '技术学习笔记',
+        history: [
+          {role: 'user', content: '网站里面有什么文章呢', kind: 'chat'},
+          {role: 'assistant', content: overview.reply, kind: 'chat'},
+        ],
+      },
+    }));
+    const technical = await bodyOf(technicalResponse);
+    assert.equal(technical.model, 'backend/article-catalog');
+    assert.equal(technical.retrieval.totalMatches, 2);
+    assert.match(technical.reply, /《SystemVerilog Assertion：从时序描述到可维护的断言》/);
+    assert.doesNotMatch(technical.reply, /《音乐与 MV 系统说明》/);
+    assert.equal(modelCalls, 0);
+  });
+
   await t.test('播放器工具只返回结构化浏览器操作', async () => {
     const store = new MemoryStore();
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -530,7 +580,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-22.4');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.1');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -633,6 +683,33 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.toolStatus, 'called');
     assert.equal(payload.actions[0].name, 'music.play_track');
     assert.deepEqual(payload.actions[0].arguments, {mid: 123});
+  });
+
+  await t.test('“播放ANIMA”直接检索曲库并返回真实播放操作', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      throw new Error('直接点歌不应调用模型');
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-direct-anima',
+      body: {message: '播放ANIMA', history: [], context: {page: {path: '/music/', title: '音乐'}}},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(payload.model, 'backend/music-playback');
+    assert.equal(payload.toolStatus, 'called');
+    assert.equal(payload.retrieval.query, 'ANIMA');
+    assert.equal(payload.actions.length, 1);
+    assert.equal(payload.actions[0].name, 'music.play_track');
+    assert.deepEqual(payload.actions[0].arguments, {mid: 226});
+    assert.match(payload.reply, /ReoNa/);
+    assert.match(payload.reply, /《ANIMA》/);
+    assert.equal(modelCalls, 0);
   });
 
   await t.test('模型不能在用户未授权时触发页面操作', async () => {
