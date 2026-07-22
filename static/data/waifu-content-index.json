@@ -1,0 +1,284 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "docs/etc/BiliRoaming.md",
+      "type": "document",
+      "title": "哔哩漫游",
+      "description": "## 哔哩漫游的一些公共服务器 :::info 解析服务器由热心网友无偿提供，我没有记录提供者和捐赠链接，可以查看原链接。原链接在这里。 ::: ### 所有地区通用服务器 bili.takami.ink --- 哔哩.plus --- 陈睿.我爱你 --- bstar.kirara-fantasia.moe --- bili.tuturu.top --- 伊蕾娜.我爱你 --- atri.ink --- 星瞳.我爱你 --- 嘉然批.发超市.icu --- 万人骑.pch.pub --- melusinesuki",
+      "path": "/docs/etc/BiliRoaming",
+      "headings": [
+        "哔哩漫游的一些公共服务器",
+        "所有地区通用服务器",
+        "仅大会员",
+        "港澳台服务器",
+        "大陆地区可用",
+        "大陆地区不可用",
+        "台湾服务器",
+        "大陆地区可用",
+        "大陆地区不可用",
+        "港澳服务器",
+        "香港服务器",
+        "服务器状态"
+      ],
+      "content": "## 哔哩漫游的一些公共服务器 :::info 解析服务器由热心网友无偿提供，我没有记录提供者和捐赠链接，可以查看原链接。原链接在这里。 ::: ### 所有地区通用服务器 bili.takami.ink --- 哔哩.plus --- 陈睿.我爱你 --- bstar.kirara-fantasia.moe --- bili.tuturu.top --- 伊蕾娜.我爱你 --- atri.ink --- 星瞳.我爱你 --- 嘉然批.发超市.icu --- 万人骑.pch.pub --- melusinesuki.site --- bili.ayaka.ink --- 解析服务器填这个.cn --- xn--yetw86k.xn--6iq3kpqgxt31fvs6c4pp.icu --- deep-dark-fantasy.chiya.club --- api.bilibili.sb --- bili.baba.plus --- bili.api.acfun.win --- bilibili.lianju.ren #### 仅大会员 api.qiu.moe --- 哔哩.icu ### 港澳台服务器 #### 大陆地区可用 bili.lli.cx --- xn--6iq3kpqgx685at9rw0i59xsk7d.work --- api.lolicon.team #### 大陆地区不可用 姬坂乃爱.我爱你 ### 台湾服务器 #### 大陆地区可用 出差.xyz #### 大陆地区不可用 bili.tuturu.top --- app.bili.link ### 港澳服务器 bilisb.ltmsc.top --- 宣传就跑.top ### 香港服务器 xn--n4yr07d.rip --- bili-proxy.98e.org --- service-fi0gz11m-1252917345.hk.apigw.tencentcs.com ## 服务器状态 :::info 服务器状态直接取自原链接，可能不是最新的，可用性请自行判断。 :::"
+    },
+    {
+      "id": "docs/etc/bilibili-direct-url-embed.md",
+      "type": "document",
+      "title": "解析 B 站视频直链并嵌入博客的方法",
+      "description": "# 解析 B 站视频直链并嵌入博客的方法 将 B 站 MV 放入静态博客，最容易想到的方式是插入 B 站 。这种方式不需要处理媒体地址，但播放器外观、画质菜单、加载失败后的恢复行为都由 B 站页面控制。音乐页需要把 MV 和站内主题、来源信息、画质选择放进同一套界面，因此使用了另一种方式：后端取得播放资料，前端直接播放 B 站 CDN 返回的短时媒体地址。 本项目没有把视频下载后重新托管。Netlify Function 只负责请求资料接口、保存登录会话、整理播放信息；浏览器仍然直接向 B 站 UPOS CDN 请",
+      "path": "/docs/etc/bilibili-direct-url-embed",
+      "headings": [
+        "解析 B 站视频直链并嵌入博客的方法",
+        "先认识 BVID、分 P 与 CID",
+        "播放页数据与播放接口",
+        "DASH、渐进式 MP4 与 HLS 的区别",
+        "DASH：高画质常用形式",
+        "渐进式 MP4：首帧较快的补充来源",
+        "HLS：以 M3U8 描述分段",
+        "从实际轨道建立画质菜单",
+        "生成最小 MPD",
+        "让页面播放更稳定",
+        "登录会话、高画质与安全存放",
+        "CORS、Referer 与静态部署",
+        "本地调试与主要文件"
+      ],
+      "content": "# 解析 B 站视频直链并嵌入博客的方法 将 B 站 MV 放入静态博客，最容易想到的方式是插入 B 站 。这种方式不需要处理媒体地址，但播放器外观、画质菜单、加载失败后的恢复行为都由 B 站页面控制。音乐页需要把 MV 和站内主题、来源信息、画质选择放进同一套界面，因此使用了另一种方式：后端取得播放资料，前端直接播放 B 站 CDN 返回的短时媒体地址。 本项目没有把视频下载后重新托管。Netlify Function 只负责请求资料接口、保存登录会话、整理播放信息；浏览器仍然直接向 B 站 UPOS CDN 请求媒体字节。这样可以保留源站的分辨率、音频和 CDN 带宽，同时避免函数承担大体积视频流量。 ## 先认识 BVID、分 P 与 CID 视频地址中的 BVxxxxxxxxxx 是 BVID，它标识一份投稿。例如： 一份投稿可以有多个分 P。网页地址中的 ?p=2 表示第二个分 P，但播放接口不使用 p，而使用该分 P 的 cid。因此，解析过程的第一步是从 BVID 找到 CID： 响应中的 data.pages 是分 P 列表。选择第 p 个元素即可得到 CID： 博客的 MV 数据只保存 BVID、分 P、封面、标题及分类。播放器在需要播放时查询资料接口，再用 pages[p - 1].cid 请求播放资料。标题和 owner 同时用于播放器顶部的“MV 视频来源”和“跳转到 B 站”按钮。 cid 通常比带签名的媒体 URL 稳定得多。本项目会缓存 BVID 对应的分 P 和投稿者资料，但不会把媒体地址作为长期静态数据保存。 ## 播放页数据与播放接口 打开 B 站播放页后，浏览器会取得初始播放器数据；部分页面源码中还能看到 window. playinfo 一类的 JSON。这些数据适合观察播放器拿到了哪些字段，但不适合作为博客的固定解析手段：页面结构、首屏请求时机、账号状态和请求参数都可能变化。 后端使用的是播放器同类资料接口： 其中： 参数 作用 --- --- bvid、cid 指定投稿和分 P。 fnval=4048 请求 DASH 播放资料。 fourk=1、high quality=1 允许接口返回该账号实际可看的高画质。 platform=html5 取得适合网页 直接请求的资料。 代码不固定 qn=127 或其他最高画质编号。固定编号有时会被源站降为较低档位，且无法获知本次响应中其余可用档位。省略 qn 后，接口返回当前会话下的 dash.video 列表，画质菜单只显示该列表中确实存在的项目。 账号权限、视频本身上传的清晰度、投稿者设置和地区可用性都会影响结果。即使某个视频标题写有“4K”，本次 playurl 响应没有 4K 视频轨时，播放器就不会显示 4K。反过来，只要响应中有 1080P60、2K 或 4K 轨道，菜单就会生成对应选项。 ## DASH、渐进式 MP4 与 HLS 的区别 ### DASH：高画质常用形式 目前 B 站高画质播放资料通常使用 MPEG-DASH。响应的核心字段是： 视频和音频是两条独立的 fragmented MP4 轨。将 dash.video[0].baseUrl 直接交给 ，通常只会得到无声画面；正确做法是向播放器提供同时包含视频轨和音频轨的 MPD 清单。播放器先读取 Initialization 与 indexRange，再按播放位置请求所需字节范围。 ### 渐进式 MP4：首帧较快的补充来源 playurl 也可能返回 durl。它表示可直接装入 的渐进式 MP4 数据，前端不需要自行组合音频。低、中画质在部分网络中用这种方式取得首帧较快，但不适合作为所有视频的唯一方案：某些档位没有 durl，有些结果会被降档，还有些视频由多个分段组成。 项目的 /api/fast 只接受“返回画质等于请求画质、只有一个分段、分段中有 URL”的结果。不满足时明确返回失败，前端保留同档 DASH，不会把用户选择的 1080P60、2K 或 4K 静默换成 720P。 ### HLS：以 M3U8 描述分段 HLS 使用 .m3u8 播放列表描述媒体分段。它的播放列表包含若干片段 URL，浏览器或 hls.js 按顺序下载。HLS 与 DASH 都是自适应媒体格式，但清单结构和播放器支持方式不同。本项目当前以 DASH 为主、以单段 MP4 为快速备选，不依赖 HLS；如果后续接口返回 HLS，应将 .m3u8 作为独立 source 交给支持 HLS 的播放器，而不是把它当成 MP4。 ## 从实际轨道建立画质菜单 support formats 给出 B 站对质量编号的显示文字，dash.video 才是本次真正可播放的轨道。两者需要结合使用： 从 dash.video 收集出现过的 id，这就是可播放的画质编号。 在同一画质下选择可用视频轨；当前实现优先 AVC，然后选择码率更高的轨道。AVC 对浏览器和 Video.js/VHS 的支持最稳定，AV1、HEVC 仍会在没有 AVC 时保留。 从 support formats 读取 display desc 与 superscript，生成如 1080P60、4K、HDR 的名称。 选择一条 mp4a 音频轨，并为每个视频轨生成一个 MPD。 常见编号可作为排查参考，但不应用它们推断某个视频一定有该画质： 质量编号 常见显示名称 --- --- 64 720P 74 720P60 80 1080P 112 1080P+ 116 1080P60 120 4K 125 HDR 126 杜比视界 127 8K 后端返回给前端的画质项类似： 这里的 candidates 是源站提供的备用 CDN 地址。它们不是新的清晰度，而是同一媒体轨可替换的下载地址。 ## 生成最小 MPD 对于一组视频轨与音频轨，可以构造一个 ISO-BMFF on-demand MPD： BaseURL 必须是绝对地址，SegmentBase 的范围直接来自 playurl 响应。若缺少音频 AdaptationSet，视频会静音；若把 MPD 误标为 video/mp4，播放器会把它当成单文件 MP4。 前端无需把清单写进静态文件。当前代码将 MPD 编码为 data: URL，再设置给 Video.js/VHS： MPD 中的媒体 URL 仍是绝对地址，因此 VHS 会直接请求 B 站 CDN。使用 data: URL 也避免了生成临时 MPD 文件和额外一次清单请求。 ## 让页面播放更稳定 媒体地址带有时效签名，网络节点也会随请求而变化。播放器不能把一次失败记成“该视频永久不可用”，也不能长期缓存 /api/resolve 的结果。当前页面采用以下恢复顺序： 重装同一个 DASH 清单，并给 data: URL 增加一个仅用于本次重试的片段标记，使 Video.js/VHS 新建加载器。 对低、中画质请求同档单段 MP4；先用 Range: bytes=0-0 验证主地址，再依次验证 backup url。 将 DASH 视频轨与音频轨替换为源站返回的备用 CDN 地址。 重新请求 /api/resolve?refresh=...，取得新的签名和新的候选地址。 请求阶段会对网络中断及 408、425、429、5xx 进行带随机扰动的指数退避。任何一次解析或媒体失败都不会写入页面缓存。用户点击播放时，如果画质列表尚在读取，前端先记录播放意图，source 准备完毕后再开始播放，避免播放器停在 0:00。 切换画质时，播放器保留当前播放时间，再给 Video.js 设置新 source。这样从 720P 切到 1080P60，或从 4K 切回 1080P，不需要回到视频开头。默认选择顺序为：用户上次选择的画质、720P、当前视频可用的最高画质。 ## 登录会话、高画质与安全存放 1080P60、2K、4K、HDR 等项目是否返回，取决于调用 playurl 的账号状态。本项目使用 tools/bili qr login gui.py 通过扫码取得登录 Cookie，由 Function 保存；浏览器只得到短时媒体地址、画质资料和投稿者信息，不得到 Cookie。 Function 在 Netlify Blobs 保存前用 AES-256-GCM 加密会话，保存时间为 30 天。扫码登录、会话导入、状态查询和退出接口均在 /api/admin/ 下，并通过 BILI PARSER ADMIN TOKEN 验证。部署时需要配置： 变量 用途 --- --- BILI SESSION ENCRYPTION KEY 生成 AES-256-GCM 密钥，保护保存在 Netlify Blobs 中的会话。 BILI PARSER ADMIN TOKEN 调用扫码登录、会话导入和退出接口的 Bearer Token。 BILI ALLOWED ORIGIN 可选的允许来源；前端和 Function 同域部署时可不设置。 高画质菜单只以接口返回的实际轨道为准。检查某个视频是否真的有 1080P60 或 4K 时，查看 /api/resolve 返回的 sources，不要只看标题或投稿页的文案。 ## CORS、Referer 与静态部署 前端、解析接口和博客页面放在同一个 Netlify 项目中，浏览器访问 /api/resolve 时是同源请求；Function 仍会针对 BILI ALLOWED ORIGIN 返回 CORS 响应头，方便本地调试或独立前端接入。 媒体文件来自 B 站 CDN，属于跨域请求。播放器以 referrerpolicy=\"no-referrer\" 加载媒体，解析接口请求 platform=html5，以取得可由网页播放器直接加载的资料。不要假定任意 CDN 地址都能跨域播放：某个节点的响应头、网络位置或短时签名变化时，应该走备用 URL 与重新解析，而不是把失败地址写入永久数据。 Function 不代理视频字节，只返回 JSON 和 MPD 文本；大流量媒体请求绕过 Netlify Function。这一点对静态部署尤其重要：构建产物仍是普通的 Docusaurus 页面，只有用户打开 MV 时才调用 Function，不会把视频体积带入网站构建或 Git 仓库。 项目对解析范围做了数据目录限制：scripts/build-bili-parser-catalog.mjs 从 static/data/mv bilibili. .jsonl 生成 netlify/functions/catalog.mjs，/api/resolve 只接受目录中已有的 BVID 与分 P。这样 MV 数据、播放器和解析服务始终使用同一批视频记录。 ## 本地调试与主要文件 本地可以启动与线上接口结构一致的解析服务： 服务默认监听 127.0.0.1:19180，前端可请求 http://127.0.0.1:19180/api。它同样请求 fnval=4048，便于在不同账号或网络下查看实际可用画质。 文件 内容 --- --- netlify/functions/bili.mjs B 站资料查询、登录会话、DASH MPD、快速 MP4 和恢复所需数据。 netlify/functions/catalog.mjs 由 MV 数据生成的 BVID 与分 P 目录。 static/custom/js/aplayer.js MV 卡片、Video.js 初始化、画质菜单、预检和恢复流程。 local-bili-parser/server.mjs 本机调试解析服务。 tools/bili qr login gui.py B 站扫码登录图形工具。 这套结构的关键是把长期稳定的数据与短时数据分开保存：BVID、分 P、封面和分类留在静态 JSONL；CID 可以短期缓存；媒体 URL 每次播放时重新取得。前端依据真实视频轨生成选择项，并在下载地址失效时尝试备用节点和新解析结果，因此能同时处理 720P、1080P60、2K、4K 等不同来源条件。"
+    },
+    {
+      "id": "docs/etc/index.md",
+      "type": "document",
+      "title": "杂项",
+      "description": "## 其他文章 音乐与 MV 系统 解析 B 站视频直链并嵌入博客的方法 按标签浏览请前往标签页。",
+      "path": "/docs/etc/",
+      "headings": [
+        "其他文章"
+      ],
+      "content": "## 其他文章 音乐与 MV 系统 解析 B 站视频直链并嵌入博客的方法 按标签浏览请前往标签页。"
+    },
+    {
+      "id": "docs/etc/music-mv-player.md",
+      "type": "document",
+      "title": "音乐与 MV 系统说明",
+      "description": "# 音乐与 MV 系统 音乐页由静态前端、Netlify Function 解析服务和本地维护工具组成。页面展示本地音乐库和 Project SEKAI MV；B 站登录 Cookie 与管理员令牌不写入浏览器脚本，浏览器只取得短时媒体 URL。 当前部署分为两个环境：开发环境使用 local-bili-parser；生产环境将静态页面发布至 blog static，并由其中的 Netlify Function 在同源 /api 下提供解析。页面构建时通过 BILI PARSER API=/api 指向生产接口，不",
+      "path": "/docs/etc/music-mv-player",
+      "headings": [
+        "音乐与 MV 系统",
+        "功能范围",
+        "目录说明",
+        "前端数据流",
+        "画质与播放策略",
+        "MV 数据维护",
+        "本地开发：local-bili-parser",
+        "另一个终端：启动静态站",
+        "生产环境的解析 Function"
+      ],
+      "content": "# 音乐与 MV 系统 音乐页由静态前端、Netlify Function 解析服务和本地维护工具组成。页面展示本地音乐库和 Project SEKAI MV；B 站登录 Cookie 与管理员令牌不写入浏览器脚本，浏览器只取得短时媒体 URL。 当前部署分为两个环境：开发环境使用 local-bili-parser；生产环境将静态页面发布至 blog static，并由其中的 Netlify Function 在同源 /api 下提供解析。页面构建时通过 BILI PARSER API=/api 指向生产接口，不包含管理员令牌或登录 Cookie。 ## 功能范围 音乐页按歌单展示曲目，支持自定义播放列表、HQ/SQ/Hi-Res 选择、搜索和显示数量设置； MV 列表支持组合标签横向滚动、歌名搜索、网格/列表视图与观看状态； MV 播放器从 B 站实际返回的 DASH 轨道生成画质菜单，只有源站提供时才显示 1080P、1080P60、2K、4K、HDR 等选项； 所有画质首先使用 DASH 视频、音频分轨；该数据通路发生错误时，标准画质可尝试同档位单段 MP4，再依次尝试备用 CDN 与重新解析； 播放器、MV 视图、分组、主题、音量、循环方式和特效帧率写入浏览器本地存储； 全站浅色/深色切换使用一层合成遮罩，避免对大量 DOM 节点逐一做颜色过渡； Live2D Cubism R5 运行时由构建脚本从 vendor/ 打包至静态资源目录，避免手工维护生成文件。 ## 目录说明 位置 作用 --- --- src/pages/music/ 音乐页面的 React 骨架和页面布局样式。 src/pages/settings/ 显示设置：主题、特效及帧率限制。 static/custom/js/aplayer.js 音乐列表、APlayer、MV 列表、解析请求、画质切换和本地设置逻辑。 static/custom/css/ APlayer、Video.js、MV 卡片、深色模式和全局主题遮罩样式。 static/data/ JSON-streaming 格式的音乐、MV、分类与 B 站来源数据。 scripts/import-bilibili-season.mjs 从指定 B 站合集更新 mv bilibili.0.jsonl。 scripts/build-bili-parser-catalog.mjs 从 MV 数据生成后端白名单目录。 local-bili-parser/ 仅监听本机回环地址的解析服务。 ../blog static/netlify/functions/bili.mjs 生产环境的 Netlify Function；保存会话、查询播放信息并返回受限 MV 的播放清单。 ../blog static/netlify/functions/catalog.mjs 由构建脚本生成的 BVID 与分 P 白名单。 tools/bili qr login gui.py Netlify 后端扫码登录的图形化管理工具。 vendor/live2d-cubism-r5/ Live2D Cubism R5 上游运行时源文件与许可证。 ## 前端数据流 页面只取得短时媒体 URL 和播放清单，不取得 B 站登录 Cookie。解析服务只接受收录在 MV 目录内的 BVID 与分 P，不能用作任意 URL 的开放代理。 ## 画质与播放策略 页面请求 /api/resolve?bvid=…&p=…。 Function 先检查 catalog.mjs 中的 BVID 与分 P，再以服务器保存的登录会话查询视频资料和 x/player/playurl。请求使用 fnval=4048、fourk=1 和 platform=html5，以取得 DASH 视频轨道、音频轨道和实际支持的档位。 Function 按返回的轨道建立画质菜单，保留分辨率、编码、码率、初始化范围和备用 URL。没有对应轨道时，菜单中不会出现该档位。 页面首先将 Function 返回的 MPD 内容交给 Video.js/VHS，使视频轨道与音频轨道同步播放。默认选择已保存的画质；没有已保存的档位时选择 720P，仍不存在时选择最高实际档位。 DASH 首次装载失败后，页面对相同清单重试一次；其后仅在接口确实返回同档位、单分段 durl 时使用单段 MP4。MP4 及其备用 URL 失败后，页面继续尝试 DASH 备用 URL，并在需要时重新请求 /api/resolve。 画质菜单的内容由当次 playurl 响应决定，因此可显示 1080P、1080P60、2K、4K、HDR 等实际返回的档位。 ## MV 数据维护 当前导入器读取 UP 主 13148307 的合集 1547037。执行以下命令会拉取合集全部分页、去重、清理标题中的投稿前缀，并写回 BVID、封面、时长、组合和 MV 类型： 标题清理遵循以下原则：优先保留书名号或日文引号中的歌名；去掉常见投稿标签；保留原始条目无法识别时的可读标题。组合和类型可由旧资料继承，缺失时按标题规则归类。导入完成后重新生成允许解析的目录： 该命令会写入部署仓库的 ../blog static/netlify/functions/catalog.mjs。数据变更与目录变更必须一起部署，否则新导入的 MV 会被后端拒绝。 ## 本地开发：local-bili-parser 本地方案适合开发和直接测试。服务默认只监听 127.0.0.1:19180，会话保存在用户私有目录，页面默认访问 http://127.0.0.1:19180/api。 打开音乐页后，通过页面的登录流程扫码。服务的 --allow-origin 只接受精确 Origin；若页面不是 http://localhost:3000，应显式传入自己的站点 Origin： 本地实现会代理已经解析好的 Range 请求，让浏览器能安全读取独立的音视频轨道；它不接受任意外部媒体 URL。 ## 生产环境的解析 Function 生产静态站将 build/ 同步到 blog static，由 netlify/functions/bili.mjs 提供同源 /api。构建时必须指定同源 API： Netlify Functions 需要以下仅服务端可见的环境变量： 变量 用途 --- --- BILI SESSION ENCRYPTION KEY 至少 24 个字符的随机密钥，用于加密 Netlify Blobs 中的 Cookie。 BILI PARSER ADMIN TOKEN 管理二维码登录、状态和退出接口的高强度令牌。 BILI ALLOWED ORIGIN 可选。静态站和 Function 同源时不必设置。 不要将上述变量写入仓库、Docusaurus 构建变量或浏览器脚本。使用 tools/bili qr login gui.py 时，令牌只保留在当前 GUI 进程内。完整的环境变量和接口说明位于部署仓库的 NETLIFY-BILI-PARSER.md。"
+    },
+    {
+      "id": "docs/notes/Japanese/Vocabulary.md",
+      "type": "document",
+      "title": "词汇",
+      "description": "八百屋 やおや 居間 いま ご 飯 （ はん ）",
+      "path": "/docs/notes/Japanese/Vocabulary",
+      "headings": [],
+      "content": "八百屋 やおや 居間 いま ご 飯 （ はん ）"
+    },
+    {
+      "id": "docs/notes/Japanese/index.md",
+      "type": "document",
+      "title": "日语笔记",
+      "description": "# 日语笔记 词汇",
+      "path": "/docs/notes/Japanese/",
+      "headings": [
+        "日语笔记"
+      ],
+      "content": "# 日语笔记 词汇"
+    },
+    {
+      "id": "docs/notes/digital-design/data-processing/error-control-and-compression.md",
+      "type": "document",
+      "title": "CRC、汉明码与游程编码：检错、纠错和压缩的适用范围",
+      "description": "# CRC、汉明码与游程编码：检错、纠错和压缩的适用范围 通信、存储和数据处理里经常把“编码”统称为一类技术，但目标其实不同：有些方法用于发现错误，有些能够定位并修复有限的错误，还有些只是在利用数据冗余进行压缩。区分各方法的适用范围，才能避免把不具备纠错能力的 CRC 当成恢复手段，或把不适合高熵数据的游程编码用于错误场景。 ## 三类问题，三种工具 方法 主要目的 能力范围 典型场景 --- --- --- --- CRC 检错 通常不能定位或纠正错误 网络帧、存储块、固件完整性 汉明码 单比特纠错 基础形式不能",
+      "path": "/docs/notes/digital-design/error-control-and-compression",
+      "headings": [
+        "CRC、汉明码与游程编码：检错、纠错和压缩的适用范围",
+        "三类问题，三种工具",
+        "CRC：用多项式余数检错",
+        "实现时容易遗漏的参数",
+        "汉明码：利用 syndrome 定位单比特错误",
+        "RLE：把重复值换成运行段",
+        "选择与组合"
+      ],
+      "content": "# CRC、汉明码与游程编码：检错、纠错和压缩的适用范围 通信、存储和数据处理里经常把“编码”统称为一类技术，但目标其实不同：有些方法用于发现错误，有些能够定位并修复有限的错误，还有些只是在利用数据冗余进行压缩。区分各方法的适用范围，才能避免把不具备纠错能力的 CRC 当成恢复手段，或把不适合高熵数据的游程编码用于错误场景。 ## 三类问题，三种工具 方法 主要目的 能力范围 典型场景 --- --- --- --- CRC 检错 通常不能定位或纠正错误 网络帧、存储块、固件完整性 汉明码 单比特纠错 基础形式不能可靠处理任意多比特错误 ECC 存储、教学与简单传输接口 RLE/RLC 无损压缩 只在长重复序列上有效 位图、掩码、重复值序列 ## CRC：用多项式余数检错 CRC（循环冗余校验）把一串比特视为 GF(2) 上的多项式。发送端选择生成多项式 G(x)，在数据末尾补零后做模 2 除法；除法中的减法就是 XOR，得到的余数附在数据尾部。 以数据 11010011101100 和生成多项式 1011 为例：生成多项式的阶数为 3，因此数据末尾先补 3 个零，模 2 除法的余数为 100，最终发送码字为： 接收端用同一生成多项式重新相除。余数为零表示“未检测到错误”，不是数学上绝对保证没有错误；检错能力取决于多项式、帧长和错误模式。工程中常见 CRC-8、CRC-16、CRC-32，它们的多项式、初始值、输入/输出反射和最终异或值必须完全一致，不能只凭位数互通。 ### 实现时容易遗漏的参数 多项式的正常表示与反射表示； 初始寄存器值（init）； 输入与输出是否 bit-reflect； 最终异或值（xorout）； 字节序与覆盖范围，是否包含长度、头部或填充。 调试 CRC 不一致时，应先使用一组公开测试向量逐项比对这些参数，再检查硬件移位方向和软件表驱动实现。 ## 汉明码：利用 syndrome 定位单比特错误 经典 (7,4) 汉明码用 4 个数据位和 3 个校验位组成 7 位码字。校验位放在 1、2、4 等 2 的幂次位置： 以偶校验为例，每个校验位覆盖一组位置；接收端重新计算得到 s1、s2、s4。把 s4 s2 s1 当作二进制数，非零值就是检测到的单比特错误位置。例如 101 表示第 5 位出错。 基础汉明码能纠正单比特错误，但无法可靠地区分“单错”与部分双错情形。实际 ECC 场景常加入一个整体校验位，形成 SECDED（single-error correction, double-error detection）：单比特错误可纠正，双比特错误可检测但不可纠正。 ## RLE：把重复值换成运行段 RLE（Run-Length Encoding，也常写作 RLC）不处理传输错误，而是把连续重复的值表示为 (value, count)： 在程序内存中，运行段通常是结构体数组或两个并行数组，而不是人眼看到的文本： 它适合大片纯色、稀疏掩码和重复值较多的数据；对高熵数据，运行段元数据可能让结果更大。实现时还要确定 count 的位宽、单段最大长度、结构体对齐，以及当数据恰好含有控制值时的转义规则。 ## 选择与组合 三者可以在同一传输路径中出现，但不能互相替代。例如，图像数据可先进行无损压缩，再对最终数据包附加 CRC；带 ECC 的存储器在读出时先尝试纠正单比特错误，再把更高层的校验交给 CRC 或哈希完成。 设计时最重要的问题是：系统需要的是压缩、发现错误、恢复错误，还是确认数据端到端完整性？先明确目标，再决定校验强度、编码冗余和软件/硬件实现位置。"
+    },
+    {
+      "id": "docs/notes/digital-design/data-processing/im2col-for-convolution.md",
+      "type": "document",
+      "title": "im2col：把卷积变成矩阵乘法时的数据布局",
+      "description": "# im2col：把卷积变成矩阵乘法时的数据布局 im2col 是一种卷积实现策略：把输入特征图中每个卷积窗口展开为矩阵的一行（或一列），再把卷积转化为 GEMM。这样可以复用成熟的矩阵乘内核、SIMD 指令或 NPU 矩阵单元；代价是额外的工作区和内存搬运。 ## 从卷积到矩阵乘 设输入为 H in × W in × C in，卷积核为 K h × K w，组数为 G，每组输入通道数为 C per group。在 NCHW/NHWC 的外层批次维之外，每一个输出坐标 (oy, ox) 对应一个感受野。 把感受野按",
+      "path": "/docs/notes/digital-design/im2col-for-convolution",
+      "headings": [
+        "im2col：把卷积变成矩阵乘法时的数据布局",
+        "从卷积到矩阵乘",
+        "输出尺寸与索引",
+        "数据布局先统一，再谈优化",
+        "整数编码时，padding 的值不是总为零",
+        "性能取舍",
+        "最小测试矩阵"
+      ],
+      "content": "# im2col：把卷积变成矩阵乘法时的数据布局 im2col 是一种卷积实现策略：把输入特征图中每个卷积窗口展开为矩阵的一行（或一列），再把卷积转化为 GEMM。这样可以复用成熟的矩阵乘内核、SIMD 指令或 NPU 矩阵单元；代价是额外的工作区和内存搬运。 ## 从卷积到矩阵乘 设输入为 H in × W in × C in，卷积核为 K h × K w，组数为 G，每组输入通道数为 C per group。在 NCHW/NHWC 的外层批次维之外，每一个输出坐标 (oy, ox) 对应一个感受野。 把感受野按 ky → kx → channel 的固定顺序排成一行： 对于分组卷积，矩阵行数与列数可写为： 对应组的权重也按同一列顺序拉平。于是每个输出通道的卷积就是一行 im2col 数据和一行权重的点积，多个输出通道可一起交给 GEMM。 ## 输出尺寸与索引 在 stride 为 S h, S w、padding 为 P h, P w、dilation 为 D h, D w 时，有效卷积核尺寸是： 输出坐标 (oy, ox) 对应输入窗口左上角： 分组卷积需要额外处理通道偏移：第 g 组读取 g C per group 开始的通道，并只与该组的权重相乘。遗漏这个偏移时，单组测试通常能通过，多组测试会整体错位。 ## 数据布局先统一，再谈优化 im2col 的常见 bug 不是算术错误，而是生产者和 GEMM 消费者对 layout 的理解不同。实现前应固定并写入接口文档： 输入是 NHWC 还是 NCHW； im2col 的行是输出位置还是输出通道； 一行内的顺序是 ky/kx/channel 还是其他排列； groups 如何分块，权重是否预先重排； 每行的真实列数和用于对齐的 stride 是否不同。 建议让 lhs stride bytes 独立于逻辑列数：逻辑列数是 K h K w C per group，物理行步长可向 4、8、16 或更大的向量宽度对齐。这样能让加载更规整，同时不会让调用方误把 padding 当作有效数据。 ## 整数编码时，padding 的值不是总为零 这是实现整数编码卷积时最容易忽略的条件。若输入张量使用整数编码，数学上的零对应 input zero point，而不一定是字面值 0。 若 GEMM 前已经把输入减去 zero point，落在输入范围外的位置可写数学零（即变换后的字面 0）。 若 im2col 保留原始整数编码字节，落在输入范围外的位置应填 input zero point。 两种定义方式都可使用，但 im2col、权重偏移、累加与 requantization 必须采用同一方式。混用“原始输入”和“已减 zero point 的 padding”会在图像边缘产生系统性偏差。 ## 性能取舍 完整展开会产生大临时矩阵，尤其是大分辨率、3×3 以上卷积和多通道输入。常见优化按优先级如下： 分块展开 ：只生成若干输出行，和 GEMM 双缓冲交替执行，降低峰值内存。 专用小核路径 ：1×1 卷积通常可以直接视为矩阵乘；depthwise convolution 也常直接遍历输入，避免无意义展开。 预重排权重 ：让权重布局符合向量加载或矩阵单元要求，避免在热路径重复重排。 对齐与批处理 ：按目标 SIMD/NPU 的 tile 大小补齐通道和行步长，同时明确尾部元素的掩码或填充值。 不能只看 GEMM 的峰值算力：如果 im2col 的生成与读写带宽占了主要时间，直接卷积核或 implicit-GEMM 往往更合适。 ## 最小测试矩阵 一个可用的 im2col 实现至少应覆盖： padding = 0/1/2、stride = 1/2、dilation = 1/2； groups = 1/2/4，并验证每组通道偏移； 左上、右下等落在输入范围外的窗口； 1×1、全覆盖核和不规则通道数； 有/无对齐填充的行步长； 非零 input zero point 的整数编码输入。 最可靠的参考结果是朴素卷积：对相同输入、权重、bias 和整数编码参数逐元素比较最终输出，而不只比较展开后的中间矩阵。这样能同时发现索引、组偏移、padding 与后处理定义不一致的问题。"
+    },
+    {
+      "id": "docs/notes/digital-design/index.md",
+      "type": "document",
+      "title": "数字 IC 设计",
+      "description": "# 数字 IC 设计 本组文章按设计对象分为三类。 ## RTL 与形式验证 介绍 SystemVerilog Assertion 的时序表达，以及从环境约束、断言到覆盖率的功能形式验证方法。 ## 数据编码与矩阵计算 介绍 CRC、汉明码、游程编码的能力范围，以及将卷积转换为 GEMM 时的 im2col 数据布局。 ## RISC-V 处理器架构 介绍整数寄存器与 ABI、CSR 与 trap 处理、Zve32x 嵌入式整数向量扩展，以及 F 单精度浮点扩展。",
+      "path": "/docs/notes/digital-design/",
+      "headings": [
+        "数字 IC 设计",
+        "RTL 与形式验证",
+        "数据编码与矩阵计算",
+        "RISC-V 处理器架构"
+      ],
+      "content": "# 数字 IC 设计 本组文章按设计对象分为三类。 ## RTL 与形式验证 介绍 SystemVerilog Assertion 的时序表达，以及从环境约束、断言到覆盖率的功能形式验证方法。 ## 数据编码与矩阵计算 介绍 CRC、汉明码、游程编码的能力范围，以及将卷积转换为 GEMM 时的 im2col 数据布局。 ## RISC-V 处理器架构 介绍整数寄存器与 ABI、CSR 与 trap 处理、Zve32x 嵌入式整数向量扩展，以及 F 单精度浮点扩展。"
+    },
+    {
+      "id": "docs/notes/digital-design/riscv/riscv-abi-and-csr.md",
+      "type": "document",
+      "title": "RISC-V：整数寄存器、ABI、CSR 与 trap 处理",
+      "description": "# RISC-V：整数寄存器、ABI、CSR 与 trap 处理 RISC-V 基础整数 ISA 定义 x0–x31、程序计数器和整数指令；ABI 规定寄存器在函数调用中的用途；特权架构定义 CSR、特权级、中断、异常和地址转换。三部分解决的问题不同：ISA 约束指令的硬件行为，ABI 约束不同目标文件之间的调用兼容性，特权架构约束操作系统与处理器之间的控制接口。 ## 32 个整数寄存器 RV32 与 RV64 均有 32 个整数寄存器。每个寄存器宽度等于 XLEN，即 RV32 为 32 位，RV64 为 64",
+      "path": "/docs/notes/digital-design/riscv-abi-and-csr",
+      "headings": [
+        "RISC-V：整数寄存器、ABI、CSR 与 trap 处理",
+        "32 个整数寄存器",
+        "参数、返回值与栈帧",
+        "CSR 地址与访问权限",
+        "CSR 地址空间的完整分类",
+        "六条 CSR 访问指令",
+        "CSR 字段的写入类型",
+        "当前规范分配的 U 级 CSR",
+        "当前规范分配的 S 级 CSR",
+        "当前规范分配的 M 级 CSR",
+        "与 trap 直接相关的字段",
+        "mstatus 的主要控制字段",
+        "mtvec、mepc、mcause 与 mtval",
+        "mie 与 mip 的标准中断位",
+        "M-mode trap 的硬件与软件分工",
+        "RV64 示意：只展示入口结构，不是完整操作系统实现",
+        "RTL 实现中的关键规则"
+      ],
+      "content": "# RISC-V：整数寄存器、ABI、CSR 与 trap 处理 RISC-V 基础整数 ISA 定义 x0–x31、程序计数器和整数指令；ABI 规定寄存器在函数调用中的用途；特权架构定义 CSR、特权级、中断、异常和地址转换。三部分解决的问题不同：ISA 约束指令的硬件行为，ABI 约束不同目标文件之间的调用兼容性，特权架构约束操作系统与处理器之间的控制接口。 ## 32 个整数寄存器 RV32 与 RV64 均有 32 个整数寄存器。每个寄存器宽度等于 XLEN，即 RV32 为 32 位，RV64 为 64 位。x0 的读值恒为零；其余寄存器没有硬件固定用途，表中的名称和保存规则来自标准 psABI。 物理寄存器 ABI 名称 标准用途 跨函数调用保留 详细说明 --- --- --- --- --- x0 zero 常数零 固定值 读值恒为 0，写入结果被丢弃；常用于生成伪指令和不保留 CSR 旧值。 x1 ra 返回地址 否 jal/jalr 通常写入返回地址；非叶子函数若继续调用其他函数，必须先保存原值。 x2 sp 栈指针 是 栈向低地址增长；标准 ABI 要求函数入口处按 16 字节对齐，并在函数执行期间维持规定对齐。 x3 gp 全局指针 固定用途 工具链可用它访问小数据区；标准 ABI 将其列为不可分配寄存器，普通函数不应修改。 x4 tp 线程指针 固定用途 指向线程局部存储或运行时线程结构；信号处理与运行库可能直接读取，普通函数不应修改。 x5 t0 临时寄存器 0 否 调用者保存；也常用于 trap 入口的临时交换。 x6 t1 临时寄存器 1 否 调用者保存。 x7 t2 临时寄存器 2 否 调用者保存。 x8 s0 / fp 保存寄存器 0 / 帧指针 是 使用帧指针时必须选用 x8；无帧指针时仍按 s0 的保存规则处理。 x9 s1 保存寄存器 1 是 被调用者使用后必须恢复入口值。 x10 a0 参数 0 / 返回值 0 否 第一个整数参数；也是第一个整数返回值。 x11 a1 参数 1 / 返回值 1 否 第二个整数参数；也是第二个整数返回值，可与 a0 共同返回宽值。 x12 a2 参数 2 否 第三个整数参数。 x13 a3 参数 3 否 第四个整数参数。 x14 a4 参数 4 否 第五个整数参数。 x15 a5 参数 5 否 第六个整数参数。 x16 a6 参数 6 否 第七个整数参数。 x17 a7 参数 7 / 系统调用号 否 第八个整数参数；许多执行环境用它传递系统调用号，但具体定义由运行环境规定。 x18 s2 保存寄存器 2 是 被调用者保存。 x19 s3 保存寄存器 3 是 被调用者保存。 x20 s4 保存寄存器 4 是 被调用者保存。 x21 s5 保存寄存器 5 是 被调用者保存。 x22 s6 保存寄存器 6 是 被调用者保存。 x23 s7 保存寄存器 7 是 被调用者保存。 x24 s8 保存寄存器 8 是 被调用者保存。 x25 s9 保存寄存器 9 是 被调用者保存。 x26 s10 保存寄存器 10 是 被调用者保存。 x27 s11 保存寄存器 11 是 被调用者保存。 x28 t3 临时寄存器 3 否 调用者保存。 x29 t4 临时寄存器 4 否 调用者保存。 x30 t5 临时寄存器 5 否 调用者保存。 x31 t6 临时寄存器 6 否 调用者保存。 “调用者保存”表示调用指令执行前，调用方必须保存调用后仍需使用的值；“被调用者保存”表示被调用函数若修改寄存器，必须在返回前恢复入口值。gp 与 tp 属于固定用途寄存器，不应按普通临时寄存器分配。 ### 参数、返回值与栈帧 标准整数调用约定提供八个参数寄存器 a0–a7。宽度不超过 XLEN 的标量优先使用一个参数寄存器；寄存器不足时，后续参数按 ABI 规则放入栈中。a0 和 a1 兼作返回值寄存器。栈向低地址增长，函数入口的 sp 必须按 128 位对齐。 帧指针不是强制状态。编译器启用帧指针时，s0/fp 指向当前栈帧的固定位置，使调试器和栈展开器不依赖函数执行期间变化的 sp。叶子函数若不保存寄存器且不分配局部对象，可以不建立栈帧。 下例是一个 RV64 非叶子函数的基本栈帧。实际帧大小由局部对象、保存寄存器和栈上传参共同决定。 ## CSR 地址与访问权限 CSR 使用 12 位地址，因此指令编码可表示 4096 个 CSR 地址。地址高四位同时编码默认读写属性和最低访问特权级：csr[11:10] 为 11 时表示只读，csr[9:8] 表示 U、S、H/VS 或 M 级。更高特权级通常可以访问低特权级 CSR，但实现仍可依据特权扩展截获部分访问。 ### CSR 地址空间的完整分类 最低特权级 地址范围 属性 标准或自定义用途 --- --- --- --- U 0x000–0x0FF 读写 标准 U 级 CSR U 0x400–0x4FF 读写 标准 U 级 CSR U 0x800–0x8FF 读写 自定义 U 级 CSR U 0xC00–0xC7F 只读 标准 U 级 CSR U 0xC80–0xCBF 只读 标准 U 级 CSR，常用于 RV32 高 32 位计数器 U 0xCC0–0xCFF 只读 自定义 U 级 CSR S 0x100–0x1FF 读写 标准 S 级 CSR S 0x500–0x5BF 读写 标准 S 级 CSR S 0x5C0–0x5FF 读写 自定义 S 级 CSR S 0x900–0x9BF 读写 标准 S 级 CSR S 0x9C0–0x9FF 读写 自定义 S 级 CSR S 0xD00–0xDBF 只读 标准 S 级 CSR S 0xDC0–0xDFF 只读 自定义 S 级 CSR H/VS 0x200–0x2FF 读写 标准虚拟化 CSR H/VS 0x600–0x6BF 读写 标准虚拟化 CSR H/VS 0x6C0–0x6FF 读写 自定义虚拟化 CSR H/VS 0xA00–0xABF 读写 标准虚拟化 CSR H/VS 0xAC0–0xAFF 读写 自定义虚拟化 CSR H/VS 0xE00–0xEBF 只读 标准虚拟化 CSR H/VS 0xEC0–0xEFF 只读 自定义虚拟化 CSR M 0x300–0x3FF 读写 标准 M 级 CSR M 0x700–0x79F 读写 标准 M 级 CSR M 0x7A0–0x7AF 读写 M 级可访问的调试触发器 CSR Debug 0x7B0–0x7BF 读写 仅 Debug Mode 可见 M 0x7C0–0x7FF 读写 自定义 M 级 CSR M 0xB00–0xBBF 读写 标准 M 级计数器 CSR M 0xBC0–0xBFF 读写 自定义 M 级 CSR M 0xF00–0xFBF 只读 标准 M 级信息 CSR M 0xFC0–0xFFF 只读 自定义 M 级 CSR 访问不存在的 CSR、以不足的特权级访问 CSR，或写入只读 CSR，通常产生非法指令异常。表中的“标准”只表示地址由规范分配，不表示所有处理器都必须实现对应扩展。 ### 六条 CSR 访问指令 Zicsr 定义三种寄存器形式和三种立即数形式。每条指令对单个 CSR 执行原子读改写，软件不会观察到指令内部的中间值。 指令 读操作 写操作 省略读或写的条件 --- --- --- --- csrrw rd, csr, rs1 旧值写入 rd 将 rs1 完整写入 CSR rd=x0 时不读取 CSR；写操作仍执行。 csrrs rd, csr, rs1 旧值写入 rd 将 CSR 与 rs1 按位 OR 后写回 rs1=x0 时只读，不执行写操作。 csrrc rd, csr, rs1 旧值写入 rd 将 rs1 中为 1 的对应 CSR 位清零 rs1=x0 时只读，不执行写操作。 csrrwi rd, csr, uimm 旧值写入 rd 将 5 位零扩展立即数完整写入 CSR rd=x0 时不读取 CSR。 csrrsi rd, csr, uimm 旧值写入 rd 按立即数掩码置位 uimm=0 时只读。 csrrci rd, csr, uimm 旧值写入 rd 按立即数掩码清零 uimm=0 时只读。 汇编器提供 csrr、csrw、csrs、csrc 等伪指令。例如 csrr a0, mstatus 通常展开为 csrrs a0, mstatus, x0。 ### CSR 字段的写入类型 类型 含义 软件处理方式 --- --- --- WPRI 保留写值、读时忽略 修改同一 CSR 的其他字段时，应保留这些位的原值。未实现字段通常读为 0。 WLRL 只允许写入有限的合法编码 软件只写规范列出的合法值；读回值一定属于合法集合。 WARL 可写任意值、读回合法值 实现可把不支持的写值转换成某个合法值；软件应写入后读回以确认实际设置。 ## 当前规范分配的 U 级 CSR 下表覆盖当前特权规范列出的 U 级 CSR。带扩展名称的寄存器只在对应扩展存在时实现。 地址 名称 权限 所属功能 说明 --- --- --- --- --- 0x001 fflags URW F/D/Q 浮点累积异常标志。 0x002 frm URW F/D/Q 浮点动态舍入模式。 0x003 fcsr URW F/D/Q frm 与 fflags 的组合视图。 0x008 vstart URW V 向量指令开始处理的元素序号。 0x009 vxsat URW V 向量定点饱和累积标志。 0x00A vxrm URW V 向量定点舍入模式。 0x00F vcsr URW V vxrm 与 vxsat 的组合视图。 0x011 ssp URW Zicfiss 影子栈指针。 0x015 seed URW 熵源扩展 密码随机数发生器的种子接口。 0x017 jvt URW Zcmt 表跳转基址与控制。 0xC00 cycle URO Zicntr 周期计数器的低 XLEN 位。 0xC01 time URO Zicntr 实时时钟计数值的低 XLEN 位。 0xC02 instret URO Zicntr 已退休指令数的低 XLEN 位。 0xC03–0xC1F hpmcounter3–hpmcounter31 URO Zihpm 性能监测计数器。 0xC20 vl URO V 当前向量长度。 0xC21 vtype URO V 当前向量元素宽度、寄存器组和非活动元素策略。 0xC22 vlenb URO V 单个向量寄存器的字节数。 0xC80 cycleh URO Zicntr，RV32 cycle 的高 32 位。 0xC81 timeh URO Zicntr，RV32 time 的高 32 位。 0xC82 instreth URO Zicntr，RV32 instret 的高 32 位。 0xC83–0xC9F hpmcounter3h–hpmcounter31h URO Zihpm，RV32 性能监测计数器的高 32 位。 ## 当前规范分配的 S 级 CSR 地址 名称 权限 功能分类 说明 --- --- --- --- --- 0x100 sstatus SRW trap 配置 mstatus 中 S 级可见字段的受限视图。 0x104 sie SRW trap 配置 S 级中断使能。 0x105 stvec SRW trap 配置 S 级 trap 入口基址与模式。 0x106 scounteren SRW 计数器 控制 U 级是否可读取各计数器。 0x10A senvcfg SRW 环境配置 S 级执行环境功能控制。 0x10C–0x10F sstateen0–sstateen3 SRW 状态使能 控制低特权级对扩展状态的访问。 0x120 scountinhibit SRW 计数器 S 级计数器停止控制。 0x140 sscratch SRW trap 处理 S 级 trap handler 临时寄存器。 0x141 sepc SRW trap 处理 进入 S 级 trap 前的 PC。 0x142 scause SRW trap 处理 S 级 trap 的中断标志与原因码。 0x143 stval SRW trap 处理 与 trap 原因相关的附加值。 0x144 sip SRW trap 处理 S 级中断挂起状态。 0x14D stimecmp SRW Sstc S 级定时比较值。 0x14E sctrctl SRW 控制转移记录 S 级控制转移记录控制。 0x14F sctrstatus SRW 控制转移记录 S 级控制转移记录状态。 0x150 siselect SRW Smcsrind/Sscsrind S 级间接 CSR 选择。 0x151–0x153 sireg–sireg3 SRW Smcsrind/Sscsrind S 级间接 CSR 别名 1–3。 0x155–0x157 sireg4–sireg6 SRW Smcsrind/Sscsrind S 级间接 CSR 别名 4–6。 0x15D stimecmph SRW Sstc，RV32 stimecmp 的高 32 位。 0x15F sctrdepth SRW 控制转移记录 S 级控制转移记录深度。 0x180 satp SRW 地址转换 地址转换模式、地址空间标识符和根页表物理页号。 0x181 srmcfg SRW 资源管理 S 级资源管理配置。 0x5A8 scontext SRW 调试/跟踪 S 级上下文标识。 0xDA0 scountovf SRO 计数器 S 级可见的计数器溢出状态。 ## 当前规范分配的 M 级 CSR M-mode 是唯一强制实现的特权级，但表中仍有多个 CSR 依赖可选扩展。实现不支持某个扩展时，对应地址不必存在。 地址 名称 权限 功能分类 说明 --- --- --- --- --- 0x300 mstatus MRW trap 配置 全局中断、此前特权级、扩展上下文和内存访问控制。 0x301 misa MRW/WARL ISA 配置 MXL 与已实现扩展位；部分实现可只读。 0x302 medeleg MRW trap 委托 将指定同步异常交给 S-mode。 0x303 mideleg MRW trap 委托 将指定中断交给 S-mode。 0x304 mie MRW trap 配置 M/S 级各中断源使能位。 0x305 mtvec MRW trap 配置 M 级 trap 入口基址与模式。 0x306 mcounteren MRW 计数器 控制 S/U 级能否访问硬件计数器。 0x30A menvcfg MRW 环境配置 M 级对低特权级执行环境的控制。 0x30C–0x30F mstateen0–mstateen3 MRW 状态使能 控制低特权级对扩展状态的访问。 0x310 mstatush MRW trap 配置，RV32 mstatus 的附加高位字段。 0x312 medelegh MRW trap 委托，RV32 medeleg 的高 32 位。 0x31A menvcfgh MRW 环境配置，RV32 menvcfg 的高 32 位。 0x31C–0x31F mstateen0h–mstateen3h MRW 状态使能，RV32 mstateen 的高 32 位。 0x320 mcountinhibit MRW 计数器 按位停止 mcycle、minstret 与性能计数器。 0x321 mcyclecfg MRW Smcntrpmf 周期计数器过滤配置。 0x322 minstretcfg MRW Smcntrpmf 指令退休计数器过滤配置。 0x323–0x33F mhpmevent3–mhpmevent31 MRW Zihpm 选择性能计数器统计的事件。 0x340 mscratch MRW trap 处理 M 级 trap handler 临时寄存器。 0x341 mepc MRW trap 处理 进入 M 级 trap 前的 PC。 0x342 mcause MRW trap 处理 M 级 trap 的中断标志与原因码。 0x343 mtval MRW trap 处理 错误地址、非法指令位或其他原因相关值。 0x344 mip MRW trap 处理 M/S 级各中断源挂起状态。 0x34A mtinst MRW H 扩展 转换后的 trap 指令信息。 0x34B mtval2 MRW H 扩展 第二个 trap 附加值。 0x34E mctrctl MRW 控制转移记录 M 级控制转移记录控制。 0x350 miselect MRW Smcsrind M 级间接 CSR 选择。 0x351–0x353 mireg–mireg3 MRW Smcsrind M 级间接 CSR 别名 1–3。 0x355–0x357 mireg4–mireg6 MRW Smcsrind M 级间接 CSR 别名 4–6。 0x3A0–0x3AF pmpcfg0–pmpcfg15 MRW PMP PMP 条目的权限和地址匹配方式；部分奇数编号仅用于 RV32。 0x3B0–0x3EF pmpaddr0–pmpaddr63 MRW PMP PMP 地址寄存器。实际条目数量由实现决定。 0x721–0x73F mcyclecfgh、minstretcfgh、mhpmevent3h–mhpmevent31h MRW Smcntrpmf，RV32 计数器过滤和事件选择的高 32 位。 0x740 mnscratch MRW Smrnmi 可恢复 NMI 临时寄存器。 0x741 mnepc MRW Smrnmi 可恢复 NMI 返回 PC。 0x742 mncause MRW Smrnmi 可恢复 NMI 原因。 0x744 mnstatus MRW Smrnmi 可恢复 NMI 状态。 0x747 mseccfg MRW Smepmp M 级安全配置。 0x757 mseccfgh MRW Smepmp，RV32 mseccfg 的高 32 位。 0x7A0 tselect MRW 调试触发器 选择当前触发器。 0x7A1–0x7A3 tdata1–tdata3 MRW 调试触发器 触发器配置与比较数据。 0x7A8 mcontext MRW 调试/跟踪 M 级上下文标识。 0x7B0 dcsr DRW Debug Mode 调试控制和状态。M-mode 普通访问不可见。 0x7B1 dpc DRW Debug Mode 调试返回 PC。 0x7B2–0x7B3 dscratch0–dscratch1 DRW Debug Mode 调试临时寄存器。 0xB00 mcycle MRW 计数器 机器周期计数。 0xB02 minstret MRW 计数器 已退休指令计数。 0xB03–0xB1F mhpmcounter3–mhpmcounter31 MRW Zihpm M 级性能监测计数器。 0xB80 mcycleh MRW 计数器，RV32 mcycle 的高 32 位。 0xB82 minstreth MRW 计数器，RV32 minstret 的高 32 位。 0xB83–0xB9F mhpmcounter3h–mhpmcounter31h MRW Zihpm，RV32 M 级性能计数器的高 32 位。 0xF11 mvendorid MRO 实现信息 JEDEC 厂商编号。允许为 0。 0xF12 marchid MRO 实现信息 架构实现编号。 0xF13 mimpid MRO 实现信息 实现版本编号。 0xF14 mhartid MRO 实现信息 当前硬件线程 ID。系统内必须唯一。 0xF15 mconfigptr MRO 实现信息 配置数据结构指针；为 0 表示未提供。 H 扩展还定义 hstatus、hedeleg、hideleg、hie、hgatp、htval、htinst、hgeip、vsstatus、vstvec、vsepc、vscause、vsatp 等虚拟化 CSR。它们只在实现 H 扩展时存在，不属于基础 M/S trap 处理的必需状态。 ## 与 trap 直接相关的字段 ### mstatus 的主要控制字段 字段 位位置 作用 --- --- --- SIE [1] S-mode 全局中断使能。 MIE [3] M-mode 全局中断使能。 SPIE [5] 进入 S 级 trap 前保存的 SIE。 MPIE [7] 进入 M 级 trap 前保存的 MIE。 SPP [8] 进入 S 级 trap 前的特权级。 VS [10:9] 向量状态：Off、Initial、Clean、Dirty。 MPP [12:11] 进入 M 级 trap 前的特权级。 FS [14:13] 浮点状态：Off、Initial、Clean、Dirty。 XS [16:15] 其他扩展状态的摘要。通常只读。 MPRV [17] M-mode 数据访问按 MPP 指定的特权级执行权限检查。 SUM [18] S-mode 是否允许访问 U 级页中的数据。 MXR [19] 是否允许从只可执行页读取数据。 TVM [20] 在 S-mode 截获 satp 访问和 SFENCE.VMA。 TW [21] 限制低特权级执行 WFI。 TSR [22] 在 S-mode 截获 SRET。 SD [XLEN-1] FS、VS 或 XS 为 Dirty 时置 1，供上下文保存代码快速判断。 trap 进入 M-mode 时，硬件执行等效状态更新：MPIE ← MIE、MIE ← 0、MPP ← trap 前特权级。执行 mret 时，MIE ← MPIE，当前特权级恢复为 MPP，并按规范重置返回相关字段。 ### mtvec、mepc、mcause 与 mtval CSR 关键字段 处理含义 --- --- --- mtvec BASE = mtvec[XLEN-1:2]，MODE = mtvec[1:0] MODE=0 时所有 trap 跳到 BASE；MODE=1 时同步异常跳到 BASE，中断跳到 BASE + 4 × cause。 mepc 可执行地址 保存被中断指令或产生异常指令的 PC。最低不可表示位读为 0。 mcause Interrupt = mcause[XLEN-1]，其余位为原因码 最高位区分异步中断与同步异常。 mtval 原因相关值 地址异常时通常保存错误地址；非法指令时可保存指令位；没有附加信息时为 0。 mepc 是否需要增加 2 或 4 取决于异常类型和指令长度。中断返回通常使用原 mepc；ecall、断点或软件已处理的非法指令需要由 handler 按预期处理行为决定后续 PC，不能统一执行固定增量。 ### mie 与 mip 的标准中断位 位 mie 名称 mip 名称 中断来源 --- --- --- --- 1 SSIE SSIP S 级软件中断。 3 MSIE MSIP M 级软件中断。 5 STIE STIP S 级定时器中断。 7 MTIE MTIP M 级定时器中断。 9 SEIE SEIP S 级外部中断。 11 MEIE MEIP M 级外部中断。 13 LCOFIE LCOFIP Sscofpmf 本地计数器溢出中断。 16 及以上 平台或扩展定义 平台或扩展定义 实现和扩展规定的本地中断。 中断进入 M-mode 需要同时满足挂起位、使能位、委托设置、全局中断状态和特权级规则。mip 某些位由硬件只读驱动，某些位允许软件写入；必须按每个位的规范实现，而不能把整个 CSR 视为普通读写寄存器。 ## M-mode trap 的硬件与软件分工 发生未委托给低特权级的 trap 时，硬件完成以下操作： 将当前 PC 写入 mepc。 将中断标志和原因码写入 mcause。 按原因向 mtval 写入附加信息或零。 更新 mstatus.MPIE、MIE 与 MPP。 按 mtvec.MODE 计算入口地址并开始取指。 硬件不会自动保存 32 个整数寄存器。软件入口必须先取得可用的临时寄存器和栈，再保存后续处理代码会修改的上下文。mscratch 常保存当前 hart 的 trap 栈或控制块指针，入口用 csrrw 与某个整数寄存器交换。 完整入口还要处理所有被修改的 GPR、嵌套 trap、每 hart 栈、RV32/RV64 宽度、浮点与向量上下文、地址转换状态以及返回前的中断恢复顺序。若 handler 调用遵循 C ABI 的函数，入口必须先把调用者保存寄存器中属于被中断程序的值保存到上下文结构，因为 C 函数可以修改这些寄存器。 ## RTL 实现中的关键规则 CSR 解码同时检查地址是否存在、当前特权级、只读属性和扩展使能状态。 CSRRS/CSRRC 的源寄存器为 x0 时不产生写访问，这一点会影响只读 CSR 和写副作用判断。 WARL 字段需要确定合法化函数，并保证相同输入在同一实现上得到确定结果。 trap 写 CSR、普通 CSR 指令和返回指令可能在同一流水线阶段竞争写口；必须规定优先级并保证精确异常。 mepc、mtvec.BASE 与地址对齐受 IALIGN 及实现支持的指令长度影响。 mie/mip 中每个位的可写属性不同，外部中断输入与软件写操作不能简单合并成普通寄存器写使能。 FS、VS 和 SD 参与延迟上下文保存；浮点或向量状态发生写入时，应按规范更新 Dirty 状态。 参考：RISC-V psABI、CSR 地址与字段规范、Machine-Level ISA、Supervisor-Level ISA。"
+    },
+    {
+      "id": "docs/notes/digital-design/riscv/riscv-f-extension.md",
+      "type": "document",
+      "title": "RISC-V F 扩展：单精度浮点寄存器、CSR 与指令",
+      "description": "# RISC-V F 扩展：单精度浮点寄存器、CSR 与指令 RISC-V F 扩展定义符合 IEEE 754-2008 的 32 位单精度浮点运算。它增加 32 个独立的浮点寄存器、浮点控制状态 CSR、单精度访存、算术、融合乘加、格式转换、比较和分类指令。F 依赖 Zicsr，因为软件需要通过 CSR 读取舍入模式和累积异常标志。 只实现 F 时，浮点寄存器宽度 FLEN=32。若处理器同时实现 D 或 Q，同一组 f0–f31 会扩宽到 64 或 128 位，单精度值按 NaN-boxing 规则保存于较宽寄",
+      "path": "/docs/notes/digital-design/riscv-f-extension",
+      "headings": [
+        "RISC-V F 扩展：单精度浮点寄存器、CSR 与指令",
+        "32 个浮点寄存器",
+        "浮点 CSR 的完整表格",
+        "fcsr 位字段",
+        "舍入模式编码",
+        "CSR 访问伪指令",
+        "F 扩展指令全集",
+        "访存、算术和融合乘加",
+        "符号注入与位模式移动",
+        "浮点与整数转换",
+        "比较指令",
+        "fclass.s 分类结果",
+        "NaN、次正规数和异常结果",
+        "mstatus.FS 与上下文切换",
+        "RTL 数据通路与控制要求"
+      ],
+      "content": "# RISC-V F 扩展：单精度浮点寄存器、CSR 与指令 RISC-V F 扩展定义符合 IEEE 754-2008 的 32 位单精度浮点运算。它增加 32 个独立的浮点寄存器、浮点控制状态 CSR、单精度访存、算术、融合乘加、格式转换、比较和分类指令。F 依赖 Zicsr，因为软件需要通过 CSR 读取舍入模式和累积异常标志。 只实现 F 时，浮点寄存器宽度 FLEN=32。若处理器同时实现 D 或 Q，同一组 f0–f31 会扩宽到 64 或 128 位，单精度值按 NaN-boxing 规则保存于较宽寄存器中。本文先说明 FLEN=32 的 F 基础行为，再指出与较宽扩展及 ABI 相关的差异。 ## 32 个浮点寄存器 浮点寄存器文件与整数寄存器文件相互独立。浮点算术读写 f 寄存器；地址计算、比较结果和浮点/整数转换读写 x 寄存器。FMV.X.W 与 FMV.W.X 用于原样传递 32 位位模式，FCVT 则执行数值转换。 物理寄存器 ABI 名称 标准用途 硬浮点 ABI 下跨调用保留 详细说明 --- --- --- --- --- f0 ft0 浮点临时寄存器 0 否 调用者保存。 f1 ft1 浮点临时寄存器 1 否 调用者保存。 f2 ft2 浮点临时寄存器 2 否 调用者保存。 f3 ft3 浮点临时寄存器 3 否 调用者保存。 f4 ft4 浮点临时寄存器 4 否 调用者保存。 f5 ft5 浮点临时寄存器 5 否 调用者保存。 f6 ft6 浮点临时寄存器 6 否 调用者保存。 f7 ft7 浮点临时寄存器 7 否 调用者保存。 f8 fs0 浮点保存寄存器 0 是 被调用者保存。 f9 fs1 浮点保存寄存器 1 是 被调用者保存。 f10 fa0 浮点参数 0 / 返回值 0 否 第一个浮点参数和第一个浮点返回值。 f11 fa1 浮点参数 1 / 返回值 1 否 第二个浮点参数和第二个浮点返回值。 f12 fa2 浮点参数 2 否 第三个浮点参数。 f13 fa3 浮点参数 3 否 第四个浮点参数。 f14 fa4 浮点参数 4 否 第五个浮点参数。 f15 fa5 浮点参数 5 否 第六个浮点参数。 f16 fa6 浮点参数 6 否 第七个浮点参数。 f17 fa7 浮点参数 7 否 第八个浮点参数。 f18 fs2 浮点保存寄存器 2 是 被调用者保存。 f19 fs3 浮点保存寄存器 3 是 被调用者保存。 f20 fs4 浮点保存寄存器 4 是 被调用者保存。 f21 fs5 浮点保存寄存器 5 是 被调用者保存。 f22 fs6 浮点保存寄存器 6 是 被调用者保存。 f23 fs7 浮点保存寄存器 7 是 被调用者保存。 f24 fs8 浮点保存寄存器 8 是 被调用者保存。 f25 fs9 浮点保存寄存器 9 是 被调用者保存。 f26 fs10 浮点保存寄存器 10 是 被调用者保存。 f27 fs11 浮点保存寄存器 11 是 被调用者保存。 f28 ft8 浮点临时寄存器 8 否 调用者保存。 f29 ft9 浮点临时寄存器 9 否 调用者保存。 f30 ft10 浮点临时寄存器 10 否 调用者保存。 f31 ft11 浮点临时寄存器 11 否 调用者保存。 星号表示只要求保存宽度不超过目标 ABI ABI FLEN 的值。以 ILP32F 或 LP64F 为例，ABI FLEN=32，fs0–fs11 中的 32 位单精度值必须保留。若程序采用纯整数调用约定，即使硬件实现 F，浮点寄存器也可全部视为临时寄存器。 硬浮点调用约定提供八个浮点参数寄存器 fa0–fa7，其中 fa0、fa1 兼作返回值。可变参数仍按整数调用约定传递。一个聚合对象是否拆分到浮点和整数参数寄存器，取决于其字段组成、字段宽度和可用参数寄存器，具体规则由 psABI 定义。 ## 浮点 CSR 的完整表格 F 扩展使用三个 U 级可读写 CSR 地址。它们不是三份独立状态：fflags 与 frm 是 fcsr 低八位的独立访问视图。 地址 CSR 权限 对应 fcsr 位 作用 --- --- --- --- --- 0x001 fflags URW [4:0] 累积浮点异常标志。软件显式清零前持续保留已经发生的异常。 0x002 frm URW [7:5] 动态舍入模式。指令 rm=111 时读取该字段。 0x003 fcsr URW [7:0] frm 与 fflags 的组合视图；[31:8] 保留给其他标准扩展。 fcsr 固定定义为 32 位，即使 XLEN=64 也不扩宽。未由其他扩展定义的 [31:8] 写入应被忽略并读为 0；通用软件执行读改写时仍应保留这些位，以兼容后续扩展。 ### fcsr 位字段 位 字段 复位与保存规则 说明 --- --- --- --- [0] NX 累积 Inexact，舍入结果与无限精度结果不同。 [1] UF 累积 Underflow，按舍入后 tininess 规则检测下溢。 [2] OF 累积 Overflow，有限结果超出目标格式范围。 [3] DZ 累积 Divide by Zero，有限非零数除以零。 [4] NV 累积 Invalid Operation，例如 0/0、负数开平方或信号 NaN 参与特定操作。 [7:5] frm 软件状态 动态舍入模式。 [31:8] 保留 读改写保留 当前 F 扩展未使用。 异常标志为粘滞状态。一次运算可同时置多个标志；后续无异常运算不会清零。基础 F 扩展不会因 fflags 置位自动产生 trap，软件需要在适当位置读取和清除。 ### 舍入模式编码 rm/frm 编码 助记 舍入方式 作为指令 rm 作为 frm --- --- --- --- --- 000 RNE 最近值，正好居中时取偶数 有效 有效 001 RTZ 向零 有效 有效 010 RDN 向负无穷 有效 有效 011 RUP 向正无穷 有效 有效 100 RMM 最近值，正好居中时取绝对值较大者 有效 有效 101 — 保留 保留 保留 110 — 保留 保留 保留 111 DYN 使用 frm 有效 保留 执行依赖舍入模式的指令时，如果静态 rm 或动态 frm 使用保留编码，行为属于规范保留范围。写 frm 往往要求处理器串行化部分浮点流水线，因此频繁切换模式时，静态 rm 可减少控制状态相关停顿。 ### CSR 访问伪指令 伪指令 基本效果 对应 CSR --- --- --- frcsr rd 读取完整 fcsr 到整数寄存器 fcsr fscsr rd, rs1 交换整数寄存器与完整 fcsr fcsr frrm rd 读取 frm frm fsrm rd, rs1 交换 frm frm frflags rd 读取 fflags fflags fsflags rd, rs1 交换 fflags fflags 这些伪指令最终展开为 CSRRW、CSRRS 等 Zicsr 指令。例如，可在一段需要独立统计异常的运算前清除 fflags，运算后再读取： ## F 扩展指令全集 ### 访存、算术和融合乘加 指令 操作 舍入模式 结果位置 --- --- --- --- flw fd, offset(rs1) 从 x[rs1]+signext(offset) 读取 32 位位模式 不适用 f[fd] fsw fs2, offset(rs1) 将 f[fs2] 的低 32 位写入内存 不适用 内存 fadd.s fd, fs1, fs2 fs1 + fs2 rm f[fd] fsub.s fd, fs1, fs2 fs1 - fs2 rm f[fd] fmul.s fd, fs1, fs2 fs1 × fs2 rm f[fd] fdiv.s fd, fs1, fs2 fs1 ÷ fs2 rm f[fd] fsqrt.s fd, fs1 sqrt(fs1) rm f[fd] fmadd.s fd, fs1, fs2, fs3 (fs1 × fs2) + fs3，乘加整体只舍入一次 rm f[fd] fmsub.s fd, fs1, fs2, fs3 (fs1 × fs2) - fs3，整体只舍入一次 rm f[fd] fnmsub.s fd, fs1, fs2, fs3 -(fs1 × fs2) + fs3，整体只舍入一次 rm f[fd] fnmadd.s fd, fs1, fs2, fs3 -(fs1 × fs2) - fs3，整体只舍入一次 rm f[fd] fmin.s fd, fs1, fs2 选择较小数；-0.0 < +0.0 不使用 f[fd] fmax.s fd, fs1, fs2 选择较大数；-0.0 < +0.0 不使用 f[fd] flw 与 fsw 原样传输 32 位，不规范化 NaN，因此 NaN payload 会保留。只有自然对齐地址保证原子访问；非对齐访问由执行环境决定是透明处理还是产生 trap。 四条融合乘加使用三个源寄存器和一个目的寄存器。中间乘积不单独舍入，因此结果可能与先执行 fmul.s 再执行 fadd.s 不同。∞ × 0 即使与 quiet NaN 相加，也必须置 NV。 ### 符号注入与位模式移动 指令 位级行为 是否设置 fflags 常见伪指令 --- --- --- --- fsgnj.s fd, fs1, fs2 数值位来自 fs1，符号位来自 fs2 否 fmv.s fd, fs1 在两个源相同时成立 fsgnjn.s fd, fs1, fs2 数值位来自 fs1，符号位为 fs2 符号取反 否 fneg.s fd, fs1 fsgnjx.s fd, fs1, fs2 数值位来自 fs1，符号位为两个源符号异或 否 fabs.s fd, fs1 fmv.x.w rd, fs1 将 32 位浮点位模式复制到整数寄存器低 32 位 否 无数值转换 fmv.w.x fd, rs1 将整数寄存器低 32 位复制到浮点寄存器 否 无数值转换 RV64 执行 fmv.x.w 时，整数目的寄存器高 32 位用浮点源的符号位填充。两条 FMV 均不解释数值，也不改变非规范 NaN 的 payload。 ### 浮点与整数转换 指令 源类型 目的类型 RV32/RV64 说明 --- --- --- --- --- fcvt.w.s rd, fs1, rm FP32 有符号 32 位整数 RV32/RV64 RV64 将 32 位结果符号扩展到 XLEN。 fcvt.wu.s rd, fs1, rm FP32 无符号 32 位整数 RV32/RV64 RV64 仍按规范将 32 位结果符号扩展到 XLEN。 fcvt.l.s rd, fs1, rm FP32 有符号 64 位整数 仅 RV64 超出范围时按规定值截取并置 NV。 fcvt.lu.s rd, fs1, rm FP32 无符号 64 位整数 仅 RV64 超出范围时按规定值截取并置 NV。 fcvt.s.w fd, rs1, rm 有符号 32 位整数 FP32 RV32/RV64 按 rm 舍入。 fcvt.s.wu fd, rs1, rm 无符号 32 位整数 FP32 RV32/RV64 按 rm 舍入。 fcvt.s.l fd, rs1, rm 有符号 64 位整数 FP32 仅 RV64 按 rm 舍入。 fcvt.s.lu fd, rs1, rm 无符号 64 位整数 FP32 仅 RV64 按 rm 舍入。 浮点转整数时，先按 rm 舍入，再检查目的类型范围。结果不可表示时置 NV，并输出规范规定的端点值；此时不再同时置 NX。结果可表示但发生舍入时置 NX。 输入情况 fcvt.w.s fcvt.wu.s fcvt.l.s fcvt.lu.s --- --- --- --- --- 最小有效值 -2^31 0 -2^63 0 最大有效值 2^31-1 2^32-1 2^63-1 2^64-1 负向越界或 -∞ -2^31 0 -2^63 0 正向越界 2^31-1 2^32-1 2^63-1 2^64-1 +∞ 或 NaN 2^31-1 2^32-1 2^63-1 2^64-1 ### 比较指令 指令 条件 整数结果 NaN 与 NV --- --- --- --- feq.s rd, fs1, fs2 fs1 == fs2 条件成立写 1，否则写 0 任一源为 NaN 时结果为 0；仅 signaling NaN 置 NV。 flt.s rd, fs1, fs2 fs1 < fs2 条件成立写 1，否则写 0 任一源为 NaN 时结果为 0，并置 NV。 fle.s rd, fs1, fs2 fs1 ≤ fs2 条件成立写 1，否则写 0 任一源为 NaN 时结果为 0，并置 NV。 比较结果直接写入整数寄存器，因此整数分支可以紧随其后执行。FLT.S 与 FLE.S 是 signaling comparison，FEQ.S 是 quiet comparison。 ### fclass.s 分类结果 fclass.s rd, fs1 不执行数值比较，而是在整数寄存器中返回 10 位 one-hot 分类结果。它不设置浮点异常标志。 rd 位 浮点类别 --- --- 0 负无穷 -∞ 1 负正规数 2 负次正规数 3 负零 -0 4 正零 +0 5 正次正规数 6 正正规数 7 正无穷 +∞ 8 signaling NaN 9 quiet NaN ## NaN、次正规数和异常结果 除各指令另有规定外，浮点运算产生 NaN 时返回规范 NaN。FP32 规范 NaN 的位模式为 0x7fc00000：符号为正，指数全 1，quiet bit 为 1，其余尾数位为 0。F 扩展允许实现提供非标准 NaN payload 传播模式，但规范 NaN 行为必须可用并作为标准软件可依赖的行为。 FLW、FSW、FMV 和 FSGNJ 属于位模式传输或符号操作，不把输入 NaN 改成规范 NaN。普通算术、比较、最小/最大值及格式转换按各自规则处理 quiet NaN 与 signaling NaN。 F 扩展要求按 IEEE 754 处理次正规数，不允许默认 flush-to-zero。tininess 在舍入后检测。下溢通常与非精确同时发生，但是否置 UF 仍由 IEEE 754 的下溢条件决定。 ## mstatus.FS 与上下文切换 特权架构在 mstatus[14:13] 定义 FS，sstatus 提供相同状态的受限视图。它记录浮点上下文是否启用以及是否可能被修改。 FS 状态 执行含义 --- --- --- 00 Off 执行浮点指令或访问浮点 CSR 产生非法指令异常。 01 Initial 浮点状态已启用，可按初始状态处理。 10 Clean 自上次保存后未发现浮点状态修改。 11 Dirty f0–f31 或 fcsr 可能已修改，上下文切换需要保存。 当 FS=Dirty 时，mstatus.SD 也为 1。操作系统可先读取 SD/FS，仅在需要时保存 32 个浮点寄存器和 fcsr。实现允许较保守地把 Initial 或 Clean 提前改为 Dirty，因此软件可以用 Dirty 判断“必须保存”，不能用 Clean 证明任务从未执行过浮点指令。 fcsr 属于线程状态。任务切换、信号处理、调试器和虚拟机监控程序需要与浮点寄存器一起保存和恢复，否则动态舍入模式或异常标志会在不同线程之间相互影响。 ## RTL 数据通路与控制要求 浮点寄存器文件与整数寄存器文件分离后，FCVT、FMV 和比较指令需要跨寄存器文件传输数据或写回结果。 FMADD.S 等 R4 型指令有三个浮点源操作数，寄存器文件端口、操作数旁路和相关检测需要覆盖第三源。 fcsr 写入与浮点流水线中尚未退休的指令存在顺序要求；动态舍入模式修改不能越过依赖旧模式的运算。 fflags 是多个异常位的按位累积结果。CSR 软件写、浮点指令置位、流水线清除和 trap 重放同时出现时，必须保证已退休指令的标志不丢失，未退休指令不产生可见更新。 FMV、FLW/FSW 与 FSGNJ 必须保留位模式；算术单元内部即使使用重编码格式，也要在架构写回时满足标准编码。 FP32 加减、乘法、除法、平方根和 FMA 的特殊值处理不同，不能由统一的“NaN/无穷”旁路覆盖全部情况。 只有自然对齐的 FLW/FSW 保证原子性；非对齐策略由执行环境规定，异常必须保持精确。 FS 状态更新属于架构状态提交的一部分。被清除的指令、推测执行或重放失败不能错误地使软件观察到浮点结果或异常标志。 参考：RISC-V F 2.2 规范、RISC-V psABI 浮点寄存器约定、Machine-Level ISA 的 FS 状态。"
+    },
+    {
+      "id": "docs/notes/digital-design/riscv/riscv-zve32x.md",
+      "type": "document",
+      "title": "RISC-V Zve32x：嵌入式整数向量扩展",
+      "description": "# RISC-V Zve32x：嵌入式整数向量扩展 Zve32x 是 RISC-V Vector 1.0 中面向嵌入式处理器的基础整数向量扩展。它把向量寄存器、配置指令、整数运算、定点运算、掩码、归约、排列和访存指令加入 RV32 或 RV64 标量处理器，但不要求浮点向量运算，也不要求 64 位元素运算。 Zve32x 依赖 Zicsr。实现必须支持至少 32 位的向量寄存器长度，并支持 8、16、32 位有效元素宽度。它适合音频处理、传感器数据、整数 DSP、轻量图像处理、密码算法的基础数据操作，以及不需要 F",
+      "path": "/docs/notes/digital-design/riscv-zve32x",
+      "headings": [
+        "RISC-V Zve32x：嵌入式整数向量扩展",
+        "Zve32x 的定义范围",
+        "与其他 Zve 扩展的关系",
+        "向量寄存器和调用约定",
+        "VLEN、SEW、EEW、LMUL 与 EMUL",
+        "Zve32x 的七个向量 CSR",
+        "vxrm 定点舍入模式",
+        "vtype 字段和 Zve32x 有效编码",
+        "vsew 编码",
+        "vlmul 编码",
+        "向量配置指令",
+        "a0 = 尚未处理的元素数；t0 = 本次实际处理的元素数",
+        "AVL 与 vl 的确定规则",
+        "元素执行状态与掩码",
+        "Zve32x 指令类别",
+        "基于 vl 的 32 位向量加法",
+        "a0 = count, a1 = lhs, a2 = rhs, a3 = dst",
+        "8 位无符号饱和加法",
+        "精确 trap、vstart 与上下文保存",
+        "RTL 结构与实现要求"
+      ],
+      "content": "# RISC-V Zve32x：嵌入式整数向量扩展 Zve32x 是 RISC-V Vector 1.0 中面向嵌入式处理器的基础整数向量扩展。它把向量寄存器、配置指令、整数运算、定点运算、掩码、归约、排列和访存指令加入 RV32 或 RV64 标量处理器，但不要求浮点向量运算，也不要求 64 位元素运算。 Zve32x 依赖 Zicsr。实现必须支持至少 32 位的向量寄存器长度，并支持 8、16、32 位有效元素宽度。它适合音频处理、传感器数据、整数 DSP、轻量图像处理、密码算法的基础数据操作，以及不需要 FP32/FP64 向量单元的控制型处理器。 ## Zve32x 的定义范围 项目 Zve32x 要求 说明 --- --- --- 可配套的标量 ISA RV32 或 RV64 XLEN 与向量寄存器宽度相互独立。 依赖扩展 Zicsr 向量控制状态通过 CSR 访问。 最小 VLEN 32 位 实现可以提供 64、128、256 位或更大的 VLEN。 标准元素宽度上限 32 位 Zve32x 规定的最大 EEW 为 32；Zve32x-only 实现的 ELEN=32。 支持的有效元素宽度 EEW 8、16、32 位 64 位元素操作不属于 Zve32x。 整数向量运算 支持 包括单宽、加宽、变窄、乘除、移位、比较和归约。 定点向量运算 支持 包括饱和、定点舍入、平均和裁剪。 向量访存 支持 包括单位步长、固定步长、索引、分段和整寄存器访存。 掩码与排列 支持 包括掩码逻辑、计数、前缀、slide、gather 和 compress。 浮点向量运算 不支持 需要 Zve32f 或更高扩展。 trap 精确 所有 Zve 标准扩展均要求精确 trap。 ### 与其他 Zve 扩展的关系 扩展 最小 VLEN 必须支持的 EEW FP32 FP64 依赖关系 --- ---: --- --- --- --- Zve32x 32 8、16、32 否 否 Zicsr Zve32f 32 8、16、32 是 否 Zve32x 和 F Zve64x 64 8、16、32、64 否 否 Zve32x Zve64f 64 8、16、32、64 是 否 Zve32f、Zve64x 和 F Zve64d 64 8、16、32、64 是 是 Zve64f 和 D Zve32f 与 Zve64x 均以 Zve32x 为基础。单字母 V 面向应用处理器，它依赖 Zve64d 和 Zvl128b，因此最小 VLEN=128，并完整支持 64 位整数和 FP64 向量运算。 misa.V 只表示单字母 V 扩展。实现 Zve32x 不等于置位 misa.V；操作系统、引导软件或平台接口应通过 ISA 扩展字符串等平台定义的方式报告 Zve32x。 ## 向量寄存器和调用约定 Zve32x 定义 32 个向量寄存器 v0–v31，每个寄存器均为 VLEN 位。寄存器可以单独使用，也可按 LMUL=2/4/8 组成连续寄存器组。v0 在带掩码指令中保存执行掩码，但在不需要掩码时也可以保存普通向量数据。 标准向量调用约定把全部向量寄存器视为调用者可修改状态，不用于传递普通函数的向量参数或返回值。带 riscv vector cc 属性的变体调用约定使用 v0 传递第一个向量掩码参数并返回掩码结果，使用 v8–v23 传递向量数据、向量 tuple 和其余掩码参数，同时返回向量数据或 tuple 结果。被调用函数必须保存 v1–v7、v24–v31的全部内容。 下表列出全部 32 个寄存器、变体调用约定用途和寄存器组起始限制。m2/m4/m8 列表示该寄存器能否作为对应整数 LMUL 寄存器组的首寄存器。 寄存器 常见用途 标准调用约定 riscv vector cc m2 起始 m4 起始 m8 起始 --- --- --- --- --- --- --- v0 掩码或普通数据 不保留 首个掩码参数/返回值，不保留 是 是 是 v1 普通数据 不保留 被调用者保存 否 否 否 v2 普通数据 不保留 被调用者保存 是 否 否 v3 普通数据 不保留 被调用者保存 否 否 否 v4 普通数据 不保留 被调用者保存 是 是 否 v5 普通数据 不保留 被调用者保存 否 否 否 v6 普通数据 不保留 被调用者保存 是 否 否 v7 普通数据 不保留 被调用者保存 否 否 否 v8 参数或返回值 不保留 数据参数/返回值，不保留 是 是 是 v9 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v10 参数或返回值 不保留 数据参数/返回值，不保留 是 否 否 v11 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v12 参数或返回值 不保留 数据参数/返回值，不保留 是 是 否 v13 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v14 参数或返回值 不保留 数据参数/返回值，不保留 是 否 否 v15 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v16 参数或返回值 不保留 数据参数/返回值，不保留 是 是 是 v17 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v18 参数或返回值 不保留 数据参数/返回值，不保留 是 否 否 v19 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v20 参数或返回值 不保留 数据参数/返回值，不保留 是 是 否 v21 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v22 参数或返回值 不保留 数据参数/返回值，不保留 是 否 否 v23 参数或返回值 不保留 数据参数/返回值，不保留 否 否 否 v24 普通数据 不保留 被调用者保存 是 是 是 v25 普通数据 不保留 被调用者保存 否 否 否 v26 普通数据 不保留 被调用者保存 是 否 否 v27 普通数据 不保留 被调用者保存 否 否 否 v28 普通数据 不保留 被调用者保存 是 是 否 v29 普通数据 不保留 被调用者保存 否 否 否 v30 普通数据 不保留 被调用者保存 是 否 否 v31 普通数据 不保留 被调用者保存 否 否 否 整数 LMUL=2 的寄存器组必须从偶数寄存器开始；LMUL=4 必须从 4 的倍数开始；LMUL=8 必须从 8 的倍数开始。例如 v8 在 m4 下表示 v8–v11，指令中不能把 v9 写成该组的首寄存器。 ## VLEN、SEW、EEW、LMUL 与 EMUL Zve32x 的数据组织由以下参数决定。 名称 定义 Zve32x 中的含义 --- --- --- XLEN 整数寄存器宽度 32 或 64 位。影响地址和标量操作数，不决定向量寄存器宽度。 VLEN 单个向量寄存器位数 至少 32 位、2 的幂，且不大于规范允许的上限。 ELEN 任一向量操作支持的最大元素位数 Zve32x 至少为 32。 SEW vtype 选择的标准元素宽度 Zve32x 的有效值为 8、16、32。 EEW 某个操作数的有效元素宽度 通常等于 SEW；加宽、变窄和显式宽度访存中可以不同。 LMUL vtype 选择的向量寄存器组倍率 支持 m1/m2/m4/m8，并支持规定范围内的分数倍率。 EMUL 某个操作数实际占用的寄存器组倍率 EMUL = LMUL × EEW / SEW。 VLMAX 当前配置可容纳的最大元素数 VLMAX = LMUL × VLEN / SEW。 vl 当前指令实际处理的元素数 满足 0 ≤ vl ≤ VLMAX。 例如，VLEN=128、SEW=16、LMUL=2 时，VLMAX=16。同一条加宽指令若源操作数 EEW=16、目的操作数 EEW=32，目的寄存器组的 EMUL=4，因此目的值需要四个连续向量寄存器。 所有实现必须支持整数 LMUL=1/2/4/8。分数 LMUL 用于减少窄元素占用的寄存器空间。规范要求实现支持 LMUL ≥ SEW MIN/ELEN 的分数配置。Zve32x 的 SEW MIN=8、ELEN=32，因此 mf2 与 mf4 必须可用；mf8 可以不实现，不支持时配置结果进入 vill 状态。 ## Zve32x 的七个向量 CSR 地址 CSR 权限 位宽/字段 详细作用 --- --- --- --- --- 0x008 vstart URW XLEN 保存下一次开始执行的元素序号。正常完成向量指令后清零；精确 trap 可保存未完成位置。 0x009 vxsat URW [0] 定点饱和累积标志。任一活动元素发生饱和时置 1，后续普通运算不会自动清零。 0x00A vxrm URW [1:0] 定点舍入模式。影响平均、缩放移位、饱和乘法和裁剪等指令。 0x00F vcsr URW [2:1]=vxrm，[0]=vxsat vxrm 与 vxsat 的组合视图。写任一视图会反映到另一个视图。 0xC20 vl URO XLEN 当前向量长度。软件通过 vsetvli、vsetivli 或 vsetvl 间接更新。 0xC21 vtype URO XLEN 当前 SEW、LMUL、tail/mask 策略和非法配置标志。由向量配置指令写入。 0xC22 vlenb URO XLEN VLEN/8，在同一 hart 上为常数，用于分配上下文保存空间。 vstart 主要用于 trap 后恢复。应用程序通常不主动写入非零值，因为部分实现对非零 vstart 的执行速度较低，某些指令也要求 vstart=0。标准调用约定要求函数入口和函数返回时 vstart=0。 ### vxrm 定点舍入模式 编码 助记 名称 加入被丢弃位后的处理 --- --- --- --- 00 rnu round-to-nearest-up 最近值；正好居中时向上。 01 rne round-to-nearest-even 最近值；正好居中时使保留结果最低位为偶数。 10 rdn round-down 直接截断被移出的低位。 11 rod round-to-odd 若被丢弃部分非零，则将保留结果最低位置 1。 ## vtype 字段和 Zve32x 有效编码 字段 位位置 含义 --- --- --- vill [XLEN-1] 非法或不支持的 vtype 配置。置 1 时其余位和 vl 为 0。 保留 [XLEN-2:8] 当前写 0；软件读取时不依赖其值。 vma [7] 掩码关闭元素策略：0 为 undisturbed，1 为 agnostic。 vta [6] tail 元素策略：0 为 undisturbed，1 为 agnostic。 vsew [5:3] 标准元素宽度编码。 vlmul [2:0] LMUL 的有符号编码。 ### vsew 编码 vsew SEW Zve32x 状态 --- --- --- 000 8 必须支持。 001 16 必须支持。 010 32 必须支持。 011 64 Zve32x 不支持，配置产生 vill。 100–111 128 及以上 Zve32x 不支持，配置产生 vill。 ### vlmul 编码 vlmul LMUL Zve32x 要求 --- --- --- 000 m1 = 1 必须支持。 001 m2 = 2 必须支持。 010 m4 = 4 必须支持。 011 m8 = 8 必须支持。 100 保留 产生 vill。 101 mf8 = 1/8 Zve32x 不强制实现。 110 mf4 = 1/4 必须支持。 111 mf2 = 1/2 必须支持。 ## 向量配置指令 指令 AVL 来源 vtype 来源 适用情况 --- --- --- --- vsetvli rd, rs1, vtypei x[rs1] 或特殊 x0 形式 指令立即数字段 运行期长度与常见 SEW/LMUL 配置。 vsetivli rd, uimm, vtypei 5 位零扩展立即数 指令立即数字段 元素数较小且编译期已知。 vsetvl rd, rs1, rs2 x[rs1] 或特殊 x0 形式 x[rs2] 中的完整 vtype 上下文恢复或动态恢复已有配置。 vsetvli 的常见形式如下： e32 选择 SEW=32，m1 选择一个寄存器组成一个逻辑向量；ta 表示 tail-agnostic，ma 表示 mask-agnostic。指令把实际 vl 写入 t0，同时更新 vl 与 vtype CSR。 ### AVL 与 vl 的确定规则 设应用请求长度为 AVL，则配置指令按以下规则选择 vl： AVL 条件 vl 约束 --- --- AVL = 0 vl = 0。 0 < AVL ≤ VLMAX vl = AVL。 VLMAX < AVL < 2 × VLMAX ceil(AVL/2) ≤ vl ≤ VLMAX。 AVL ≥ 2 × VLMAX vl = VLMAX。 同一实现对相同 AVL 和 VLMAX 必须给出确定结果。程序不能假设第二种区间以外的 vl 总等于 VLMAX，而应使用配置指令返回值更新地址和剩余计数。 vsetvli 中 rs1≠x0 时，AVL 来自整数寄存器；rs1=x0 且 rd≠x0 时，AVL 视为全 1，从而请求 VLMAX；rs1=x0 且 rd=x0 时，以原 vl 作为 AVL，该形式用于保持 vl 的配置变化，并要求新的配置不改变实际 vl。 ## 元素执行状态与掩码 对一条向量指令，元素序号可分为四类： 元素类别 序号或条件 指令行为 --- --- --- prestart index < vstart 本次不执行，用于 trap 恢复。 active vstart ≤ index < vl 且掩码允许 执行指令定义的运算并写结果。 inactive vstart ≤ index < vl 且掩码关闭 按 vma 保留旧值或写入未指定值。 tail vl ≤ index < VLMAX 按 vta 保留旧值或写入未指定值。 向量指令编码中的 vm=1 表示不使用掩码；vm=0 表示由 v0 的对应掩码位控制。汇编语法用 v0.t 明确带掩码执行： 当 v0 作为掩码源时，目的寄存器组与 v0 的重叠受到指令规则限制。掩码结果按每个元素一位存放，与当前 SEW 无关。vcpop.m 可统计掩码中置位元素数，vfirst.m 可返回第一个置位元素序号。 ## Zve32x 指令类别 Zve32x 支持 V 规范中的整数、定点、访存、掩码、整数归约和整数排列指令，但仅允许 8、16、32 位有效元素宽度。 类别 代表指令 说明 --- --- --- 配置 vsetvli、vsetivli、vsetvl 设置 vl、SEW、LMUL 和非活动元素策略。 单位步长访存 vle8/16/32.v、vse8/16/32.v 连续地址读写；宽度由助记符直接指定。 固定步长访存 vlse .v、vsse .v 步长来自整数寄存器，允许正、负和零。 无序索引访存 vluxei .v、vsuxei .v 向量元素提供字节偏移，不保证元素访问顺序。 有序索引访存 vloxei .v、vsoxei .v 按元素序号维持规定的访问顺序。 分段访存 vlseg e .v、vsseg e .v 读取或写入结构体式多字段数据。 fault-only-first vle ff.v 只要求第一个活动元素的异常精确进入 trap，后续元素故障可缩短 vl。 整寄存器访存 vl1re .v、vl2re .v、vl4re .v、vl8re .v 及对应存储 不依赖当前 vtype 保存和恢复完整寄存器内容。 整数加减 vadd、vsub、vrsub、vadc、vsbc 支持向量-向量、向量-标量和部分立即数形式。 逻辑 vand、vor、vxor 按元素执行位逻辑。 移位 vsll、vsrl、vsra 移位量按元素宽度截取。 比较 vmseq、vmsne、vmslt、vmsle、vmsgt 结果写入掩码寄存器。 最小/最大 vminu、vmin、vmaxu、vmax 分有符号和无符号形式。 乘除与余数 vmul、vmulh 、vdiv 、vrem Zve32x 支持 8/16/32 位整数乘除。 加宽运算 vwadd 、vwsub 、vwmul 、vwaddu.w 结果 EEW 为源 EEW 的两倍；Zve32x 可执行 8→16、16→32。 变窄运算 vnsrl、vnsra、vnclip 结果 EEW 为源 EEW 的一半；Zve32x 可执行 32→16、16→8。 整数扩展 vzext.vf2/vf4、vsext.vf2/vf4 将窄元素零扩展或符号扩展。具体倍率受 EEW≤32 限制。 饱和加减 vsaddu、vsadd、vssubu、vssub 饱和时置 vxsat。 定点平均和缩放 vaaddu、vaadd、vasubu、vasub、vssrl、vssra 使用 vxrm 控制舍入。 定点乘法与裁剪 vsmul、vnclipu、vnclip 饱和结果置 vxsat。 整数归约 vredsum、vredmax 、vredmin 、vredand/or/xor 将活动元素归并到目的寄存器元素 0。 加宽归约 vwredsumu、vwredsum 8→16 或 16→32 的加宽求和。 掩码逻辑 vmand 、vmor 、vmxor 、vmnot.m 对掩码位执行逻辑。 掩码生成与计数 vmsbf.m、vmsif.m、vmsof.m、viota.m、vid.v、vcpop.m、vfirst.m 生成前缀掩码、元素序号或统计结果。 排列 vmv、vmerge、vslideup/down、vslide1up/down、vrgather、vcompress 在寄存器内移动、选择和压缩元素。 Zve32x 不支持浮点向量算术、浮点归约或以浮点值为操作数的排列指令。SEW=32 的加宽结果需要 64 位 EEW，因此不属于 Zve32x；同理，任何显式 64 位元素访存和索引操作都不可使用。 ## 基于 vl 的 32 位向量加法 下例计算 dst[i] = lhs[i] + rhs[i]。代码不依赖固定 VLEN；每次迭代使用返回的 vl 更新三个地址和剩余元素数。 若 VLEN=32 且 LMUL=1，一次只能处理一个 32 位元素；若 VLEN=128，一次最多处理四个；若 VLEN=256，一次最多处理八个。二进制指令序列保持不变，差异只体现在每次配置得到的 vl。 ## 8 位无符号饱和加法 下例使用 vsaddu.vv 计算无符号 8 位饱和加法，并在整个数组处理后读取 vxsat。vxsat 是累积标志，因此循环前先清零，循环内任一元素饱和都会使最终读值为 1。 ## 精确 trap、vstart 与上下文保存 Zve32x 要求精确 trap。向量指令在元素 k 处中断时，实现可以把 vstart 设置为 k，trap 返回后从该元素继续。指令成功完成后，vstart 必须清零。部分指令要求 vstart=0，软件不能把 vstart 当作普通循环索引使用。 mstatus.VS 和 sstatus.VS 记录向量上下文状态： 编码 状态 含义 --- --- --- 00 Off 执行向量指令或访问向量 CSR 产生非法指令异常。 01 Initial 向量状态已启用，软件可按初始状态处理。 10 Clean 向量状态自上次保存后未被修改。 11 Dirty 向量寄存器或 CSR 可能已修改，上下文切换需要保存。 操作系统保存向量上下文时需要处理 v0–v31、vtype、vl、vstart、vxrm 和 vxsat。vlenb 给出单个寄存器的字节数，可用于计算每个线程所需的保存区。整寄存器 load/store 指令允许在不知道原 SEW 和 LMUL 的情况下复制寄存器位模式。 ## RTL 结构与实现要求 最小 VLEN=32 的 Zve32x 实现仍必须提供 32 个架构向量寄存器和完整的 vl/vtype/vstart 行为。实现可以采用 32 位数据通路逐元素执行，也可以采用多 lane 并行结构；两者对软件呈现相同的架构状态。 向量寄存器文件的实际读写端口数由每周期发射元素数、掩码读取、加宽目的组和访存结构决定。 解码阶段需要根据 SEW、LMUL、EEW 计算每个操作数的 EMUL，并检查寄存器组起始编号、组宽和重叠规则。 vl 只限制活动元素数，不改变寄存器文件的物理宽度；tail 和 inactive 元素的写入行为由 vta/vma 决定。 访存单元需要按元素生成地址，并为单位步长、固定步长和索引模式提供不同的地址来源。精确异常还要求记录首个未完成元素。 定点指令同时更新向量目的寄存器和 vxsat，两类状态必须在异常、清流水和重放时保持一致。 不支持的 SEW、LMUL 或 EEW 组合必须通过 vill 或非法指令异常体现，不能静默按较窄数据执行。 VLEN 大于最小值时，软件仍只能依赖 vlenb、vl 和 VLMAX 公式，不能根据实现名称假定固定宽度。 参考：RISC-V Vector 1.0 与 Zve 定义、RISC-V Vector 汇编示例、RISC-V psABI 向量寄存器约定。"
+    },
+    {
+      "id": "docs/notes/digital-design/verification/formal-verification-workflow.md",
+      "type": "document",
+      "title": "形式验证：先建模环境，再证明设计",
+      "description": "# 形式验证：先建模环境，再证明设计 形式验证（Formal Verification）把 RTL、环境约束与属性转成逻辑问题，尝试在可达状态空间中证明规则恒成立，或给出一条反例路径。它和随机仿真互补：仿真适合运行真实软件场景，形式验证适合检查难以覆盖的极端状态、异常组合和控制路径。 本文按一次功能形式验证（FPV）的工作顺序说明关键要点。不同 EDA 工具的命令与报告名称会变化，但建模原则相同。 ## 适合先用形式验证的问题 握手协议、FIFO、仲裁、状态机和权限控制等控制密集逻辑； reset、enable、异",
+      "path": "/docs/notes/digital-design/formal-verification-workflow",
+      "headings": [
+        "形式验证：先建模环境，再证明设计",
+        "适合先用形式验证的问题",
+        "正确的起点：定义验证宇宙",
+        "一条可重复的 FPV 工作流",
+        "建立最小可运行环境",
+        "命令名称以实际工具版本为准",
+        "先证明小而硬的属性",
+        "分析每一条失败",
+        "处理超时与难证明目标",
+        "覆盖率的作用",
+        "让结果可信的几个习惯"
+      ],
+      "content": "# 形式验证：先建模环境，再证明设计 形式验证（Formal Verification）把 RTL、环境约束与属性转成逻辑问题，尝试在可达状态空间中证明规则恒成立，或给出一条反例路径。它和随机仿真互补：仿真适合运行真实软件场景，形式验证适合检查难以覆盖的极端状态、异常组合和控制路径。 本文按一次功能形式验证（FPV）的工作顺序说明关键要点。不同 EDA 工具的命令与报告名称会变化，但建模原则相同。 ## 适合先用形式验证的问题 握手协议、FIFO、仲裁、状态机和权限控制等控制密集逻辑； reset、enable、异常响应、仲裁优先级等极端条件； 需要证明“不可能发生”的安全属性，例如不会溢出、不会两个 grant 同时有效； 修改 RTL 之后希望确认关键行为没有回退的场景； 仿真难以覆盖的深层组合、死锁或不可达状态。 对大规模数据通路、长软件驱动流程或模拟模型，先进行模块切分、抽象和目标排序通常更有效。 ## 正确的起点：定义验证宇宙 形式引擎默认会探索所有未受约束的输入组合。若不定义时钟、复位和环境协议，得到的反例可能只是“现实中不会出现的输入”；约束太强又会把真实 bug 排除掉。 因此一开始应回答四个问题： 哪些时钟存在，彼此有什么关系？ 复位的极性、持续时间与释放顺序是什么？ 哪些输入由外部环境控制，它们必须遵守什么接口约定？ 哪些状态在上电后可达，哪些是刻意未初始化的？ 环境约束应描述外部真实能保证的最小事实。例如，AXI master 发送地址后应保持地址与 VALID 直到握手；这可以作为 slave 验证的环境假设。相反，“master 永远不会发送某个困难组合”通常不是合理约束。 ## 一条可重复的 FPV 工作流 ### 1. 建立最小可运行环境 先加载最小 DUT、必要的接口 wrapper 和断言文件，定义时钟与复位，再跑一个小深度检查。这个阶段的目标不是覆盖全部功能，而是确认顶层、宏、时钟和 reset 处理规则没有错。 伪代码示意： 脚本中的顶层名、文件列表和路径应来自可复现的构建配置，而不是开发机上的绝对路径。真实项目还需要把宏定义、库文件和 black-box 策略纳入版本管理。 ### 2. 先证明小而硬的属性 优先检查低耦合、高价值的规则：状态机编码、FIFO 空/满状态切换、grant one-hot、请求应答上界、寄存器复位值。小属性的反例更短，也更容易区分设计 bug、断言错误和环境缺失。 ### 3. 分析每一条失败 失败并不等同于 RTL 有 bug。通常有三种可能： 现象 常见原因 下一步 --- --- --- 反例违反真实接口协议 环境约束不足 补上有依据的 assume，并记录依据 反例符合接口协议但违背预期 RTL 设计缺陷 修复 RTL，保留断言作为回归保护 规则本身没有表达真实意图 属性过强、时序偏移或 reset 处理错误 重写属性并增加 cover 验证 应先从反例的第一个分叉点观察输入、状态和时钟域，而不是只盯住最终失败周期。 ### 4. 处理超时与难证明目标 证明超时不表示属性成立或失败，只表示当前引擎与资源尚未得出结论。常用处理顺序是： 检查是否遗漏了不变量、复位约束或合法输入范围； 将长时序目标拆成局部引理（lemma）； 对无关数据通路做抽象，减少状态空间； 按时钟域、子模块或功能阶段分解； 记录证明深度、timeout 和假设，避免“看似通过”的误判。 任何为求通过而添加的约束，都应能回答“这是系统接口保证的吗？”。 ## 覆盖率的作用 断言证明回答“某规则是否总成立”，形式覆盖回答“某状态或路径是否可达”。两者缺一不可。 如果 cover 无法命中，可能是目标确实不可达，也可能是约束过强、建模有误或请求前件根本不会发生。对不可达目标应给出设计依据后再排除；不要把未理解的 cover 直接从报告中隐藏。 仿真覆盖与形式覆盖也不应简单相加：前者反映测试执行过的路径，后者反映在约束模型下的可达性。两份结果结合，才能更完整地说明验证完成情况。 ## 让结果可信的几个习惯 将断言、约束、黑盒假设和证明配置与 RTL 一起评审、一起提交。 把关键 assumption 当作设计接口的一部分写下注释或链接到规格。 修改 reset、时钟、CDC 接口或接口定义时，优先回归相关属性。 为关键规则补 cover，避免只证明了 vacuous truth（前件从未发生）。 给每类超时目标保留分解路径，而不是把 timeout 当作绿色结果。 形式验证的产出不只是“通过”或“失败”，还包括可审计的设计约束：环境允许什么、模块保证什么、哪些状态与条件已经被探索过。"
+    },
+    {
+      "id": "docs/notes/digital-design/verification/systemverilog-assertions.md",
+      "type": "document",
+      "title": "SystemVerilog Assertion：从时序描述到可维护的断言",
+      "description": "# SystemVerilog Assertion：从时序描述到可维护的断言 SystemVerilog Assertions（SVA）的价值不在于堆叠复杂语法，而在于把接口在时间上的承诺写清楚：在哪个时钟采样、复位时是否停止检查、什么事件触发检查，以及之后哪些状态必须或禁止出现。 本文整理常用语法和日常验证中更容易维护的写法。 ## 一个属性的四个部分 最常见的并发断言由时钟、失效条件、前件和后件组成： @(posedge clk)：只在指定采样事件上判断； disable iff (!rst n)：复位有效时终",
+      "path": "/docs/notes/digital-design/systemverilog-assertions",
+      "headings": [
+        "SystemVerilog Assertion：从时序描述到可维护的断言",
+        "一个属性的四个部分",
+        "sequence、property 与三种语句",
+        "常用时序运算符",
+        "采样函数：检查变化而不是组合瞬时值",
+        "几个高价值模板",
+        "请求—应答窗口",
+        "一热状态机",
+        "有效数据不含未知值",
+        "覆盖目标",
+        "用 bind 保持 RTL 干净",
+        "写断言时的检查清单"
+      ],
+      "content": "# SystemVerilog Assertion：从时序描述到可维护的断言 SystemVerilog Assertions（SVA）的价值不在于堆叠复杂语法，而在于把接口在时间上的承诺写清楚：在哪个时钟采样、复位时是否停止检查、什么事件触发检查，以及之后哪些状态必须或禁止出现。 本文整理常用语法和日常验证中更容易维护的写法。 ## 一个属性的四个部分 最常见的并发断言由时钟、失效条件、前件和后件组成： @(posedge clk)：只在指定采样事件上判断； disable iff (!rst n)：复位有效时终止正在进行的属性检查； req：前件，满足时启动一次检查； ##[1:3] ack：后件，要求 ack 在随后 1 到 3 个采样周期内出现。 这里 -> 是 重叠蕴含 ，后件从前件命中的同一采样周期开始；由于后件开头有 ##[1:3]，实际的 ack 仍在后续 1 到 3 拍检查。若希望后件整体从下一拍开始，应使用非重叠蕴含 =>。 ## sequence、property 与三种语句 sequence 描述一段时序片段，property 把片段组织成可验证的规则： 随后通常从三种语句中选择： assume 不是“让失败消失”的开关。环境假设过强会把真实缺陷排除在状态空间之外，因此应只约束接口契约确实保证的行为。 ## 常用时序运算符 写法 含义 典型用途 --- --- --- a ##1 b a 后第 1 个采样周期是 b 固定一拍延迟 a ##[m:n] b b 在 m 到 n 拍内出现 有上界的应答窗口 a[ 3] a 连续成立 3 拍 busy/valid 的连续保持 a[=2] a 出现 2 次，中间可间隔 事件计数 a[->1] 等到第一次 a 命中 等待某个目标事件 s1 intersect s2 两个序列同时结束且均成立 对齐两个时序条件 a throughout s s 的整个匹配区间都满足 a 事务进行期间保持某条件 [ ]、[=] 与 [->] 的匹配起止位置容易影响蕴含的开始和结束位置。对较复杂的属性，先把 sequence 单独写出并用 cover 查看匹配是否符合预期，通常比直接写一行长表达式可靠。 ## 采样函数：检查变化而不是组合瞬时值 以下函数是协议断言最常见的基础工具： 例如，valid/ready 接口在等待期间通常要求 valid 和数据保持： 这条规则描述的是“本拍发生阻塞，则下一拍仍保持有效且数据不变”。如果协议允许撤销事务，或 data 只在特定字节使能下稳定，应把这些条件明确写进属性，而不要套用模板。 ## 几个高价值模板 ### 请求—应答窗口 使用 $rose(req) 可以避免同一个持续拉高的 req 在每拍都创建新的应答义务。若协议允许多个 outstanding 请求，则需要计数器、ID 或队列模型来关联请求和应答，不能只用这一条简单属性。 ### 一热状态机 若全零是合法 idle 编码，使用 $onehot0(state)。这类断言很适合尽早暴露非法状态和复位遗漏。 ### 有效数据不含未知值 对双向总线、复位释放过程或故意使用 X 的仿真模型，应先划定真正需要检查的时段，否则这条规则会产生无价值告警。 ### 覆盖目标 cover 不证明设计正确；它回答的是该路径在当前环境假设下是否可达。断言通过而 cover 永远不命中，常提示激励、约束或属性前件写错。 ## 用 bind 保持 RTL 干净 验证逻辑不必侵入 DUT 源文件： bind 适合复用协议断言、第三方 IP 或不希望改动的 RTL。绑定模块应只观察需要的信号，并通过显式端口连接避免层次路径随重构失效。 ## 写断言时的检查清单 先写清采样时钟、复位极性和复位期间的检查策略。 区分“设计保证”与“环境保证”，分别使用 assert 和 assume。 明确并发事务的关联方式；一个 req -> ack 模板不适用于有多个未完成请求的接口。 对每条关键 assert 配一条有意义的 cover。 为断言失败保留易读名称和最小复现波形；复杂表达式拆成命名的 sequence/property。 掌握这些原则后，SVA 会从“语法速查表”变成接口契约和回归验证的一部分。"
+    },
+    {
+      "id": "docs/notes/index.md",
+      "type": "document",
+      "title": "学习笔记",
+      "description": "## 分类 数字设计与端侧推理 日语笔记",
+      "path": "/docs/notes/",
+      "headings": [
+        "分类"
+      ],
+      "content": "## 分类 数字设计与端侧推理 日语笔记"
+    }
+  ]
+}

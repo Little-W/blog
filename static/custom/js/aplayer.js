@@ -205,9 +205,90 @@ function get_music_context_snapshot() {
   };
 }
 
+function music_agent_player() {
+  var candidates = [];
+  if (window.location.pathname.replace(/\/$/, '') === '/music' && window.ap0) candidates.push(window.ap0);
+  if (window.ap1) candidates.push(window.ap1);
+  if (window.ap0 && candidates.indexOf(window.ap0) === -1) candidates.push(window.ap0);
+  return candidates.find(function(player) { return player && player.audio && !player.audio.paused; }) ||
+    candidates.find(function(player) { return player && player.list && Array.isArray(player.list.audios); }) || null;
+}
+
+function wait_for_music_agent_player(timeoutMs) {
+  var deadline = Date.now() + Math.max(500, Number(timeoutMs) || 8000);
+  return new Promise(function(resolve, reject) {
+    function inspect() {
+      var player = music_agent_player();
+      if (player && Array.isArray(ap_list_ptr[1])) return resolve(player);
+      if (Date.now() >= deadline) return reject(new Error('音乐播放器还没有准备好。'));
+      window.setTimeout(inspect, 120);
+    }
+    inspect();
+  });
+}
+
+function music_agent_play_track(musicId) {
+  musicId = normalize_music_id(musicId);
+  if (musicId === null) return Promise.reject(new Error('曲目编号无效。'));
+  return fetch_music_tracks({quality: quality, ids: [musicId], sort: 'default'}).then(function(data) {
+    var records = cache_music_records(quality, data && data.records || []);
+    var track = records.find(function(record) { return Number(record.mid) === musicId; });
+    if (!track) throw new Error('曲库中没有这首歌。');
+    return wait_for_music_agent_player(8000).then(function(player) {
+      add_music_to_playlist(musicId);
+      var index = find_player_music_index(player, musicId, track);
+      if (index < 0) throw new Error('歌曲未能加入播放队列。');
+      player.list.switch(index);
+      player.play();
+      music_context_active_player = player;
+      save_music_playlist_state(player);
+      return new Promise(function(resolve) {
+        window.setTimeout(function() {
+          var snapshot = get_music_context_snapshot();
+          resolve({
+            success: true,
+            playing: Boolean(player.audio && !player.audio.paused),
+            blocked: Boolean(player.audio && player.audio.paused),
+            current: snapshot.current,
+          });
+        }, 180);
+      });
+    });
+  });
+}
+
+function music_agent_control(action, value) {
+  return wait_for_music_agent_player(5000).then(function(player) {
+    if (action === 'play') player.play();
+    else if (action === 'pause') player.pause();
+    else if (action === 'toggle') player.toggle();
+    else if (action === 'next') player.skipForward();
+    else if (action === 'previous') player.skipBack();
+    else if (action === 'set_volume') {
+      var percent = Math.max(0, Math.min(100, Number(value)));
+      if (!Number.isFinite(percent)) throw new Error('音量数值无效。');
+      get_playlist_players().forEach(function(candidate) { candidate.volume(percent / 100); });
+      update_player_settings('music', {volume: percent / 100});
+    } else throw new Error('不支持这项播放器操作。');
+    music_context_active_player = player;
+    save_music_playlist_state(player);
+    return {success: true, operation: action, current: get_music_context_snapshot().current};
+  });
+}
+
 window.YusenMusicContext = {
   version: 1,
   getSnapshot: get_music_context_snapshot,
+};
+
+window.YusenMusicAgent = {
+  version: 1,
+  getSnapshot: get_music_context_snapshot,
+  search: function(query, limit) {
+    return fetch_music_tracks({quality: quality, query: String(query || '').slice(0, 120), page: 0, pageSize: Math.max(1, Math.min(20, Number(limit) || 8)), sort: 'name'});
+  },
+  playTrack: music_agent_play_track,
+  control: music_agent_control,
 };
 
 function use_compact_music_layout() {

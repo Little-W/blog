@@ -12,6 +12,7 @@
   var MAX_REQUEST_HISTORY = 12;
   var history = loadLocalHistory();
   var owner = false;
+  var capabilities = null;
   var initialized = false;
   var pending = false;
   var proactivePending = false;
@@ -227,6 +228,61 @@
     };
   }
 
+  function executeBrowserAction(action) {
+    var name = action && String(action.name || "");
+    var args = action && action.arguments && typeof action.arguments === "object" ? action.arguments : {};
+    if (name === "music.play_track") {
+      if (!window.YusenMusicAgent || typeof window.YusenMusicAgent.playTrack !== "function") {
+        return Promise.reject(new Error("音乐播放器还没有准备好。"));
+      }
+      return window.YusenMusicAgent.playTrack(args.mid).then(function (result) {
+        if (result && result.blocked) {
+          return {success: true, warning: "歌曲已选中，但浏览器阻止了自动播放，请手动按一次播放键。"};
+        }
+        return result || {success: true};
+      });
+    }
+    if (name === "music.control") {
+      if (!window.YusenMusicAgent || typeof window.YusenMusicAgent.control !== "function") {
+        return Promise.reject(new Error("音乐播放器还没有准备好。"));
+      }
+      return window.YusenMusicAgent.control(args.action, args.value);
+    }
+    if (name === "navigation.open") {
+      var target = String(args.path || "");
+      var targetURL;
+      try { targetURL = new URL(target, window.location.origin); } catch (error) {}
+      if (!targetURL || targetURL.origin !== window.location.origin || !/^\/(?!\/)/.test(target) || /^\/api(?:\/|$)/.test(targetURL.pathname)) {
+        return Promise.reject(new Error("站内文章路径无效。"));
+      }
+      window.setTimeout(function () { window.location.assign(targetURL.pathname + targetURL.search + targetURL.hash); }, 900);
+      return Promise.resolve({success: true});
+    }
+    if (name === "waifu.hide") {
+      window.setTimeout(function () {
+        var effects = window.YusenEffects;
+        if (effects && typeof effects.setEffectEnabled === "function") effects.setEffectEnabled("live2d", false);
+        else widget.hidden = true;
+      }, 1100);
+      return Promise.resolve({success: true});
+    }
+    return Promise.reject(new Error("页面不支持这项操作。"));
+  }
+
+  function executeBrowserActions(actions) {
+    var queue = Array.isArray(actions) ? actions.slice(0, 8) : [];
+    var results = [];
+    return queue.reduce(function (chain, action) {
+      return chain.then(function () {
+        return executeBrowserAction(action).then(function (result) {
+          results.push({success: true, action: action, result: result || {success: true}});
+        }).catch(function (error) {
+          results.push({success: false, action: action, error: String(error && error.message || "操作未完成。")});
+        });
+      });
+    }, Promise.resolve()).then(function () { return results; });
+  }
+
   function markActivity() {
     lastActivityAt = Date.now();
   }
@@ -237,6 +293,7 @@
 
   var ready = requestJSON("/api/waifu-chat/history", {method: "GET"}).then(function (payload) {
     owner = payload.owner === true;
+    capabilities = payload.capabilities || null;
     if (owner) {
       // 登录前的访客对话不上传。管理员只读取并续写本人已认证的云端记录。
       history = cleanLocalHistory(payload.history);
@@ -272,13 +329,20 @@
         body: JSON.stringify({message: text, history: previousHistory, context: runtimeContext()})
       }).then(function (payload) {
         thinking.remove();
+        capabilities = payload.capabilities || capabilities;
         var reply = String(payload.reply || "").trim();
         if (!reply) throw new Error("我刚刚一下子词穷了……再问我一次好吗？");
-        owner = payload.owner === true;
-        updatePersistenceLabel();
-        history.push(newLocalMessage("assistant", reply, "chat"));
-        saveLocalHistory();
-        appendMessage("assistant", reply);
+        return executeBrowserActions(payload.actions).then(function (actionResults) {
+          owner = payload.owner === true;
+          updatePersistenceLabel();
+          history.push(newLocalMessage("assistant", reply, "chat"));
+          saveLocalHistory();
+          appendMessage("assistant", reply);
+          var failures = actionResults.filter(function (result) { return !result.success; });
+          var warnings = actionResults.map(function (result) { return result.result && result.result.warning; }).filter(Boolean);
+          if (failures.length) appendMessage("assistant", "页面操作未完成：" + failures.map(function (result) { return result.error; }).join("；"));
+          warnings.forEach(function (warning) { appendMessage("assistant", warning); });
+        });
       }).catch(function (error) {
         thinking.remove();
         var message = error && error.name === "AbortError"
@@ -354,7 +418,7 @@
     proactive: proactive,
     getContext: runtimeContext,
     getState: function () {
-      return {owner: owner, persistence: owner ? "blob" : "local", historyLength: history.length};
+      return {owner: owner, persistence: owner ? "blob" : "local", historyLength: history.length, capabilities: capabilities};
     }
   };
 })();

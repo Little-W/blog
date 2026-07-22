@@ -5,6 +5,7 @@ import test from 'node:test';
 import handler, {
   WAIFU_OWNER_SYSTEM_PROMPT,
   WAIFU_RESPONSE_STYLE_REMINDER,
+  WAIFU_TOOL_DEFINITIONS,
   WAIFU_VISITOR_SYSTEM_PROMPT,
 } from '../netlify/functions/waifu-chat.mjs';
 
@@ -138,6 +139,10 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /用户更正姓名、偏好或事实时/);
     assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /逐项回答完整/);
     assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /避免用“听起来……”作为固定开场/);
+    assert.deepEqual(
+      WAIFU_TOOL_DEFINITIONS.map((tool) => tool.function.name),
+      ['search_music_library', 'list_music_playlists', 'search_mv_library', 'search_blog_articles', 'play_music_track', 'control_music', 'open_blog_article', 'hide_waifu'],
+    );
   });
 
   await t.test('访客历史和对话不读写 Blob', async () => {
@@ -152,6 +157,9 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(historyPayload.owner, false);
     assert.equal(historyPayload.persistence, 'local');
     assert.deepEqual(historyPayload.history, []);
+    assert.equal(historyPayload.capabilities.data.articles, 'read');
+    assert.ok(historyPayload.capabilities.browser.includes('music.play_track'));
+    assert.ok(historyPayload.capabilities.denied.includes('database.write'));
     assert.ok(historyPayload.agent.proactiveAfterMs >= 45_000);
     assert.ok(historyPayload.agent.proactiveAfterMs <= 90_000);
     const response = await handler(request('/api/waifu-chat', {
@@ -163,6 +171,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.owner, false);
     assert.equal(payload.persistence, 'local');
     assert.match(calls[0].messages[0].content, /当前用户是博客访客/);
+    assert.equal(calls[0].model, 'THUDM/GLM-4-9B-0414');
+    assert.equal(calls[0].tools, undefined);
     assert.equal(store.reads, 0);
     assert.equal(store.writes, 0);
   });
@@ -269,6 +279,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
     assert.equal(calls.length, 2);
+    assert.equal(calls[0].model, 'THUDM/GLM-4-9B-0414');
     assert.equal(payload.reply, '嗯，我记住你喜欢这首歌了，会安静陪你听完。');
     assert.equal(store.writes, 0);
   });
@@ -330,9 +341,140 @@ test('waifu chat persistence and role prompts', async (t) => {
     }));
     const operationPayload = await bodyOf(operationResponse);
     assert.equal(calls, 2);
-    assert.match(operationPayload.reply, /^不行喵/);
-    assert.match(operationPayload.reply, /调节音量、暂停播放、隐藏看板娘/);
-    assert.match(operationPayload.reply, /不能假装已经/);
+    assert.match(operationPayload.reply, /操作没有真正执行成功/);
+    assert.match(operationPayload.reply, /不能假装/);
+  });
+
+  await t.test('文章检索结果会作为工具资料传回模型', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.__YUSEN_WAIFU_DATASETS__ = {
+      'waifu-content-index': {
+        version: 1,
+        documents: [{
+          title: 'RISC-V Zve32x：嵌入式整数向量扩展',
+          path: '/docs/notes/digital-design/riscv/riscv-zve32x',
+          description: '介绍 Zve32x 寄存器与指令。',
+          headings: ['向量寄存器', 'vtype 与 vl'],
+          content: 'Zve32x 面向嵌入式整数向量计算，vtype 记录当前向量配置。',
+        }],
+      },
+    };
+    const calls = [];
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      if (calls.length === 1) {
+        return Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {
+          content: null,
+          tool_calls: [{id: 'article-search-1', type: 'function', function: {name: 'search_blog_articles', arguments: '{"query":"Zve32x vtype"}'}}],
+        }}]});
+      }
+      return Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {content: '站内的 Zve32x 文章说明了 vtype 和 vl，可以从这里阅读：/docs/notes/digital-design/riscv/riscv-zve32x'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-article-tool', body: {message: '帮我找一下 Zve32x 中 vtype 的文章。'},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].model, 'Qwen/Qwen3-8B');
+    assert.ok(calls[0].tools.some((tool) => tool.function.name === 'search_blog_articles'));
+    const toolMessage = calls[1].messages.find((message) => message.role === 'tool');
+    assert.match(toolMessage.content, /riscv-zve32x/);
+    assert.match(payload.reply, /riscv-zve32x/);
+    assert.deepEqual(payload.actions, []);
+  });
+
+  await t.test('播放器工具只返回结构化浏览器操作', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const calls = [];
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      if (calls.length === 1) {
+        return Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {
+          content: null,
+          tool_calls: [{id: 'volume-1', type: 'function', function: {name: 'control_music', arguments: '{"action":"set_volume","value":35}'}}],
+        }}]});
+      }
+      return Response.json({model: 'THUDM/GLM-4-9B-0414', choices: [{message: {content: '好的喵～音量调到 35% 了。'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-control-tool', body: {message: '把音量调到 35%。'},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(payload.actions.length, 1);
+    assert.equal(payload.actions[0].name, 'music.control');
+    assert.deepEqual(payload.actions[0].arguments, {action: 'set_volume', value: 35});
+    assert.match(payload.reply, /35%/);
+  });
+
+  await t.test('点歌会先查曲库再安排浏览器播放', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const modelCalls = [];
+    globalThis.fetch = async (url, options = {}) => {
+      const href = String(url);
+      if (href.includes('/data/music_hq.0.jsonl')) {
+        return new Response('{"mid":123,"title":"リボン","author":"ReoNa","list":[2],"url":"https://media.invalid/123.mp3","pic":"https://media.invalid/123.jpg","lrc":""}\n');
+      }
+      if (href.includes('/data/music_tag.0.jsonl')) {
+        return new Response('{"tag_id":2,"tag_order":1,"tag_name":"ReoNa","music_order":[123]}\n');
+      }
+      const payload = JSON.parse(options.body);
+      modelCalls.push(payload);
+      if (modelCalls.length === 1) {
+        return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {
+          content: null,
+          tool_calls: [{id: 'song-search', type: 'function', function: {name: 'search_music_library', arguments: '{"query":"リボン ReoNa"}'}}],
+        }}]});
+      }
+      if (modelCalls.length === 2) {
+        return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {
+          content: null,
+          tool_calls: [{id: 'song-play', type: 'function', function: {name: 'play_music_track', arguments: '{"mid":123}'}}],
+        }}]});
+      }
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '好的喵～已经为你点了 ReoNa 的《リボン》。'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-song-request', body: {message: '点歌：ReoNa 的《リボン》。'},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(modelCalls.length, 3);
+    assert.match(modelCalls[1].messages.find((message) => message.role === 'tool').content, /リボン/);
+    assert.equal(payload.actions.length, 1);
+    assert.equal(payload.actions[0].name, 'music.play_track');
+    assert.deepEqual(payload.actions[0].arguments, {mid: 123});
+  });
+
+  await t.test('模型不能在用户未授权时触发页面操作', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const calls = [];
+    globalThis.fetch = async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      calls.push(payload);
+      if (calls.length === 1) {
+        return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {
+          content: null,
+          tool_calls: [{id: 'unauthorized-hide', type: 'function', function: {name: 'hide_waifu', arguments: '{}'}}],
+        }}]});
+      }
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '我会先帮你找站内的 Zve32x 文章。'}}]});
+    };
+    const response = await handler(request('/api/waifu-chat', {
+      method: 'POST', address: 'guest-denied-action', body: {message: '帮我找一下 Zve32x 文章。'},
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.deepEqual(payload.actions, []);
+    const toolResult = calls[1].messages.find((message) => message.role === 'tool');
+    assert.match(toolResult.content, /没有明确要求隐藏/);
   });
 
   await t.test('叠加语气会归一化，技术回答只保留一处猫娘口吻', async () => {
@@ -411,6 +553,7 @@ test('waifu chat persistence and role prompts', async (t) => {
 test.after(() => {
   globalThis.fetch = originalFetch;
   delete globalThis.__YUSEN_WAIFU_MEMORY_STORE__;
+  delete globalThis.__YUSEN_WAIFU_DATASETS__;
   Object.entries(originalEnvironment).forEach(([key, value]) => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
