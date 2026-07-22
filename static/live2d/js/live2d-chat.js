@@ -181,6 +181,34 @@
     });
   }
 
+  function requestHitokoto() {
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timeout = controller ? window.setTimeout(function () { controller.abort(); }, 6000) : 0;
+    var settings = {
+      cache: "no-store",
+      headers: {accept: "application/json"},
+      mode: "cors",
+      referrerPolicy: "no-referrer"
+    };
+    if (controller) settings.signal = controller.signal;
+    return fetch("https://v1.hitokoto.cn/?encode=json&max_length=80", settings).then(function (response) {
+      if (!response.ok) throw new Error("一言暂时没有回应。");
+      return response.json();
+    }).then(function (payload) {
+      var text = payload && typeof payload.hitokoto === "string" ? payload.hitokoto.trim().slice(0, 180) : "";
+      if (!text) throw new Error("一言内容为空。");
+      return text;
+    }).finally(function () {
+      if (timeout) window.clearTimeout(timeout);
+    });
+  }
+
+  function localHitokotoFallback(value) {
+    var text = String(value || "").trim().replace(/^[“\"「『]+|[”\"」』]+$/g, "");
+    if (!text) return "";
+    return "刚刚捡到一句话，想悄悄放在这里：" + text;
+  }
+
   function applyAgentControls(payload, fallbackDelay) {
     var delay = Number(payload && payload.agent && payload.agent.proactiveAfterMs);
     if (!Number.isFinite(delay) || delay < 15 * 1000 || delay > 60 * 60 * 1000) {
@@ -362,13 +390,18 @@
     }
     proactivePending = true;
     nextProactiveAt = Infinity;
+    var hitokoto = "";
     return ready.then(function () {
+      return requestHitokoto().catch(function () { return ""; });
+    }).then(function (sourceText) {
+      hitokoto = sourceText;
       return requestJSON("/api/waifu-chat/proactive", {
         method: "POST",
         headers: {"content-type": "application/json", accept: "application/json"},
         body: JSON.stringify({
           history: history.slice(-8).map(function (item) { return {role: item.role, content: item.content}; }),
-          context: runtimeContext()
+          context: runtimeContext(),
+          hitokoto: hitokoto
         })
       });
     }).then(function (payload) {
@@ -385,6 +418,14 @@
       return true;
     }).catch(function () {
       applyAgentControls(null, 60 * 1000);
+      var fallback = localHitokotoFallback(hitokoto);
+      if (fallback) {
+        history.push(newLocalMessage("assistant", fallback, "proactive"));
+        saveLocalHistory();
+        if (!panel.hidden) renderHistory();
+        if (typeof window.showMessage === "function") window.showMessage(fallback, 6500);
+        return true;
+      }
       return false;
     }).finally(function () {
       proactivePending = false;
