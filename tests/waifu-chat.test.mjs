@@ -121,12 +121,13 @@ test('waifu chat persistence and role prompts', async (t) => {
   });
 
   await t.test('角色 Prompt 明确博客范围和猫娘表达规则', () => {
-    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不是单纯的音乐网站/);
-    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /数字 IC/);
-    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /日语学习笔记/);
-    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /音乐只是其中一个栏目/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /个人空间/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /音乐只是其中一部分/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要主动背诵栏目/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /比起介绍网站，更重要的是接住用户/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /有猫耳和尾巴的猫娘女仆/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要句句带“喵”/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /像两个人正在连续相处/);
   });
 
   await t.test('访客历史和对话不读写 Blob', async () => {
