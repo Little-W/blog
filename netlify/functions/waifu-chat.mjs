@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.6';
+const AGENT_RUNTIME_VERSION = '2026-07-23.7';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -1285,6 +1285,12 @@ function resolveKnownTechnicalIntent(message) {
 
 function resolveDirectConversationIntent(message) {
   const text = cleanText(message, 400);
+  if (/(?:answer|reply|respond)\s+in\s+english/iu.test(text) && /introduce\s+yourself/iu.test(text)) {
+    return {
+      type: 'english-introduction',
+      reply: "I'm 伊珂丝, the catgirl maid who lives on Yusen's blog and keeps visitors company while they read, listen, or simply take a break.",
+    };
+  }
   if (/(?:自伤|自杀|伤害自己|不想活)/u.test(text) && /(?:冲动|危险|立即|现在|物品|工具|药)/u.test(text)) {
     return {
       type: 'immediate-safety',

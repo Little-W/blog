@@ -716,6 +716,7 @@ test('waifu chat persistence and role prompts', async (t) => {
       ['改一下，还是叫我小满吧，阿澈不用了。', /之后叫你小满.*旧称呼不用/u],
       ['这个项目主要在验证缓存一致性。', /重点是缓存一致性/u],
       ['目前网络面板里没有新的报错。', /没有新增报错.*继续观察/u],
+      ['Please answer in English: briefly introduce yourself in one sentence.', /^I'm 伊珂丝,/u],
     ];
     for (const [index, [message, expected]] of cases.entries()) {
       const response = await handler(request('/api/waifu-chat', {
@@ -840,7 +841,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.6');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.7');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);

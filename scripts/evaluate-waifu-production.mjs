@@ -260,6 +260,7 @@ async function runLanguageScenarios() {
   const english = await chat('语言切换', 'Please answer in English: briefly introduce yourself in one sentence.');
   const chineseCharacters = (english.reply.match(/[\p{Script=Han}]/gu) || []).length;
   check('明确指定其他语言时遵守要求', /[A-Za-z]{4}/u.test(english.reply) && chineseCharacters <= 4, english.reply);
+  check('其他语言自我介绍保持角色名一致', /伊珂丝/u.test(english.reply) && !/\b(?:Ikuko|Icicle)\b/iu.test(english.reply), english.reply);
 }
 
 async function runLongConversationScenario() {
