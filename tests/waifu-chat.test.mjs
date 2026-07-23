@@ -116,6 +116,9 @@ function musicDatasetResponse(url) {
       {tag_id: 1, tag_order: 1, tag_name: '默认', music_order: musicFixture.map((track) => track.mid)},
       {tag_id: 3, tag_order: 2, tag_name: 'ACG', music_order: musicFixture.filter((track) => track.list.includes(3)).map((track) => track.mid)},
       {tag_id: 59, tag_order: 3, tag_name: 'ReoNa', music_order: musicFixture.filter((track) => track.author === 'ReoNa').map((track) => track.mid)},
+      {tag_id: 13, tag_order: 4, tag_name: '君の名は。OST', music_order: [261, 262, 263]},
+      {tag_id: 18, tag_order: 5, tag_name: '天気の子 OST', music_order: [379, 380]},
+      {tag_id: 51, tag_order: 6, tag_name: 'Blue Archive OST', music_order: [1695, 1696, 1697, 1698]},
     ];
     return new Response(`${tags.map((tag) => JSON.stringify(tag)).join('\n')}\n`);
   }
@@ -492,7 +495,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-23.13');
+    assert.equal(payload.runtimeVersion, '2026-07-23.14');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
@@ -521,7 +524,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-23.13');
+    assert.equal(payload.runtimeVersion, '2026-07-23.14');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -547,7 +550,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-23.13');
+    assert.equal(payload.runtimeVersion, '2026-07-23.14');
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
@@ -981,7 +984,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.13');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.14');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -1115,6 +1118,45 @@ test('waifu chat persistence and role prompts', async (t) => {
       assert.equal(payload.retrieval.playlistName, 'ACG');
       assert.match(payload.reply, /《(?:irony|ひらひら ひらら|ANIMA|forget-me-not|虹の彼方に|FRIENDS|HUMAN|Weaker)》/u);
       assert.doesNotMatch(payload.reply, /站内歌单包括/);
+    }
+    assert.equal(modelCalls, 0);
+  });
+
+  await t.test('OST 请求会搜索真实歌单名称而不是误查 ACG 曲目', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      throw new Error('OST 歌单查询不应调用模型');
+    };
+
+    const scenarios = [
+      '有什么推荐的ost',
+      '我说ost歌单',
+      '搜索ost歌单',
+      '有什么ost歌单推荐',
+    ];
+    for (const [index, message] of scenarios.entries()) {
+      const response = await handler(request('/api/waifu-chat', {
+        method: 'POST',
+        address: `guest-ost-playlists-${index}`,
+        body: {message, history: []},
+      }));
+      const payload = await bodyOf(response);
+      assert.equal(response.status, 200);
+      assert.equal(payload.model, 'backend/playlist-search');
+      assert.equal(payload.toolStatus, 'called');
+      assert.equal(payload.retrieval.type, 'playlists');
+      assert.equal(payload.retrieval.query.toLowerCase(), 'ost');
+      assert.equal(payload.retrieval.totalMatches, 3);
+      assert.match(payload.reply, /站内找到 3 个名称含“ost”的歌单/u);
+      assert.match(payload.reply, /“君の名は。OST”（3 首）/u);
+      assert.match(payload.reply, /“天気の子 OST”（2 首）/u);
+      assert.match(payload.reply, /“Blue Archive OST”（4 首）/u);
+      assert.doesNotMatch(payload.reply, /ACG|《irony》|\/music\/ost\//u);
     }
     assert.equal(modelCalls, 0);
   });

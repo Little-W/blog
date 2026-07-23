@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.13';
+const AGENT_RUNTIME_VERSION = '2026-07-23.14';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -1752,11 +1752,40 @@ async function runDirectMVSearch(request, intent) {
   return {reply: '站内查到这些 MV：' + entries.join('、') + '。', content};
 }
 
+function extractPlaylistSearchQuery(message) {
+  const text = cleanText(message, 180);
+  const quoted = text.match(/[《「“]([^》」”]+)[》」”]/u)?.[1];
+  if (quoted) return cleanText(quoted, 100);
+  const query = text
+    .replace(/\b(?:playlist|playlists)\b/giu, ' ')
+    .replace(/(?:我说的?|我的意思是|是指|说的是|不是.{0,18}而是)/gu, ' ')
+    .replace(/(?:帮我|给我|麻烦|可以|能不能|能否|请|重新|仔细|再|一下|看看|站内|本站|网站里?|曲库里?)/gu, ' ')
+    .replace(/(?:搜索?|搜一下|搜搜|检索|查找|找一?下|列出|给出|介绍|推荐|浏览|查看)/gu, ' ')
+    .replace(/(?:有没?有|有什么|有哪些|哪一些|哪些|全部|所有|相关的?|可推荐的?)/gu, ' ')
+    .replace(/(?:音乐)?(?:歌单|分类)/gu, ' ')
+    .replace(/[一二两三四五六七八\d]+\s*(?:首|个|条|部)/gu, ' ')
+    .replace(/[，。！？!?、:：;；()[\]{}\/|]+/gu, ' ')
+    .replace(/(^|\s)(?:的|呢|吗|了|呀|啊|吧)(?=\s|$)/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/^的+|的+$/gu, '')
+    .trim();
+  return query.length <= 100 ? query : '';
+}
+
 function resolveDirectPlaylistSearchIntent(message) {
   const text = cleanText(message, 180);
-  if (!/(?:歌单|分类)/u.test(text) || !/(?:有哪些|列出|给出|搜索?|查找|介绍)/u.test(text)) return null;
-  const query = text.match(/[《「“]([^》」”]+)[》」”]/u)?.[1] || '';
-  return {query: cleanText(query, 100), limit: requestedResultLimit(text, 12, 20)};
+  const mentionsPlaylist = /(?:歌单|分类|\bplaylists?\b)/iu.test(text);
+  const mentionsOstGroup = /\bOST\b|原声(?:带|音乐|专辑)?/iu.test(text);
+  const discoveryRequest = /(?:有哪些|有什么|列出|给出|搜索?|查找|介绍|推荐|浏览|查看)/u.test(text);
+  const correction = /(?:我说的?|我的意思是|是指|说的是|不是.{0,18}而是)/u.test(text);
+  if (!(mentionsPlaylist && (discoveryRequest || correction || mentionsOstGroup)) &&
+    !(mentionsOstGroup && discoveryRequest)) return null;
+  const query = extractPlaylistSearchQuery(text);
+  return {
+    query,
+    limit: requestedResultLimit(text, query ? 8 : 12, 20),
+  };
 }
 
 async function runDirectPlaylistSearch(request, intent) {
@@ -1768,6 +1797,19 @@ async function runDirectPlaylistSearch(request, intent) {
   const playlists = Array.isArray(content.playlists) ? content.playlists.slice(0, intent.limit) : [];
   if (content.success !== true) return {reply: '歌单资料这次没有正常返回：' + cleanText(content.error, 160), content};
   if (!playlists.length) return {reply: '站内没有找到匹配的歌单分类。', content};
+  if (intent.query) {
+    const entries = playlists.map((item) => {
+      const count = Math.max(0, Number(item.count) || 0);
+      return `“${cleanText(item.name, 140)}”${count ? `（${count} 首）` : ''}`;
+    });
+    const total = Array.isArray(content.playlists) ? content.playlists.length : playlists.length;
+    const remaining = Math.max(0, total - playlists.length);
+    return {
+      reply: `站内找到 ${total} 个名称含“${intent.query}”的歌单：${entries.join('、')}` +
+        `${remaining ? `。还有 ${remaining} 个没有列出` : ''}。`,
+      content,
+    };
+  }
   return {
     reply: '站内歌单包括：' + playlists.map((item) => '“' + cleanText(item.name, 140) + '”').join('、') + '。',
     content,
@@ -2646,6 +2688,28 @@ async function interactiveChat(request, body) {
       },
     });
   }
+  const playlistSearchIntent = resolveDirectPlaylistSearchIntent(message);
+  if (playlistSearchIntent) {
+    let search;
+    try {
+      search = await runDirectPlaylistSearch(request, playlistSearchIntent);
+    } catch (error) {
+      console.warn('[waifu-chat] direct playlist search failed:', error?.message || String(error));
+      search = {reply: '歌单资料这次没有正常返回，我不会凭印象编造分类。', content: {success: false}};
+    }
+    return directChatResult(session, message, context, {
+      reply: search.reply,
+      model: 'backend/playlist-search',
+      actions: [],
+      toolStatus: search.content?.success === true ? 'called' : 'unavailable',
+      retrieval: {
+        type: 'playlists',
+        query: playlistSearchIntent.query,
+        totalMatches: Array.isArray(search.content?.playlists) ? search.content.playlists.length : 0,
+        returned: Array.isArray(search.content?.playlists) ? Math.min(search.content.playlists.length, playlistSearchIntent.limit) : 0,
+      },
+    });
+  }
   const musicSearchIntent = resolveMusicSearchIntent(message, recentHistory);
   if (musicSearchIntent) {
     let search;
@@ -2698,28 +2762,6 @@ async function interactiveChat(request, body) {
         query: mvSearchIntent.query,
         totalMatches: Array.isArray(search.content?.results) ? search.content.results.length : 0,
         returned: Array.isArray(search.content?.results) ? search.content.results.length : 0,
-      },
-    });
-  }
-  const playlistSearchIntent = resolveDirectPlaylistSearchIntent(message);
-  if (playlistSearchIntent) {
-    let search;
-    try {
-      search = await runDirectPlaylistSearch(request, playlistSearchIntent);
-    } catch (error) {
-      console.warn('[waifu-chat] direct playlist search failed:', error?.message || String(error));
-      search = {reply: '歌单资料这次没有正常返回，我不会凭印象编造分类。', content: {success: false}};
-    }
-    return directChatResult(session, message, context, {
-      reply: search.reply,
-      model: 'backend/playlist-search',
-      actions: [],
-      toolStatus: search.content?.success === true ? 'called' : 'unavailable',
-      retrieval: {
-        type: 'playlists',
-        query: playlistSearchIntent.query,
-        totalMatches: Array.isArray(search.content?.playlists) ? search.content.playlists.length : 0,
-        returned: Array.isArray(search.content?.playlists) ? Math.min(search.content.playlists.length, playlistSearchIntent.limit) : 0,
       },
     });
   }
