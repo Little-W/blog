@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.18';
+const AGENT_RUNTIME_VERSION = '2026-07-24.19';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -1009,14 +1009,26 @@ async function executeAgentTool(request, call, userMessage) {
       headers: {'content-type': 'application/json; charset=utf-8'},
       body: JSON.stringify({quality: 'hq', query, page: 0, pageSize: 200, sort: 'id', random: args.random === true}),
     });
-    const tracks = (data.records || []).map((track) => ({
+    const scoredTracks = (data.records || []).map((track) => ({
       mid: Number(track.mid), title: cleanText(track.title, 120), artist: cleanText(track.author, 100), playlists: track.list || [],
       score: relevanceScore(query, [
         {value: track.title, weight: 8}, {value: track.author, weight: 5}, {value: `${track.author} ${track.title}`, weight: 2},
       ]),
-    })).sort((left, right) => right.score - left.score || left.mid - right.mid).slice(0, limit)
+    }));
+    const orderedTracks = args.random === true
+      ? scoredTracks
+      : scoredTracks.sort((left, right) => right.score - left.score || left.mid - right.mid);
+    const tracks = orderedTracks.slice(0, limit)
       .map(({score, ...track}) => track);
-    return {content: {success: true, query, totalMatches: Number(data.totalMatches) || tracks.length, tracks}};
+    return {
+      content: {
+        success: true,
+        query,
+        random: data.random === true,
+        totalMatches: Number(data.totalMatches) || tracks.length,
+        tracks,
+      },
+    };
   }
   if (name === 'get_random_music_tracks') {
     const limit = Math.max(1, Math.min(24, Number(args.limit) || 8));
@@ -1657,6 +1669,21 @@ function resolveDirectConversationIntent(message) {
     return {
       type: 'project-name-correction',
       reply: '好，项目代号现在是“' + correctedProjectName + '”。',
+    };
+  }
+  const initialProjectName = text.match(
+    /(?:项目)?代号(?:先|暂时|现在)?\s*(?:记作|叫作|叫做|定为|设为|是)\s*[“"'《「]?([^”"'》」\s，。！？!?]{1,30})/u,
+  );
+  if (initialProjectName) {
+    return {
+      type: 'project-name',
+      reply: '好，项目代号先记作“' + cleanText(initialProjectName[1], 30) + '”。',
+    };
+  }
+  if (/(?:回答|回复).{0,10}(?:简洁|简短)|不要.{0,10}(?:每次|总是|一直).{0,8}(?:反问|提问)/u.test(text)) {
+    return {
+      type: 'conversation-preference',
+      reply: '知道了，之后我会说得更简洁，也不会每轮反问。',
     };
   }
   if (preferredName && !/[?？]/u.test(text)) {
@@ -3087,6 +3114,7 @@ async function interactiveChat(request, body) {
       retrieval: {
         type: 'music',
         query: musicSearchIntent.query,
+        random: search.content?.random === true,
         totalMatches: Number(search.content?.totalMatches) || 0,
         returned: Number(search.returned) || 0,
       },

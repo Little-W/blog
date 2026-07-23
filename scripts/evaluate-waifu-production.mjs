@@ -189,7 +189,8 @@ async function runFunctionalScenarios() {
 
   const constrainedRandom = await chat('带条件选歌', '随便挑三首 ReoNa 的歌');
   check('带歌手条件的选歌保留检索条件', constrainedRandom.model === 'backend/music-search' &&
-    constrainedRandom.retrieval?.query === 'ReoNa' && /《.+》/u.test(constrainedRandom.reply), JSON.stringify(constrainedRandom));
+    constrainedRandom.retrieval?.query === 'ReoNa' && constrainedRandom.retrieval?.random === true &&
+    /《.+》/u.test(constrainedRandom.reply), JSON.stringify(constrainedRandom));
 
   const play = await chat('点歌', '播放ANIMA');
   check('简短点歌生成播放操作', play.model === 'backend/music-playback' && assertAction(play, 'music.play_track', (args) => Number(args.mid) === 226), JSON.stringify(play));
@@ -299,6 +300,7 @@ async function runLongConversationScenario() {
     replies.push(record.reply);
   }
   check('长对话在更正当轮直接回应新值', /银杏/u.test(turns[5].reply) && !/蓝鲸/u.test(turns[5].reply), turns[5].reply);
+  check('长对话直接接受简洁和少反问偏好', /简洁/u.test(turns[2].reply) && !hasQuestion(turns[2].reply), turns[2].reply);
   check('长对话不用空洞短句忽略项目主题', /缓存一致性/u.test(turns[1].reply) && !/^(?:嗯|好的|知道了|我听见了)[的说～~，。\s]*$/u.test(turns[1].reply), turns[1].reply);
   check('长对话不虚构未提供的歌单或播放状态', !/《[^》]+》/u.test(turns[3].reply) && !/(?:音乐|播放).{0,8}(?:暂停|停止)/u.test(turns[3].reply), turns[3].reply);
   check('长对话不把暂时消失误当彻底解决', !/(?:解决了|已经解决|恢复正常)/u.test(turns[4].reply), turns[4].reply);
