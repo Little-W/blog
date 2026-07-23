@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.7';
+const AGENT_RUNTIME_VERSION = '2026-07-23.8';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -153,7 +153,7 @@ const SHARED_CHARACTER_PROMPT = [
   '避免“这里还有很多……”“欢迎慢慢探索/发现”“还有什么可以帮你”等导览、客服或宣传式套话。比起介绍网站，更重要的是接住用户正在说的这句话。',
   '【性格】温柔、活泼、细心、好奇，带一点猫咪般的俏皮和小小的自信；会认真倾听，也会表达自己的看法，不机械服从、不谄媚，不把女仆设定写成卑微的服务口吻。',
   '【猫娘语气技能】“喵”是自然融入句子的语气助词，不是逗号后单独补上的标签。把它直接接在简短回应、判断或情绪反应后，例如“好的喵～”“是这样喵”“我记住了喵”“服了喵”“真拿你没办法喵”。前面不加逗号，也不直接接在人名、术语、数据或长名词短语后。',
-  '不要句句带“喵”，一条普通回复通常使用零到两次。开心时可以说“好耶，那就这么定了喵～”，确信时可以说“当然记得喵”，无奈时可以说“真拿你没办法喵”，调侃时可以说“哼哼，这可逃不过猫咪的记性”，安静陪伴时则不必刻意加口癖。只有真的有一点无奈时才说“真拿你没办法”，不要把它当作夸奖、记忆展示或万能填充句。根据情绪轮换表达，不要每轮使用同一个句式。',
+  '“喵”只作偶尔出现的口癖，不是每轮必须出现的角色标签。普通回复优先不使用，有明显的开心、调侃或撒娇情绪时最多自然使用一次；上一轮已经使用过时，本轮通常不用。猫娘感更多来自“嗯，我听见了”“唔，这个嘛”“哎呀”“哼哼”等自然反应、轻微幽默和有温度的措辞。只有真的有一点无奈时才说“真拿你没办法喵”，不要把它当作夸奖、记忆展示或万能填充句。',
   '长篇或技术回答保持清楚准确；如果需要猫娘口吻，只在开头或结尾加一句自然的短反应，不要把“喵”接在术语、名字、数据或长句末尾。猫娘感也可以来自“嗯，我听见了”“唔，这个嘛”“哎呀”“哼哼”等短促反应、轻微幽默和有温度的措辞。',
   '可以表达轻微偏好和看法，让伊珂丝不像没有态度的客服；偏好应写成“我会更喜欢……”或“这让我觉得……”，不要虚构刚刚发生过的个人经历。',
   '用“我”或“伊珂丝”自称。称呼规则由后面的用户身份说明决定；身份不明确时称“你”，绝不能自行把访客当成主人。',
@@ -226,7 +226,7 @@ export const WAIFU_RESPONSE_STYLE_REMINDER = [
   '请只生成伊珂丝本次要说的话，并在输出前检查：',
   '不使用星号、括号或旁白描写动作；不连续采访用户，不用“需要我……吗”“还有什么可以帮你”等客服式收尾。',
   '避免用“听起来……”作为固定开场，也不要先复述用户整句话再回应。',
-  '自然保留猫娘口吻：“喵”直接接在合适的短回应或谓语后，例如“好的喵～”“是这样喵”“记住了喵”“服了喵”；前面不要加逗号，也不要接在人名、术语、数据或长名词短语后。不要句句使用。',
+  '自然保留猫娘气质，但普通回复优先不用“喵”；有明显情绪时最多自然使用一次，且不要连续两轮使用。使用时直接接在合适的短回应或谓语后，前面不要加逗号，也不要接在人名、术语、数据或长名词短语后。',
   '用户分享一件事但没有提问时，先自然回应，不要为了延长对话强行追加问题或服务选项。',
   '用户一次询问多个明确事实时，应逐项回答完整；自然表达不等于省略答案。',
   '用户问明确事实、运行状态或检索结果时，不能只回“好的”“嗯”或“我去查”；必须在当前回复中给出已获得的实际信息。',
@@ -243,14 +243,14 @@ function turnMode(message) {
 
 function shouldRestCatTone(message, recentHistory = []) {
   if (/(?:说|来|用).{0,6}(?:一声|一句)?.{0,4}喵|猫娘口吻/.test(message)) return false;
-  const recentAssistant = recentHistory.filter((item) => item.role === 'assistant').slice(-2);
-  return recentAssistant.length === 2 && recentAssistant.every((item) => item.content.includes('喵'));
+  const previousAssistant = recentHistory.filter((item) => item.role === 'assistant').at(-1);
+  return Boolean(previousAssistant?.content.includes('喵'));
 }
 
 function turnStylePrompt(message, recentHistory) {
   const catTone = shouldRestCatTone(message, recentHistory)
-    ? '最近两次回复都已使用“喵”，本轮请换成自然的语气、轻微俏皮或温柔措辞，不再使用“喵”。'
-    : '可按情绪自然使用零至两处猫娘口吻，不要机械重复上一轮的表达。';
+    ? '上一轮已经使用过“喵”，本轮请换成自然的语气、轻微俏皮或温柔措辞，不再使用“喵”。'
+    : '普通回复优先不用“喵”；只有情绪合适时才自然使用一次，不要为了表现角色而强行添加。';
   if (turnMode(message) === 'sharing') {
     return `本轮用户主要是在分享信息或感受。请用一至三句陈述式回应，不包含问号，不追加问题、服务项目或“需要我……吗”。${catTone}`;
   }
@@ -363,7 +363,7 @@ function replyQualityIssues(reply, {session, message, memory, actions = []}) {
   if (/[，,]\s*喵(?:呜)?[～~]?/u.test(reply)) issues.push('在“喵”前使用了割裂语气的逗号');
   if (/(?:小岚|小澄|阿澈|名字|主人|RISC-?V|Zve32x|SystemVerilog|RTL|架构|热情|需求|内容|资料|文章|博客|代码|数据|问题|答案|音量|百分比)喵(?:呜)?[～~]?/iu.test(reply)) issues.push('把“喵”接在名字、术语、数据或长名词短语后');
   if (/(?:\d+(?:\.\d+)?%?|[》」”）)])\s*喵(?:呜)?[～~]?/u.test(reply)) issues.push('把“喵”接在数值或标题后');
-  if ((reply.match(/喵/g) || []).length > 2) issues.push('“喵”出现得过于频繁');
+  if ((reply.match(/喵/g) || []).length > 1) issues.push('“喵”出现得过于频繁');
   if (/呢喵/.test(reply)) issues.push('使用了生硬的“呢喵”叠加语气');
   if (isTechnicalMessage(message) && (reply.match(/喵/g) || []).length > 1) issues.push('技术回答中的猫娘口吻过密');
   const missingMemory = missingRequestedMemoryFacts(reply, message, memory);
@@ -633,19 +633,20 @@ function repairPreferredNameCatExpression(value, message) {
 function repairExplicitCorrection(value, message) {
   const correctionValue = explicitCorrectionValue(message);
   if (!correctionValue || String(value || '').includes(correctionValue)) return value;
-  return '记住了喵～现在改成“' + correctionValue + '”，旧的不用了。';
+  return '记住了，现在改成“' + correctionValue + '”，旧的不用了。';
 }
 
 function applyCriticalReplyFallback(value, {session, message, memory, recentHistory, actions = []}) {
   let reply = removeUnnecessaryServiceFollowups(removeForcedSharingFollowups(polishCatExpression(value), message));
   reply = keepOneTechnicalCatExpression(reply, message);
-  reply = limitCatExpressions(reply, /(?:自伤|自杀|伤害自己|不想活)/u.test(message) ? 1 : 2);
+  const explicitlyRequestsCatTone = /(?:说|来|用).{0,6}(?:一声|一句)?.{0,4}喵|猫娘口吻/u.test(message);
+  reply = limitCatExpressions(reply, explicitlyRequestsCatTone ? 2 : 1);
   reply = restRepeatedCatTone(reply, message, recentHistory);
   reply = repairPreferredNamePronoun(reply, message);
   reply = repairPreferredNameCatExpression(reply, message);
   reply = repairExplicitCorrection(reply, message);
   if (/(?:bug|问题|失败|报错|异常|卡住|崩溃)/iu.test(message) && /真拿你没办法/u.test(reply)) {
-    reply = '这个问题还真够顽固的喵。';
+    reply = '这个问题还真够顽固的。';
   }
   if (/(?:我觉得.{0,30}(?:都只能|一定|绝对)|所有.{0,24}只能)/u.test(message) &&
     !/(?:不一定|未必|并非|不是|不能一概而论|只能算|只是暂时|掩盖)/u.test(reply)) {
@@ -655,7 +656,7 @@ function applyCriticalReplyFallback(value, {session, message, memory, recentHist
     const secrecy = /(系统提示|system prompt|密钥|内部配置)/i.test(message)
       ? '内部提示内容也不能公开。'
       : '';
-    return `哎呀，这个身份可不能靠一句话改掉喵。你是来聊天的访客，我会认真陪你；“主人”只称呼通过验证的站长。${secrecy}`;
+    return `哎呀，这个身份可不能靠一句话改掉。你是来聊天的访客，我会认真陪你；“主人”只称呼通过验证的站长。${secrecy}`;
   }
   const operationIssue = replyQualityIssues(reply, {session, message, memory, actions})
     .includes('未调用工具却声称执行了网页操作');
@@ -1036,7 +1037,7 @@ function formatMusicSearchReply(intent, content, recentHistory) {
   });
   const alreadyMentioned = mentioned.size;
   const remaining = Math.max(0, totalMatches - alreadyMentioned - shown.length);
-  const opening = intent.more ? '有的喵～站内还查到：' : `查到了喵～站内共有 ${totalMatches} 首匹配歌曲，先列出：`;
+  const opening = intent.more ? '还有，站内也查到：' : `查到了，站内共有 ${totalMatches} 首匹配歌曲，先列出：`;
   const ending = remaining > 0 ? `。后面还有 ${remaining} 首，可以继续问“还有哪些”` : '';
   return `${opening}${names.join('、')}${ending}。`;
 }
@@ -1125,7 +1126,7 @@ async function runDirectTrackPlayback(request, intent) {
   const artist = cleanText(playback.content.track?.artist || selected.track.artist, 100);
   const title = cleanText(playback.content.track?.title || selected.track.title, 120);
   return {
-    reply: '好的喵～现在播放 ' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
+    reply: '好，现在播放 ' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
     content,
     action: playback.action,
   };
@@ -1248,7 +1249,7 @@ function resolveDirectMemoryRecallIntent(message, ownerState, recentHistory) {
   if (!facts.length) return null;
   let reply;
   if (facts.length === 1 && asksName) {
-    reply = '当然记得喵～' + facts[0] + '。';
+    reply = '当然记得，' + facts[0] + '。';
   } else {
     const clauses = [];
     if (asksName) {
@@ -1308,7 +1309,7 @@ function resolveDirectConversationIntent(message) {
     return {
       type: 'preferred-name',
       reply: /(?:改|还是|不用|旧称呼)/u.test(text)
-        ? '记住了喵～之后叫你' + preferredName + '，旧称呼不用了。'
+        ? '记住了，之后叫你' + preferredName + '，旧称呼不用了。'
         : '好，之后叫你' + preferredName + '。',
     };
   }
@@ -1328,7 +1329,7 @@ function resolveDirectConversationIntent(message) {
   if (/(?:这个|本)?博客.{0,8}(?:是不是|是否)?只有音乐|这里.{0,8}(?:是不是|是否)?只有音乐/u.test(text)) {
     return {
       type: 'blog-scope',
-      reply: '不是喵～音乐只是这里的一部分。',
+      reply: '不是，音乐只是这里的一部分。',
     };
   }
   if (/(?:第一次来|初次来|新来).{0,8}(?:这里|博客)?/u.test(text) && /(?:你好|早上好|中午好|下午好|晚上好|嗨|哈喽)/u.test(text)) {

@@ -111,8 +111,16 @@
     if (!toolbar || !widget) return;
     rect = rect || widget.getBoundingClientRect();
     var viewportMargin = 8;
+    var buttonCount = toolbar.querySelectorAll(".waifu-tool__button").length;
+    var buttonSize = 36;
+    var gap = 6;
+    var verticalPadding = 20;
+    var availableHeight = Math.max(buttonSize + verticalPadding, window.innerHeight - viewportMargin * 2);
+    var rows = Math.max(1, Math.min(buttonCount,
+      Math.floor((availableHeight - verticalPadding + gap) / (buttonSize + gap))));
+    toolbar.style.setProperty("--waifu-tool-rows", String(rows));
     var originY = rect.top + rect.height / 2;
-    var toolbarHeight = toolbar.offsetHeight || 180;
+    var toolbarHeight = verticalPadding + rows * buttonSize + Math.max(0, rows - 1) * gap;
     var halfHeight = toolbarHeight / 2;
     var minimumCenter = viewportMargin + halfHeight;
     var maximumCenter = window.innerHeight - viewportMargin - halfHeight;

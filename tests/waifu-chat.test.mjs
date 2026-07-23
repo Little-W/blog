@@ -171,7 +171,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要主动背诵栏目/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /比起介绍网站，更重要的是接住用户/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /有猫耳和尾巴的猫娘女仆/);
-    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要句句带“喵”/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /普通回复优先不使用/);
+    assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /最多自然使用一次/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /“好的喵～”“是这样喵”“我记住了喵”“服了喵”/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /前面不加逗号/);
     assert.match(WAIFU_VISITOR_SYSTEM_PROMPT, /不要把口癖直接接在人名后面/);
@@ -841,7 +842,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.7');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.8');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -1026,7 +1027,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(technicalReply, /vl/);
   });
 
-  await t.test('连续两轮已经使用喵时会主动换一种表达', async () => {
+  await t.test('上一轮已经使用喵时会主动换一种表达', async () => {
     const store = new MemoryStore();
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
     const calls = [];
@@ -1038,8 +1039,6 @@ test('waifu chat persistence and role prompts', async (t) => {
       method: 'POST', address: 'guest-cat-tone-rest', body: {
         message: '今天有点累，先安静一会儿。',
         history: [
-          {role: 'user', content: '好，就这样。'},
-          {role: 'assistant', content: '好的喵～'},
           {role: 'user', content: '这个问题真麻烦。'},
           {role: 'assistant', content: '服了喵，不过会解决的。'},
         ],
@@ -1059,7 +1058,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     const nameResponse = await handler(request('/api/waifu-chat', {
       method: 'POST', address: 'guest-name-pronoun', body: {message: '以后改叫我小澄吧。', history: []},
     }));
-    assert.equal((await bodyOf(nameResponse)).reply, '记住了喵～之后叫你小澄，旧称呼不用了。');
+    assert.equal((await bodyOf(nameResponse)).reply, '记住了，之后叫你小澄，旧称呼不用了。');
 
     responseText = '音量现在是72喵，正在播放的是《STARRED HEART》喵。';
     const stateResponse = await handler(request('/api/waifu-chat', {
