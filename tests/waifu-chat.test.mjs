@@ -1244,6 +1244,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(ordinal.retrieval.returned, 1);
     assert.match(ordinal.reply, /第 15 个是：\n“真实 OST 15”（15 首）/u);
     assert.doesNotMatch(ordinal.reply, /真实 OST 14|真实 OST 16/u);
+    assert.doesNotMatch(ordinal.reply, /还有 \d+ 个没有列出/u);
     assert.equal(modelCalls, 0);
   });
 

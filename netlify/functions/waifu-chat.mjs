@@ -1901,7 +1901,7 @@ async function runDirectPlaylistSearch(request, intent) {
   const order = intent.sort === 'count-desc' ? '按曲目数从多到少'
     : intent.sort === 'count-asc' ? '按曲目数从少到多'
       : intent.sort === 'name' ? '按名称排序' : '按网站显示顺序';
-  const remaining = Math.max(0, total - offset - playlists.length);
+  const remaining = requestedOrdinal ? 0 : Math.max(0, total - offset - playlists.length);
   const prefix = requestedOrdinal
     ? `${scope}${order}时，第 ${requestedOrdinal} 个是：`
     : intent.all
