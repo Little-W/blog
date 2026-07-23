@@ -33,24 +33,24 @@
 		{ "selector": "#search_button", "text": ["要搜索吗？"] },
 		{ "selector": "#menus_item", "text": ["看菜单吗？"] },
 		{ "selector": ".rss", "text": ["这个是博客的RSS链接哦~"] },		
-		{ "selector": ".github", "text": ["这个是主人的的github链接哦~"] },
-		{ "selector": ".bilibili", "text": ["这个是主人的B站主页哦~"] },
-		{ "selector": ".qq", "text": ["这个是主人的QQ哦~"] },
-		{ "selector": ".twitter", "text": ["这个是主人的推特哦~"] },
-		{ "selector": ".archive.iconify", "text": ["主人的历史博客都在这里"] },
+		{ "selector": ".github", "text": ["这是店长的 GitHub 链接的说"] },
+		{ "selector": ".bilibili", "text": ["这是店长的 B 站主页"] },
+		{ "selector": ".qq", "text": ["这是店长的 QQ"] },
+		{ "selector": ".twitter", "text": ["这是店长的推特"] },
+		{ "selector": ".archive.iconify", "text": ["店长的历史博客都在这里"] },
 		{ "selector": ".tags.iconify", "text": ["这个是tag分类"] },
-		{ "selector": ".docs.iconify", "text": ["这个是主人的学习笔记"] },
-		{ "selector": ".intro_dEWD", "text": ["不用看介绍了，主人就是个</br>死肥宅+fw (￣_￣ )"] },	
-		{ "selector": ".bloginfo__img", "text": ["点开这个就是主人的自我介绍啦，虽然也没啥好看的......"] },	
-		{ "selector": ".bloginfo__name", "text": ["点开这个就是主人的自我介绍啦，虽然也没啥好看的......"] },	
+		{ "selector": ".docs.iconify", "text": ["这里是店长的学习笔记"] },
+		{ "selector": ".intro_dEWD", "text": ["店长的自我介绍么，伊珂丝已经研究过了的说"] },
+		{ "selector": ".bloginfo__img", "text": ["点开这里就能查看店长的自我介绍"] },
+		{ "selector": ".bloginfo__name", "text": ["点开这里就能查看店长的自我介绍"] },
 		{ "selector": ".fa.fa-envelope", "text": ["这个我的e-mail哦~？"] },
 		{ "selector": "#live2d", "text": ["干嘛呢你，快把手拿开", "鼠…鼠标放错地方了！","Hentai","大笨蛋o(￣ヘ￣o)"] },
 		{ "selector": ".aplayer-icon-lrc", "text": ["点一下就能打开<span style=\"color:#0099cc;\">浮动歌词</span>，我也可以陪你一起唱哦~"] },
 		{ "selector": ".waifu-tool__button[data-action=\"hide\"]", "text": ["要让我先藏起来吗？想我时记得去显示设置里叫我回来哦。"] },
 		{ "selector": ".waifu-tool__button[data-action=\"tips\"]", "text": ["这里可以开关我的 Tips 文本框，我可是准备了很多话想说呢~"] },
-		{ "selector": ".waifu-tool__button[data-action=\"chat\"]", "text": ["想和我说说话吗？点这里，我会认真听的喵~"] },
+		{ "selector": ".waifu-tool__button[data-action=\"chat\"]", "text": ["想和伊珂丝说话就点这里，别让 JOKER 等太久的说"] },
 		{ "selector": ".waifu-tool__button[data-action=\"agent\"]", "text": ["开启智能体模式后，我会结合现在的时间、页面和音乐，偶尔主动陪你说一句哦~"] },
-		{ "selector": "[data-effect=\"live2d\"] [data-waifu-toggle]", "text": ["要让我继续陪着你吗？我会乖乖待在这里的~", "开关在这里哦，关掉以后我就先去休息一会儿。", "想我了就把开关打开，我马上回来陪你，喵~", "主人要把我藏起来吗？那我可要在一旁偷偷等你反悔哦。"] },
+		{ "selector": "[data-effect=\"live2d\"] [data-waifu-toggle]", "text": ["这里可以控制伊珂丝是否显示的说", "关掉以后，伊珂丝就带着 JOKER 去打游戏了。", "重新打开，研究工作就继续。", "店长要把伊珂丝藏起来吗？这个决定可不怎么聪明的说。"] },
 		{ "selector": ".switch-live2d .keys", "text": ["暂不支持该功能哦！"] },
 		{ "selector": ".mv_list_div", "text": ["要看看MV吗？"] },
         { "selector": ".vjs-quality-button", "text": ["这里可以调整<span style=\"color:#0099cc;\">画质</span>哦"] },
@@ -73,12 +73,12 @@
             "text": [
                 "是…是不小心碰到了吧",
 				"萝莉控是什么呀",
-                "你看到我的小熊了吗",
-				"你看到我主人了嘛？QAQ",
-				"只要一点内存就能养活我哦",
-				"~喵喵喵~",
-				"嘻嘻~~",
-				"嘿咻~嘿咻~"
+				"你看到 JOKER 了吗",
+				"店长偶尔还是挺有用的说",
+				"只要一点内存就能让伊珂丝继续研究哦",
+				"JOKER说很高兴",
+				"游戏时间到了的说",
+				"这种小机关当然难不住伊珂丝"
             ]
         }
     ],
@@ -122,6 +122,6 @@
         { "date": "09/10", "text": ["<span style=\"color:#0099cc;\">教师节</span>，在学校要给老师问声好呀~"] },
         { "date": "10/01", "text": ["<span style=\"color:#0099cc;\">国庆节</span>，新中国已经成立70年了呢"] },
         { "date": "11/05-11/12", "text": ["今年的<span style=\"color:#0099cc;\">双十一</span>是和谁一起过的呢~"] },
-        { "date": "12/20-12/31", "text": ["这几天是<span style=\"color:#0099cc;\">圣诞节</span>，主人肯定又去剁手买买买了~"] }
+        { "date": "12/20-12/31", "text": ["这几天是<span style=\"color:#0099cc;\">圣诞节</span>，店长肯定又去买游戏了的说"] }
     ]
 }

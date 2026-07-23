@@ -137,8 +137,8 @@
 
   function emptyGreeting() {
     return owner
-      ? "主人，欢迎回来。今天也可以把想说的话都交给我哦~"
-      : "欢迎来博客逛逛，我是伊珂丝。想聊点什么都可以哦~";
+      ? "店长，欢迎回来。JOKER说今天也可以继续游戏的说。"
+      : "欢迎来到博客，伊珂丝·卡里尼亚会在这里担任技术顾问的说。";
   }
 
   function renderHistory() {
@@ -155,7 +155,7 @@
   }
 
   function updatePersistenceLabel() {
-    persistence.textContent = owner ? "主人模式 · 云端记忆" : "访客模式 · 仅此浏览器";
+    persistence.textContent = owner ? "店长模式 · 云端记忆" : "访客模式 · 仅此浏览器";
     persistence.dataset.persistence = owner ? "blob" : "local";
   }
 
