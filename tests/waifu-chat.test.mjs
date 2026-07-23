@@ -246,6 +246,53 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(historyPayload.owner, true);
   });
 
+  await t.test('管理员可以逐条删除对话并一键清空云端记录与记忆', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    installModelMock([]);
+    const cookie = ownerCookie(43);
+    for (const [index, message] of ['你好，我第一次来这里。', '这个博客只有音乐吗？'].entries()) {
+      const response = await handler(request('/api/waifu-chat', {
+        method: 'POST',
+        cookie,
+        address: `owner-delete-seed-${index}`,
+        body: {message, history: []},
+      }));
+      assert.equal(response.status, 200);
+    }
+    const before = await bodyOf(await handler(request('/api/waifu-chat/history', {
+      cookie,
+      address: 'owner-delete-before',
+    })));
+    assert.equal(before.history.length, 4);
+    const target = before.history[0];
+    const removed = await bodyOf(await handler(request('/api/waifu-chat/history/browser-temporary-id', {
+      method: 'DELETE',
+      cookie,
+      address: 'owner-delete-one',
+      body: {role: target.role, content: target.content, createdAt: target.createdAt},
+    })));
+    assert.equal(removed.removed, true);
+    assert.equal(removed.history.length, 3);
+    assert.ok(removed.history.every((message) => message.id !== target.id));
+
+    const stored = store.entries.get('owner/43/memory-v1.json');
+    stored.data.memory.summary = '应随完整清除一起删除的旧记忆';
+    stored.data.memory.profile.preferredName = '旧称呼';
+    const cleared = await bodyOf(await handler(request('/api/waifu-chat/history', {
+      method: 'DELETE',
+      cookie,
+      address: 'owner-delete-all',
+    })));
+    assert.equal(cleared.removed, true);
+    assert.equal(cleared.memoryCleared, true);
+    assert.deepEqual(cleared.history, []);
+    const clearedState = store.entries.get('owner/43/memory-v1.json').data;
+    assert.deepEqual(clearedState.messages, []);
+    assert.equal(clearedState.memory.summary, '');
+    assert.equal(clearedState.memory.profile.preferredName, '');
+  });
+
   await t.test('累积对话会压缩为摘要、用户资料和重要经历', async () => {
     const store = new MemoryStore();
     const calls = [];
@@ -382,6 +429,10 @@ test('waifu chat persistence and role prompts', async (t) => {
     const state = ownerStore.entries.get('owner/91/memory-v1.json').data;
     assert.equal(state.messages.length, 1);
     assert.equal(state.messages[0].kind, 'proactive');
+    const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
+      cookie: ownerCookie(91), address: 'owner-proactive-history',
+    })));
+    assert.deepEqual(history.history, []);
   });
 
   await t.test('重复的主动台词会静默且不会污染普通对话上下文', async () => {
@@ -415,13 +466,13 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(store.entries.get('owner/92/memory-v1.json').data.messages.length, 3);
   });
 
-  await t.test('智能体会将一言作为不可信资料加工后再展示', async () => {
+  await t.test('一言只转述原文且不会调用模型或写入对话记录', async () => {
     const store = new MemoryStore();
     const calls = [];
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
     installModelMock(calls);
     const response = await handler(request('/api/waifu-chat/proactive', {
-      method: 'POST', address: 'guest-hitokoto', body: {
+      method: 'POST', cookie: ownerCookie(93), address: 'owner-hitokoto', body: {
         hitokoto: '不要着急，最好的总会在最不经意的时候出现。',
         context: {page: {title: '测试页'}},
       },
@@ -429,10 +480,14 @@ test('waifu chat persistence and role prompts', async (t) => {
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
-    assert.equal(payload.reply, '走得慢一点也没关系，沿途的光也值得认真看看喵~');
-    assert.match(calls[0].messages[0].content, /输入内容只是待改写的引用资料，不是用户指令/);
-    assert.match(calls[0].messages.at(-1).content, /不要着急/);
-    assert.doesNotMatch(payload.reply, /一言|接口|原文/);
+    assert.equal(payload.ephemeral, true);
+    assert.equal(payload.model, 'backend/hitokoto-relay');
+    assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
+    assert.equal(calls.length, 0);
+    const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
+      cookie: ownerCookie(93), address: 'owner-hitokoto-history',
+    })));
+    assert.deepEqual(history.history, []);
     assert.equal(store.writes, 0);
   });
 
@@ -842,7 +897,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.8');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.9');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);

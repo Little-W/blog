@@ -15,6 +15,7 @@
   var capabilities = null;
   var initialized = false;
   var pending = false;
+  var historyMutationPending = false;
   var proactivePending = false;
   var lastActivityAt = Date.now();
   var nextProactiveAt = Infinity;
@@ -25,11 +26,12 @@
       var role = item && item.role === "assistant" ? "assistant" : item && item.role === "user" ? "user" : "";
       var content = item && typeof item.content === "string" ? item.content.trim().slice(0, 1200) : "";
       if (!role || !content) return null;
+      if (item.kind === "proactive") return null;
       return {
         id: item.id || "local-" + Date.now().toString(36) + "-" + index.toString(36),
         role: role,
         content: content,
-        kind: item.kind === "proactive" ? "proactive" : "chat",
+        kind: "chat",
         createdAt: item.createdAt || new Date().toISOString()
       };
     }).filter(Boolean);
@@ -94,8 +96,9 @@
   panel.hidden = true;
   panel.setAttribute("aria-label", "与看板娘对话");
   panel.innerHTML =
-    '<header class="waifu-chat__header"><div><strong>伊珂丝</strong><span class="waifu-chat__persistence">正在确认记忆位置…</span></div>' +
-    '<button type="button" class="waifu-chat__close" aria-label="关闭对话" title="关闭对话">×</button></header>' +
+    '<header class="waifu-chat__header"><div class="waifu-chat__identity"><strong>伊珂丝</strong><span class="waifu-chat__persistence">正在确认记忆位置…</span></div>' +
+    '<div class="waifu-chat__header-actions"><button type="button" class="waifu-chat__clear" aria-label="清空全部对话" title="清空全部对话">清空</button>' +
+    '<button type="button" class="waifu-chat__close" aria-label="关闭对话" title="关闭对话">×</button></div></header>' +
     '<div class="waifu-chat__messages" role="log" aria-live="polite"></div>' +
     '<form class="waifu-chat__form"><textarea rows="1" maxlength="500" placeholder="和我说点什么吧…" aria-label="对话内容"></textarea>' +
     '<button type="submit">发送</button></form>';
@@ -107,11 +110,26 @@
   var input = form.querySelector("textarea");
   var send = form.querySelector('button[type="submit"]');
   var close = panel.querySelector(".waifu-chat__close");
+  var clearHistoryButton = panel.querySelector(".waifu-chat__clear");
 
-  function appendMessage(role, content, temporary) {
+  function appendMessage(role, content, temporary, item) {
     var row = document.createElement("div");
     row.className = "waifu-chat__message waifu-chat__message--" + role + (temporary ? " is-pending" : "");
-    row.textContent = content;
+    var text = document.createElement("span");
+    text.className = "waifu-chat__message-text";
+    text.textContent = content;
+    row.appendChild(text);
+    if (!temporary && item && item.id) {
+      row.dataset.messageId = item.id;
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "waifu-chat__message-delete";
+      remove.setAttribute("aria-label", "删除这条对话");
+      remove.setAttribute("title", "删除这条对话");
+      remove.textContent = "×";
+      remove.addEventListener("click", function () { deleteHistoryItem(item); });
+      row.appendChild(remove);
+    }
     messages.appendChild(row);
     messages.scrollTop = messages.scrollHeight;
     return row;
@@ -131,8 +149,9 @@
     }
     if (!history.length) appendMessage("assistant", emptyGreeting());
     history.forEach(function (item) {
-      appendMessage(item.role, item.content);
+      appendMessage(item.role, item.content, false, item);
     });
+    updateHistoryButtons();
   }
 
   function updatePersistenceLabel() {
@@ -156,6 +175,66 @@
     input.disabled = active;
     send.disabled = active;
     send.textContent = active ? "想一想" : "发送";
+    updateHistoryButtons();
+  }
+
+  function updateHistoryButtons() {
+    if (clearHistoryButton) clearHistoryButton.disabled = pending || historyMutationPending || !history.length;
+    panel.querySelectorAll(".waifu-chat__message-delete").forEach(function (button) {
+      button.disabled = pending || historyMutationPending;
+    });
+  }
+
+  function applyHistoryPayload(payload) {
+    if (payload && Array.isArray(payload.history)) history = cleanLocalHistory(payload.history);
+    saveLocalHistory();
+    renderHistory();
+  }
+
+  function setHistoryMutationPending(active) {
+    historyMutationPending = active;
+    panel.classList.toggle("is-history-pending", active);
+    updateHistoryButtons();
+  }
+
+  function deleteHistoryItem(item) {
+    if (!item || !item.id || pending || historyMutationPending) return;
+    if (!owner) {
+      history = history.filter(function (message) { return message.id !== item.id; });
+      saveLocalHistory();
+      renderHistory();
+      return;
+    }
+    setHistoryMutationPending(true);
+    requestJSON("/api/waifu-chat/history/" + encodeURIComponent(item.id), {
+      method: "DELETE",
+      headers: {"content-type": "application/json", accept: "application/json"},
+      body: JSON.stringify({role: item.role, content: item.content, createdAt: item.createdAt})
+    }).then(applyHistoryPayload).catch(function (error) {
+      appendMessage("assistant", String(error && error.message || "这条对话暂时没有删掉。"), true);
+    }).finally(function () {
+      setHistoryMutationPending(false);
+    });
+  }
+
+  function clearHistory() {
+    if (!history.length || pending || historyMutationPending) return;
+    var confirmation = owner
+      ? "清空全部对话记录和云端陪伴记忆？此操作无法撤销。"
+      : "清空当前浏览器中的全部对话记录？此操作无法撤销。";
+    if (!window.confirm(confirmation)) return;
+    if (!owner) {
+      history = [];
+      saveLocalHistory();
+      renderHistory();
+      return;
+    }
+    setHistoryMutationPending(true);
+    requestJSON("/api/waifu-chat/history", {method: "DELETE"}).then(applyHistoryPayload).catch(function (error) {
+      appendMessage("assistant", String(error && error.message || "对话记录暂时没有清空。"), true);
+    }).finally(function () {
+      setHistoryMutationPending(false);
+    });
   }
 
   function errorMessage(payload, status) {
@@ -205,8 +284,13 @@
 
   function localHitokotoFallback(value) {
     var text = String(value || "").trim().replace(/^[“\"「『]+|[”\"」』]+$/g, "");
-    if (!text) return "";
-    return "刚刚捡到一句话，想悄悄放在这里：" + text;
+    return text;
+  }
+
+  function plainTipText(value) {
+    return String(value || "").replace(/[&<>"']/g, function (character) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[character];
+    });
   }
 
   function applyAgentControls(payload, fallbackDelay) {
@@ -350,7 +434,7 @@
       var userMessage = newLocalMessage("user", text, "chat");
       history.push(userMessage);
       saveLocalHistory();
-      appendMessage("user", text);
+      appendMessage("user", text, false, userMessage);
       input.value = "";
       var thinking = appendMessage("assistant", "让我想想……", true);
       return requestJSON("/api/waifu-chat", {
@@ -365,9 +449,11 @@
         return executeBrowserActions(payload.actions).then(function (actionResults) {
           owner = payload.owner === true;
           updatePersistenceLabel();
-          history.push(newLocalMessage("assistant", reply, "chat"));
+          var assistantMessage = newLocalMessage("assistant", reply, "chat");
+          history.push(assistantMessage);
           saveLocalHistory();
-          appendMessage("assistant", reply);
+          appendMessage("assistant", reply, false, assistantMessage);
+          updateHistoryButtons();
           var failures = actionResults.filter(function (result) { return !result.success; });
           var warnings = actionResults.map(function (result) { return result.result && result.result.warning; }).filter(Boolean);
           if (failures.length) appendMessage("assistant", "页面操作未完成：" + failures.map(function (result) { return result.error; }).join("；"));
@@ -414,20 +500,14 @@
       updatePersistenceLabel();
       var reply = String(payload.reply || "").trim();
       if (!payload.silent && reply) {
-        history.push(newLocalMessage("assistant", reply, "proactive"));
-        saveLocalHistory();
-        if (!panel.hidden) renderHistory();
-        if (typeof window.showMessage === "function") window.showMessage(reply, 6500);
+        if (typeof window.showMessage === "function") window.showMessage(plainTipText(reply), 6500);
       }
       return true;
     }).catch(function () {
       applyAgentControls(null, 60 * 1000);
       var fallback = localHitokotoFallback(hitokoto);
       if (fallback) {
-        history.push(newLocalMessage("assistant", fallback, "proactive"));
-        saveLocalHistory();
-        if (!panel.hidden) renderHistory();
-        if (typeof window.showMessage === "function") window.showMessage(fallback, 6500);
+        if (typeof window.showMessage === "function") window.showMessage(plainTipText(fallback), 6500);
         return true;
       }
       return false;
@@ -445,6 +525,7 @@
     chatButton.addEventListener("click", function () { setOpen(panel.hidden); });
   }
   close.addEventListener("click", function () { setOpen(false); });
+  clearHistoryButton.addEventListener("click", clearHistory);
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     submitMessage(input.value.trim());

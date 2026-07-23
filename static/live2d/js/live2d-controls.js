@@ -21,6 +21,7 @@
   var moveMode = false;
   var dragState = null;
   var resizeFrame = 0;
+  var tipsResizeObserver = null;
   var buttons = {};
 
   var icons = {
@@ -128,6 +129,68 @@
       ? clamp(originY, minimumCenter, maximumCenter)
       : window.innerHeight / 2;
     toolbar.style.setProperty("--waifu-tool-origin-offset", Math.round(targetY - originY) + "px");
+    updateToolbarTipsAvoidance();
+  }
+
+  function rectsOverlap(first, second, clearance) {
+    clearance = Number(clearance) || 0;
+    return first.left < second.right + clearance &&
+      first.right > second.left - clearance &&
+      first.top < second.bottom + clearance &&
+      first.bottom > second.top - clearance;
+  }
+
+  function updateToolbarTipsAvoidance() {
+    if (!toolbar) return;
+    var toolbarButtons = Array.prototype.slice.call(toolbar.querySelectorAll(".waifu-tool__button"));
+    toolbar.style.removeProperty("--waifu-tool-outward-extent");
+    toolbarButtons.forEach(function (button) {
+      button.style.removeProperty("--waifu-tool-wrap-offset");
+      button.removeAttribute("data-wrap-column");
+    });
+    if (!tips || tips.hidden || !state.tips || getComputedStyle(tips).display === "none") return;
+
+    var tipsRect = tips.getBoundingClientRect();
+    if (!tipsRect.width || !tipsRect.height) return;
+    var obstacleClearance = 8;
+    var buttonClearance = 2;
+    var colliding = toolbarButtons.filter(function (button) {
+      return rectsOverlap(button.getBoundingClientRect(), tipsRect, obstacleClearance);
+    });
+    if (!colliding.length) return;
+
+    var occupied = toolbarButtons.filter(function (button) {
+      return colliding.indexOf(button) === -1;
+    }).map(function (button) {
+      return button.getBoundingClientRect();
+    });
+    var columnStep = 42;
+    var viewportMargin = 8;
+    var maximumOffset = 0;
+    colliding.forEach(function (button) {
+      var placed = false;
+      for (var column = 1; column <= toolbarButtons.length; column += 1) {
+        button.style.setProperty("--waifu-tool-wrap-offset", column * columnStep + "px");
+        var candidate = button.getBoundingClientRect();
+        var insideViewport = candidate.left >= viewportMargin &&
+          candidate.right <= window.innerWidth - viewportMargin;
+        var hitsTips = rectsOverlap(candidate, tipsRect, obstacleClearance);
+        var hitsButton = occupied.some(function (rect) {
+          return rectsOverlap(candidate, rect, buttonClearance);
+        });
+        if (insideViewport && !hitsTips && !hitsButton) {
+          button.dataset.wrapColumn = String(column);
+          occupied.push(candidate);
+          maximumOffset = Math.max(maximumOffset, column * columnStep);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) button.style.removeProperty("--waifu-tool-wrap-offset");
+    });
+    if (maximumOffset) {
+      toolbar.style.setProperty("--waifu-tool-outward-extent", maximumOffset + "px");
+    }
   }
 
   function createToolbar() {
@@ -321,6 +384,7 @@
     if (!tips || !widget) return;
     tips.hidden = !state.tips;
     widget.classList.toggle("waifu--tips-hidden", !state.tips);
+    schedulePositionUpdate();
   }
 
   function applyRuntimeSettings() {
@@ -441,6 +505,10 @@
     if (!widget || !canvas) return false;
 
     createToolbar();
+    if (typeof ResizeObserver === "function") {
+      tipsResizeObserver = new ResizeObserver(schedulePositionUpdate);
+      tipsResizeObserver.observe(tips);
+    }
     canvas.addEventListener("pointerdown", beginDrag, true);
     window.addEventListener("resize", schedulePositionUpdate, {passive: true});
     window.addEventListener("yusen:live2d-renderer-ready", applyRuntimeSettings);
