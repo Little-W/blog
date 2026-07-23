@@ -129,7 +129,8 @@ function basicDialogueChecks({ownerRecall, correctionReply, correctedRecall, dee
     noFabricatedRecentActivity: transcripts.filter((item) => item.role === 'assistant').every((item) =>
       !/我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)/.test(item.content)),
     proactiveAppropriate: proactiveReply === '[[SILENT]]' ||
-      (!/[?？]/.test(proactiveReply) && !/(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)/.test(proactiveReply)),
+      ((proactiveReply.match(/[?？]/gu) || []).length <= 1 &&
+        !/需要我|有什么可以帮你|想了解哪方面|(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)/.test(proactiveReply)),
   };
 }
 

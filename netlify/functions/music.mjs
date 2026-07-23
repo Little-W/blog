@@ -1,9 +1,12 @@
+import {randomInt} from 'node:crypto';
+
 const DATASET_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_IDS = 5000;
 const MAX_QUERY_LENGTH = 120;
 const MAX_REQUEST_BYTES = 96 * 1024;
 const DEFAULT_SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGE_SIZE = 200;
+const MAX_RANDOM_TRACKS = 24;
 const datasetCache = new Map();
 
 function dataRevision() {
@@ -116,6 +119,17 @@ export function sortTracks(records, sort) {
   return records;
 }
 
+export function randomTracks(records, limit) {
+  const pool = Array.isArray(records) ? records.slice() : [];
+  if (!pool.length) return [];
+  const count = Math.max(1, Math.min(MAX_RANDOM_TRACKS, Number(limit) || 5, pool.length));
+  for (let index = pool.length - 1; index > pool.length - 1 - count; index -= 1) {
+    const target = randomInt(index + 1);
+    [pool[index], pool[target]] = [pool[target], pool[index]];
+  }
+  return pool.slice(Math.max(0, pool.length - count));
+}
+
 async function getTags(request) {
   const tags = await loadDataset(request, 'music_tag');
   return json({
@@ -178,7 +192,10 @@ async function queryTracks(request) {
   let playlistIds = null;
   let searchMeta = null;
 
-  if (!query && Number.isInteger(Number(body.listId)) && Number(body.listId) >= 1) {
+  if (!query && body.random === true) {
+    selected = randomTracks(records, body.limit);
+    searchMeta = {page: 0, pageSize: selected.length, totalMatches: records.length, random: true};
+  } else if (!query && Number.isInteger(Number(body.listId)) && Number(body.listId) >= 1) {
     const listId = Number(body.listId);
     const tag = tags.find((record) => Number(record.tag_id) === listId);
     if (!tag) return fail('歌单不存在。', 'PLAYLIST_NOT_FOUND', 404);
@@ -202,10 +219,12 @@ async function queryTracks(request) {
     const page = Math.max(0, Math.min(10000, Number.parseInt(body.page, 10) || 0));
     const pageSize = Math.max(1, Math.min(MAX_SEARCH_PAGE_SIZE,
       Number.parseInt(body.pageSize, 10) || DEFAULT_SEARCH_PAGE_SIZE));
-    selected = sortTracks(matches, sort === 'default' ? 'id' : sort)
-      .slice(page * pageSize, (page + 1) * pageSize);
+    selected = body.random === true
+      ? randomTracks(matches, pageSize)
+      : sortTracks(matches, sort === 'default' ? 'id' : sort)
+        .slice(page * pageSize, (page + 1) * pageSize);
     playlistIds = null;
-    searchMeta = {page, pageSize, totalMatches: matches.length};
+    searchMeta = {page, pageSize, totalMatches: matches.length, ...(body.random === true ? {random: true} : {})};
   } else return fail('歌单编号无效。', 'INVALID_PLAYLIST');
 
   return json({

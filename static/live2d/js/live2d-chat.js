@@ -19,6 +19,7 @@
   var proactivePending = false;
   var proactiveTimer = 0;
   var proactiveCycle = 0;
+  var contextProactiveCycle = 0;
   var preferredProactiveMode = "";
   var recentProactive = [];
   var lastContextSignature = "";
@@ -350,10 +351,10 @@
     if (preferredProactiveMode) {
       var preferred = preferredProactiveMode;
       preferredProactiveMode = "";
-      if (preferred === "context" && proactiveCycle % 2 === 0) proactiveCycle += 1;
       return preferred;
     }
-    var mode = proactiveCycle % 2 === 0 ? "context" : "hitokoto";
+    var modes = ["context", "context", "hitokoto"];
+    var mode = modes[proactiveCycle % modes.length];
     proactiveCycle += 1;
     return mode;
   }
@@ -535,7 +536,12 @@
       return requestJSON("/api/waifu-chat", {
         method: "POST",
         headers: {"content-type": "application/json", accept: "application/json"},
-        body: JSON.stringify({message: text, history: previousHistory, context: runtimeContext()})
+        body: JSON.stringify({
+          message: text,
+          history: previousHistory,
+          context: runtimeContext(),
+          recentProactive: recentProactive.slice(-3)
+        })
       }).then(function (payload) {
         thinking.remove();
         capabilities = payload.capabilities || capabilities;
@@ -585,6 +591,9 @@
     clearProactiveTimer();
     nextProactiveAt = Infinity;
     var mode = nextProactiveMode();
+    var interactionStyle = mode === "context"
+      ? (contextProactiveCycle++ % 2 === 0 ? "self-talk" : "question")
+      : "";
     var hitokoto = "";
     return ready.then(function () {
       if (mode !== "hitokoto") return "";
@@ -601,11 +610,12 @@
           context: runtimeContext(),
           hitokoto: hitokoto,
           mode: mode,
+          interactionStyle: interactionStyle,
           recentProactive: recentProactive.slice(-6)
         })
       });
     }).then(function (payload) {
-      applyAgentControls(payload, 90 * 1000);
+      applyAgentControls(payload, 55 * 1000);
       owner = payload.owner === true;
       updatePersistenceLabel();
       var reply = String(payload.reply || "").trim();
@@ -615,7 +625,7 @@
       }
       return true;
     }).catch(function () {
-      applyAgentControls(null, 60 * 1000);
+      applyAgentControls(null, 45 * 1000);
       var fallback = localHitokotoFallback(hitokoto);
       if (fallback) {
         rememberProactiveLine(fallback);

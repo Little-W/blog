@@ -181,9 +181,22 @@ async function runFunctionalScenarios() {
   check('连续搜歌沿用主题', more.retrieval?.query === 'ReoNa' && secondTitles.length > 0, more.reply);
   check('连续搜歌不复读上一批', secondTitles.every((title) => !firstTitles.has(title)), more.reply);
 
+  const random = await chat('全曲库随机选歌', '随便给我挑五首歌');
+  check('无条件选歌使用全曲库随机工具', random.model === 'backend/random-music' &&
+    random.retrieval?.scope === 'whole-library' && random.retrieval?.totalMatches > 1000 &&
+    [...random.reply.matchAll(/《([^》]+)》/gu)].length === 5, JSON.stringify(random));
+  check('随机选歌不把随便当关键词或退回默认歌单', !/没有找到与“随便”匹配|默认.*歌单/u.test(random.reply), random.reply);
+
+  const constrainedRandom = await chat('带条件选歌', '随便挑三首 ReoNa 的歌');
+  check('带歌手条件的选歌保留检索条件', constrainedRandom.model === 'backend/music-search' &&
+    constrainedRandom.retrieval?.query === 'ReoNa' && /《.+》/u.test(constrainedRandom.reply), JSON.stringify(constrainedRandom));
+
   const play = await chat('点歌', '播放ANIMA');
   check('简短点歌生成播放操作', play.model === 'backend/music-playback' && assertAction(play, 'music.play_track', (args) => Number(args.mid) === 226), JSON.stringify(play));
   check('点歌回复与真实曲目一致', includesEvery(play.reply, ['ANIMA', 'ReoNa']), play.reply);
+  const conversationalPlay = await chat('点歌表达变体', '我想听ANIMA');
+  check('口语点歌表达直接执行', conversationalPlay.model === 'backend/music-playback' &&
+    assertAction(conversationalPlay, 'music.play_track', (args) => Number(args.mid) === 226), JSON.stringify(conversationalPlay));
   const missing = await chat('点歌', '播放绝对不存在的测试歌曲XYZ987');
   check('不存在的歌曲不会伪造播放', missing.actions.length === 0 && /没有找到|不能/u.test(missing.reply), missing.reply);
 
@@ -314,16 +327,18 @@ async function runProactiveScenarios() {
   const context = runtimeContext({activity: {idleSeconds: 240, visible: true, language: 'zh-CN'}});
   const first = await requestJSON('/api/waifu-chat/proactive', {
     method: 'POST',
-    body: JSON.stringify({history, context}),
+    body: JSON.stringify({history, context, interactionStyle: 'self-talk'}),
   });
   records.push({scenario: '主动陪伴', message: '[定时触发]', reply: first.reply || '[[SILENT]]', model: first.model, actions: []});
   if (!first.silent) history.push({role: 'assistant', content: first.reply, kind: 'proactive'});
   const second = await requestJSON('/api/waifu-chat/proactive', {
     method: 'POST',
-    body: JSON.stringify({history, context}),
+    body: JSON.stringify({history, context, interactionStyle: 'question'}),
   });
   records.push({scenario: '主动陪伴', message: '[再次触发]', reply: second.reply || '[[SILENT]]', model: second.model, actions: []});
-  check('主动陪伴不使用问题打扰', (first.silent || !hasQuestion(first.reply)) && (second.silent || !hasQuestion(second.reply)), JSON.stringify([first, second]));
+  check('主动自言自语不强行提问', !first.silent && !hasQuestion(first.reply) && first.interactionStyle === 'self-talk', JSON.stringify(first));
+  check('主动互动只问一个轻量问题', !second.silent && (second.reply.match(/[?？]/gu) || []).length === 1 &&
+    second.interactionStyle === 'question' && !/需要我|有什么可以帮你|想了解哪方面/u.test(second.reply), JSON.stringify(second));
   check('主动陪伴不会连续复读', first.silent || second.silent || diceSimilarity(first.reply, second.reply) < 0.75, JSON.stringify([first.reply, second.reply]));
   check('主动陪伴不机械复述页面', [first.reply, second.reply].every((reply) => !/(?:你|主人|店长).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/u.test(reply || '')), JSON.stringify([first.reply, second.reply]));
 
