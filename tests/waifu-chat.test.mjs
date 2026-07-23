@@ -506,7 +506,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-24.17');
+    assert.equal(payload.runtimeVersion, '2026-07-24.18');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
@@ -547,7 +547,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-24.17');
+    assert.equal(payload.runtimeVersion, '2026-07-24.18');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -573,7 +573,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-24.17');
+    assert.equal(payload.runtimeVersion, '2026-07-24.18');
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
@@ -932,6 +932,17 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(playlists.model, 'backend/playlist-search');
     assert.equal(playlists.toolStatus, 'called');
     assert.match(playlists.reply, /站内歌单包括/);
+
+    const naturalPlaylistResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-direct-playlists-natural',
+      body: {message: '网站里有哪些歌单分类？列几个实际存在的'},
+    }));
+    const naturalPlaylists = await bodyOf(naturalPlaylistResponse);
+    assert.equal(naturalPlaylists.model, 'backend/playlist-search');
+    assert.ok(naturalPlaylists.retrieval.totalMatches >= 3);
+    assert.match(naturalPlaylists.reply, /“默认”|“ACG”|“ReoNa”/u);
+    assert.doesNotMatch(naturalPlaylists.reply, /没有找到匹配/u);
     assert.equal(modelCalls, 0);
   });
 
@@ -956,6 +967,8 @@ test('waifu chat persistence and role prompts', async (t) => {
       ['这轮测试里叫我阿澈。', /之后叫你阿澈/u],
       ['改一下，还是叫我小满吧，阿澈不用了。', /之后叫你小满.*旧称呼不用/u],
       ['这个项目主要在验证缓存一致性。', /重点是缓存一致性/u],
+      ['现在把项目代号改成“银杏”，蓝鲸这个名字不用了。', /项目代号现在是“银杏”/u],
+      ['好一点了。刚才修的是缓存失效后读到旧数据的问题。', /缓存失效后仍读到旧数据.*没有白耗/u],
       ['目前网络面板里没有新的报错。', /没有新增报错.*继续观察/u],
       ['Please answer in English: briefly introduce yourself in one sentence.', /^I'm Eksistere Kyrenia—伊珂丝—/u],
     ];
@@ -968,6 +981,7 @@ test('waifu chat persistence and role prompts', async (t) => {
       assert.equal(payload.model, 'backend/conversation-guard');
       assert.match(payload.reply, expected);
       assert.doesNotMatch(payload.reply, /《夏日旋律》/u);
+      if (/蓝鲸/u.test(message)) assert.doesNotMatch(payload.reply, /蓝鲸/u);
     }
     assert.equal(modelCalls, 0);
   });
@@ -1008,17 +1022,6 @@ test('waifu chat persistence and role prompts', async (t) => {
     }));
     assert.equal(calls, 2);
     assert.match((await bodyOf(absoluteResponse)).reply, /不一定|掩盖/);
-
-    responses = ['切换歌单后的问题值得继续观察。', '切换歌单后的问题值得继续观察。'];
-    calls = 0;
-    const correctionResponse = await handler(request('/api/waifu-chat', {
-      method: 'POST', address: 'guest-correction-fallback',
-      body: {message: '现在把项目代号改成“银杏”，蓝鲸这个名字不用了。'},
-    }));
-    const correction = await bodyOf(correctionResponse);
-    assert.equal(calls, 3);
-    assert.match(correction.reply, /银杏/);
-    assert.doesNotMatch(correction.reply, /蓝鲸/);
 
     responses = [
       'vtype 描述向量配置，而 vl 表示本次参与运算的有效元素数。',
@@ -1101,7 +1104,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-24.17');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-24.18');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);

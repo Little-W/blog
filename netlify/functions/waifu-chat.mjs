@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.17';
+const AGENT_RUNTIME_VERSION = '2026-07-24.18';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -448,6 +448,7 @@ function normalizeYikesiExpression(value) {
   let reply = cleanText(value, MAX_REPLY_CHARS);
   reply = reply
     .replace(/[，,]?\s*喵(?:呜)?[～~]?/gu, '')
+    .replace(/的的说/gu, '的说')
     .replace(/[，,]\s*的说(?=$|[。！？!?；;\s])/gu, '的说')
     .replace(/的说(?:[，,\s]*的说)+(?=$|[，。！？!?；;\s])/gu, '的说')
     .replace(/呢的说(?=$|[，。！？!?；;\s])/gu, '的说')
@@ -1453,8 +1454,14 @@ async function runDirectTrackPlayback(request, intent) {
   }
   const artist = cleanText(playback.content.track?.artist || selected.track.artist, 100);
   const title = cleanText(playback.content.track?.title || selected.track.title, 120);
+  const trackLabel = (artist ? artist + ' 的' : '') + '《' + title + '》';
+  const reply = /(?:想听|想播放|想放)/u.test(intent.message)
+    ? '找到了，现在给你播放 ' + trackLabel + '。'
+    : /(?:点歌|点一首|来一首|来首)/u.test(intent.message)
+      ? '哼哼，曲库命中。' + trackLabel + '，现在开始播放。'
+      : '好，现在播放 ' + trackLabel + '。';
   return {
-    reply: '好，现在播放 ' + (artist ? artist + ' 的' : '') + '《' + title + '》。',
+    reply,
     content,
     action: playback.action,
   };
@@ -1645,6 +1652,13 @@ function resolveDirectConversationIntent(message) {
     };
   }
   const preferredName = requestedPreferredName(text);
+  const correctedProjectName = explicitCorrectionValue(text);
+  if (correctedProjectName && /(?:项目)?代号/u.test(text)) {
+    return {
+      type: 'project-name-correction',
+      reply: '好，项目代号现在是“' + correctedProjectName + '”。',
+    };
+  }
   if (preferredName && !/[?？]/u.test(text)) {
     return {
       type: 'preferred-name',
@@ -1695,6 +1709,12 @@ function resolveDirectConversationIntent(message) {
     return {
       type: 'temporary-recovery',
       reply: '这只能说明刷新暂时重置了相关状态，还不能算彻底解决。',
+    };
+  }
+  if (/(?:修|解决|处理).{0,8}(?:缓存失效|缓存).{0,20}(?:旧数据|过期数据)|(?:缓存失效|缓存).{0,20}(?:旧数据|过期数据).{0,8}(?:问题|bug)/iu.test(text)) {
+    return {
+      type: 'cache-fix-reaction',
+      reply: '缓存失效后仍读到旧数据确实很隐蔽，能把触发条件抓出来，这几天就没有白耗的说。',
     };
   }
   return null;
@@ -1931,8 +1951,9 @@ function extractPlaylistSearchQuery(message) {
     .replace(/\b(?:playlist|playlists)\b/giu, ' ')
     .replace(/(?:我说的?|我的意思是|是指|说的是|不是.{0,18}而是)/gu, ' ')
     .replace(/(?:帮我|给我|麻烦|可以|能不能|能否|请|重新|仔细|再|一下|看看|站内|本站|网站里?|曲库里?)/gu, ' ')
-    .replace(/(?:搜索?|搜一下|搜搜|检索|查找|找一?下|列出|给出|介绍|推荐|浏览|查看)/gu, ' ')
+    .replace(/(?:搜索?|搜一下|搜搜|检索|查找|找一?下|列(?:出)?|给出|介绍|推荐|浏览|查看)/gu, ' ')
     .replace(/(?:有没?有|有什么|有哪些|哪一些|哪些|全部|所有|相关的?|可推荐的?)/gu, ' ')
+    .replace(/(?:几个|一些|实际存在的?|真实(?:存在)?的?)/gu, ' ')
     .replace(/(?:音乐)?(?:歌单|分类)/gu, ' ')
     .replace(/[一二两三四五六七八\d]+\s*(?:首|个|条|部)/gu, ' ')
     .replace(/[，。！？!?、:：;；()[\]{}\/|]+/gu, ' ')

@@ -215,7 +215,9 @@ async function runFunctionalScenarios() {
   check('MV 查询不虚构执行播放', mv.actions.every((action) => action.name !== 'music.play_track'), JSON.stringify(mv.actions));
 
   const playlists = await chat('歌单检索', '网站里有哪些歌单分类？列几个实际存在的');
-  check('歌单查询调用资料工具', playlists.toolStatus === 'called' && playlists.reply.length > 8, playlists.reply);
+  check('歌单查询调用资料工具', playlists.toolStatus === 'called' &&
+    playlists.retrieval?.totalMatches > 3 && /“[^”]+”/u.test(playlists.reply) &&
+    !/没有找到匹配/u.test(playlists.reply), playlists.reply);
   check('歌单查询不只给搜索承诺', !/(?:我去|马上|稍后|等我).{0,8}(?:找|查|搜索)/u.test(playlists.reply), playlists.reply);
 
   const control = await chat('页面操作', '把音量调到20%，然后暂停音乐');
