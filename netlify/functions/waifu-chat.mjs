@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.12';
+const AGENT_RUNTIME_VERSION = '2026-07-23.13';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -425,6 +425,7 @@ function normalizeYikesiExpression(value) {
   let reply = cleanText(value, MAX_REPLY_CHARS);
   reply = reply
     .replace(/[，,]?\s*喵(?:呜)?[～~]?/gu, '')
+    .replace(/[，,]\s*的说(?=$|[。！？!?；;\s])/gu, '的说')
     .replace(/的说(?:[，,\s]*的说)+(?=$|[，。！？!?；;\s])/gu, '的说')
     .replace(/呢的说(?=$|[，。！？!?；;\s])/gu, '的说')
     .replace(/((?:小岚|小澄|阿澈|名字|主人|店长|RISC-?V|Zve32x|SystemVerilog|RTL|架构|热情|需求|内容|资料|文章|博客|代码|数据|问题|答案|作品|歌曲?|音乐|音量|百分比|\d+(?:\.\d+)?%?|[》」”）)]))\s*的说(?=$|[，。！？!?；;\s])/giu, (match, term, offset, source) => {
@@ -2338,8 +2339,8 @@ function contextualProactiveFallback(context, recentLines = []) {
   const candidates = [];
   const current = context?.music?.current;
   if (current?.title && current.playing) {
-    const artist = current.artist ? `，${current.artist}` : '';
-    candidates.push(`《${current.title}》${artist}正在播放，伊珂丝已经把曲名记下了的说。`);
+    const track = current.artist ? `${current.artist} 的《${current.title}》` : `《${current.title}》`;
+    candidates.push(`现在播放的是 ${track}，播放器状态已经确认，伊珂丝也记住这首了的说。`);
     candidates.push(`现在轮到《${current.title}》了，歌单的选择还算不错的说。`);
   }
   const heading = cleanText(context?.page?.heading || context?.page?.title, 80)
@@ -2350,6 +2351,11 @@ function contextualProactiveFallback(context, recentLines = []) {
   }
   candidates.push('隔一会儿换个角度再看，刚才漏掉的细节往往就会自己冒出来的说。');
   return candidates.find((line) => !repeatsRecentProactive(line, recentLines)) || candidates[0];
+}
+
+function proactiveReplyInventsMusicDetails(reply, context) {
+  if (!context?.music?.current?.title) return false;
+  return /适合|(?:曲风|旋律|节奏|声音|氛围).{0,16}(?:温柔|治愈|热血|轻快|安静|忧伤|浪漫|有力|舒服)/u.test(reply);
 }
 
 function providerToolCall(call) {
@@ -2800,6 +2806,7 @@ async function proactiveChat(request, body) {
       ephemeral: true,
       model: 'backend/hitokoto-relay',
       proactiveMode: 'hitokoto',
+      runtimeVersion: AGENT_RUNTIME_VERSION,
       persistence: session ? 'blob' : 'local',
       owner: Boolean(session),
       agent: agentControls(false),
@@ -2827,6 +2834,7 @@ async function proactiveChat(request, body) {
   const decision = parseJSONObject(completion.reply);
   let reply = decision?.speak === true ? normalizeYikesiExpression(cleanText(decision.text, 180)) : '';
   if (!reply || /[?？]/.test(reply) || repeatsRecentProactive(reply, recentProactive) ||
+    proactiveReplyInventsMusicDetails(reply, context) ||
     /(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)|我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)|(?:主人|店长|你).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/.test(reply)) {
     reply = contextualProactiveFallback(context, recentProactive);
   }
@@ -2840,6 +2848,7 @@ async function proactiveChat(request, body) {
     silent,
     model: completion.model,
     proactiveMode: 'context',
+    runtimeVersion: AGENT_RUNTIME_VERSION,
     persistence: session ? 'blob' : 'local',
     owner: Boolean(session),
     ephemeral: false,
