@@ -504,7 +504,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-23.15');
+    assert.equal(payload.runtimeVersion, '2026-07-24.16');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
@@ -533,7 +533,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-23.15');
+    assert.equal(payload.runtimeVersion, '2026-07-24.16');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -559,7 +559,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-23.15');
+    assert.equal(payload.runtimeVersion, '2026-07-24.16');
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
@@ -993,7 +993,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.15');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-24.16');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -1053,6 +1053,55 @@ test('waifu chat persistence and role prompts', async (t) => {
       assert.equal(retry.retrieval.query, 'ReoNa');
       assert.match(retry.reply, /《ANIMA》|《リボン》/);
     }
+  });
+
+  await t.test('“随便挑几首”会从真实默认歌单随机选择而不是搜索“随便”', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      throw new Error('随机选歌不应调用模型');
+    };
+
+    const firstResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-random-selection-first',
+      body: {message: '随便给我挑几首歌', history: []},
+    }));
+    const first = await bodyOf(firstResponse);
+    const firstTitles = [...first.reply.matchAll(/《([^》]+)》/gu)].map((match) => match[1]);
+    assert.equal(firstResponse.status, 200);
+    assert.equal(first.model, 'backend/playlist-tracks');
+    assert.equal(first.retrieval.playlistName, '默认');
+    assert.equal(first.retrieval.totalMatches, musicFixture.length);
+    assert.equal(first.retrieval.returned, 5);
+    assert.equal(firstTitles.length, 5);
+    assert.equal(new Set(firstTitles).size, 5);
+    assert.match(first.reply, /从站内“默认”歌单.*随便挑了这 5 首/u);
+    assert.doesNotMatch(first.reply, /没有找到与“随便”匹配/u);
+
+    const secondResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-random-selection-next',
+      body: {
+        message: '再换几首',
+        history: [
+          {role: 'user', content: '随便给我挑几首歌', kind: 'chat'},
+          {role: 'assistant', content: first.reply, kind: 'chat'},
+        ],
+      },
+    }));
+    const second = await bodyOf(secondResponse);
+    const secondTitles = [...second.reply.matchAll(/《([^》]+)》/gu)].map((match) => match[1]);
+    assert.equal(second.model, 'backend/playlist-tracks');
+    assert.equal(second.retrieval.playlistName, '默认');
+    assert.equal(secondTitles.length, 5);
+    assert.ok(secondTitles.every((title) => !firstTitles.includes(title)));
+    assert.match(second.reply, /换一批/u);
+    assert.equal(modelCalls, 0);
   });
 
   await t.test('按 ACG 歌单选歌会读取真实分类并支持连续换一批', async () => {

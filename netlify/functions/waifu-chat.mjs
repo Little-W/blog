@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.15';
+const AGENT_RUNTIME_VERSION = '2026-07-24.16';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -558,10 +558,16 @@ function recentUserMusicRequests(history) {
     .filter(Boolean);
 }
 
+function messageRequestsGenericMusicSelection(message) {
+  const text = cleanText(message, 240);
+  return /(?:随便|随机|任意).{0,16}(?:(?:挑|选|找|推荐|来).{0,8})?(?:几首|一些)(?:歌曲?|音乐)?/u.test(text);
+}
+
 function resolvePlaylistTrackSelectionIntent(message, recentHistory) {
   const text = cleanText(message, 240);
   if (!text || messageRequestsTrackPlayback(text)) return null;
   const priorUserRequests = recentUserMusicRequests(recentHistory);
+  const genericSelection = messageRequestsGenericMusicSelection(text);
   const selectionVerb = /(?:选|挑|找|搜索?|搜一下|查找|查看|浏览|推荐|换)/u.test(text);
   const mentionsSongs = /(?:首|歌曲?|音乐|曲目)/u.test(text);
   const mentionsPlaylist = /歌单/u.test(text);
@@ -569,11 +575,12 @@ function resolvePlaylistTrackSelectionIntent(message, recentHistory) {
   const searchesWholePlaylist = /(?:整个|全部).{0,30}歌单|歌单.{0,12}(?:全部|所有)(?:歌曲?|曲目)/u.test(text);
   const playlistContainsTracks = /(?:从|在).{0,50}歌单.{0,10}(?:里|中|内)?.{0,20}(?:选|挑|找|搜|推荐)|歌单.{0,16}(?:里|中|内|的).{0,16}(?:歌曲?|曲目|有什么歌|哪些歌|选|挑|换)/u.test(text);
   const explicit = searchesWholePlaylist || playlistContainsTracks ||
-    (selectionVerb && mentionsKnownPlaylist && (mentionsSongs || mentionsPlaylist));
+    genericSelection || (selectionVerb && mentionsKnownPlaylist && (mentionsSongs || mentionsPlaylist));
   const continuation = /^(?:再)?换(?:几首|一批|一些)?(?:歌|歌曲|音乐)?(?:吧|呢|看看)?[，,。！!？?]*|^(?:再来|还有|其他|别的|更多)(?:几首|一批|一些)?(?:歌|歌曲|音乐)?(?:吧|呢)?[。！!？?]*$/u.test(text) ||
     /^(?:刚才|之前)?(?:的)?(?:搜索|查找|检索)?结果(?:是|有)?什么(?:呢|吗)?[。！!？?]*$/u.test(text);
+  const priorHasGenericSelection = priorUserRequests.some(messageRequestsGenericMusicSelection);
   const priorHasPlaylist = priorUserRequests.some((item) =>
-    /歌单/u.test(item) || COMMON_MUSIC_PLAYLIST_PATTERN.test(item));
+    /歌单/u.test(item) || COMMON_MUSIC_PLAYLIST_PATTERN.test(item)) || priorHasGenericSelection;
   if (!explicit && !(continuation && priorHasPlaylist)) return null;
   return {
     message: text,
@@ -581,6 +588,7 @@ function resolvePlaylistTrackSelectionIntent(message, recentHistory) {
     limit: requestedResultLimit(text, searchesWholePlaylist ? 8 : 5, 10),
     more: /(?:再|换|其他|别的|更多|还有|再来)/u.test(text),
     whole: searchesWholePlaylist,
+    random: genericSelection || priorHasGenericSelection,
   };
 }
 
@@ -1173,8 +1181,19 @@ function formatPlaylistTrackSelectionReply(intent, content, recentHistory) {
   }
   const opening = intent.whole
     ? `我检索了完整的“${playlistName}”歌单，当前共有 ${totalMatches} 首；先从中选出 ${shown.length} 首：`
-    : `站内“${playlistName}”歌单当前共有 ${totalMatches} 首，我先选这 ${shown.length} 首：`;
+    : intent.random
+      ? `我从站内“${playlistName}”歌单的 ${totalMatches} 首歌里随便挑了这 ${shown.length} 首：`
+      : `站内“${playlistName}”歌单当前共有 ${totalMatches} 首，我先选这 ${shown.length} 首：`;
   return `${opening}${names.join('、')}${remaining > 0 ? `。还可以继续换一批，剩余 ${remaining} 首` : ''}。`;
+}
+
+function shuffleTracks(tracks) {
+  const shuffled = Array.isArray(tracks) ? tracks.slice() : [];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = randomBytes(4).readUInt32BE(0) % (index + 1);
+    [shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]];
+  }
+  return shuffled;
 }
 
 async function runPlaylistTrackSelection(request, intent, recentHistory) {
@@ -1201,12 +1220,13 @@ async function runPlaylistTrackSelection(request, intent, recentHistory) {
     headers: {'content-type': 'application/json; charset=utf-8'},
     body: JSON.stringify({quality: 'hq', listId: playlist.id, sort: 'default'}),
   });
-  const tracks = (data.records || []).map((track) => ({
+  let tracks = (data.records || []).map((track) => ({
     mid: Number(track.mid),
     title: cleanText(track.title, 120),
     artist: cleanText(track.author, 100),
     playlists: track.list || [],
   }));
+  if (intent.random) tracks = shuffleTracks(tracks);
   const content = {
     success: true,
     playlist,
