@@ -112,24 +112,69 @@
     if (!toolbar || !widget) return;
     rect = rect || widget.getBoundingClientRect();
     var viewportMargin = 8;
-    var buttonCount = toolbar.querySelectorAll(".waifu-tool__button").length;
+    var toolbarButtons = Array.prototype.slice.call(toolbar.querySelectorAll(".waifu-tool__button"));
+    var buttonCount = toolbarButtons.length;
     var buttonSize = 36;
     var gap = 6;
     var verticalPadding = 20;
     var availableHeight = Math.max(buttonSize + verticalPadding, window.innerHeight - viewportMargin * 2);
-    var rows = Math.max(1, Math.min(buttonCount,
+    var maximumRows = Math.max(1, Math.min(buttonCount,
       Math.floor((availableHeight - verticalPadding + gap) / (buttonSize + gap))));
-    toolbar.style.setProperty("--waifu-tool-rows", String(rows));
     var originY = rect.top + rect.height / 2;
-    var toolbarHeight = verticalPadding + rows * buttonSize + Math.max(0, rows - 1) * gap;
-    var halfHeight = toolbarHeight / 2;
-    var minimumCenter = viewportMargin + halfHeight;
-    var maximumCenter = window.innerHeight - viewportMargin - halfHeight;
-    var targetY = minimumCenter <= maximumCenter
-      ? clamp(originY, minimumCenter, maximumCenter)
-      : window.innerHeight / 2;
-    toolbar.style.setProperty("--waifu-tool-origin-offset", Math.round(targetY - originY) + "px");
-    updateToolbarTipsAvoidance();
+
+    // Older versions moved individual buttons sideways when they touched the Tips
+    // bubble. Reset those offsets before calculating the grid so an update can
+    // never leave holes in the primary column.
+    toolbar.style.removeProperty("--waifu-tool-outward-extent");
+    toolbarButtons.forEach(function (button) {
+      button.style.removeProperty("--waifu-tool-wrap-offset");
+      button.removeAttribute("data-wrap-column");
+    });
+
+    function applyGrid(rows, safeTop, safeBottom) {
+      rows = Math.max(1, Math.min(buttonCount, rows));
+      safeTop = Number.isFinite(safeTop) ? safeTop : viewportMargin;
+      safeBottom = Number.isFinite(safeBottom) ? safeBottom : window.innerHeight - viewportMargin;
+      var toolbarHeight = verticalPadding + rows * buttonSize + Math.max(0, rows - 1) * gap;
+      var halfHeight = toolbarHeight / 2;
+      var minimumCenter = safeTop + halfHeight;
+      var maximumCenter = safeBottom - halfHeight;
+      var targetY = minimumCenter <= maximumCenter
+        ? clamp(originY, minimumCenter, maximumCenter)
+        : (safeTop + safeBottom) / 2;
+      toolbar.style.setProperty("--waifu-tool-rows", String(rows));
+      toolbar.style.setProperty("--waifu-tool-origin-offset", Math.round(targetY - originY) + "px");
+      toolbar.dataset.columns = String(Math.ceil(buttonCount / rows));
+      return rows;
+    }
+
+    var rows = applyGrid(maximumRows);
+    if (!tips || tips.hidden || !state.tips || getComputedStyle(tips).display === "none") return;
+
+    var tipsRect = tips.getBoundingClientRect();
+    if (!tipsRect.width || !tipsRect.height) return;
+    var obstacleClearance = 8;
+    var collidesWithTips = toolbarButtons.some(function (button) {
+      return rectsOverlap(button.getBoundingClientRect(), tipsRect, obstacleClearance);
+    });
+    if (!collidesWithTips) return;
+
+    // Keep the buttons as a continuous grid below the Tips bubble. Reducing the
+    // row count makes CSS Grid move the remaining controls into a second column
+    // (for example 6 + 2) instead of pushing only the colliding buttons aside.
+    var safeTop = Math.max(viewportMargin, tipsRect.bottom + obstacleClearance);
+    var safeBottom = window.innerHeight - viewportMargin;
+    var safeHeight = Math.max(0, safeBottom - safeTop);
+    var safeRows = Math.floor((safeHeight - verticalPadding + gap) / (buttonSize + gap));
+    rows = applyGrid(Math.max(1, Math.min(rows - 1, safeRows)), safeTop, safeBottom);
+
+    // Fractional scaling and browser rounding can leave a one-pixel collision.
+    // If that happens, keep reflowing whole rows rather than moving one button.
+    while (rows > 1 && toolbarButtons.some(function (button) {
+      return rectsOverlap(button.getBoundingClientRect(), tipsRect, obstacleClearance);
+    })) {
+      rows = applyGrid(rows - 1, safeTop, safeBottom);
+    }
   }
 
   function rectsOverlap(first, second, clearance) {
@@ -138,59 +183,6 @@
       first.right > second.left - clearance &&
       first.top < second.bottom + clearance &&
       first.bottom > second.top - clearance;
-  }
-
-  function updateToolbarTipsAvoidance() {
-    if (!toolbar) return;
-    var toolbarButtons = Array.prototype.slice.call(toolbar.querySelectorAll(".waifu-tool__button"));
-    toolbar.style.removeProperty("--waifu-tool-outward-extent");
-    toolbarButtons.forEach(function (button) {
-      button.style.removeProperty("--waifu-tool-wrap-offset");
-      button.removeAttribute("data-wrap-column");
-    });
-    if (!tips || tips.hidden || !state.tips || getComputedStyle(tips).display === "none") return;
-
-    var tipsRect = tips.getBoundingClientRect();
-    if (!tipsRect.width || !tipsRect.height) return;
-    var obstacleClearance = 8;
-    var buttonClearance = 2;
-    var colliding = toolbarButtons.filter(function (button) {
-      return rectsOverlap(button.getBoundingClientRect(), tipsRect, obstacleClearance);
-    });
-    if (!colliding.length) return;
-
-    var occupied = toolbarButtons.filter(function (button) {
-      return colliding.indexOf(button) === -1;
-    }).map(function (button) {
-      return button.getBoundingClientRect();
-    });
-    var columnStep = 42;
-    var viewportMargin = 8;
-    var maximumOffset = 0;
-    colliding.forEach(function (button) {
-      var placed = false;
-      for (var column = 1; column <= toolbarButtons.length; column += 1) {
-        button.style.setProperty("--waifu-tool-wrap-offset", column * columnStep + "px");
-        var candidate = button.getBoundingClientRect();
-        var insideViewport = candidate.left >= viewportMargin &&
-          candidate.right <= window.innerWidth - viewportMargin;
-        var hitsTips = rectsOverlap(candidate, tipsRect, obstacleClearance);
-        var hitsButton = occupied.some(function (rect) {
-          return rectsOverlap(candidate, rect, buttonClearance);
-        });
-        if (insideViewport && !hitsTips && !hitsButton) {
-          button.dataset.wrapColumn = String(column);
-          occupied.push(candidate);
-          maximumOffset = Math.max(maximumOffset, column * columnStep);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) button.style.removeProperty("--waifu-tool-wrap-offset");
-    });
-    if (maximumOffset) {
-      toolbar.style.setProperty("--waifu-tool-outward-extent", maximumOffset + "px");
-    }
   }
 
   function createToolbar() {
