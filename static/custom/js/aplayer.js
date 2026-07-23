@@ -5101,6 +5101,21 @@ function music_lyric_proxy_url(source) {
   return "/api/music-lyrics?source=" + encodeURIComponent(source);
 }
 
+function prepare_music_lyrics_for_aplayer(library) {
+  if (!Array.isArray(library)) return library;
+  library.forEach(function(audio) {
+    if (!audio || typeof audio.lrc !== "string") return;
+    var original = audio.lrc_source || audio.lrc;
+    if (!music_hf_lyric_path(original)) return;
+    // APlayer 会在构造函数中立即读取第一首歌词，此时自定义的可靠加载器尚未
+    // 安装。预先改成同源 Function 地址，避免首曲直接访问 HF 后因 CORS 失败，
+    // 并保留原地址供后续重试与诊断使用。
+    audio.lrc_source = original;
+    audio.lrc = music_lyric_proxy_url(original);
+  });
+  return library;
+}
+
 function music_lyric_fetch_targets(source) {
   var upstream = normalise_music_lyric_source(source);
   if (!upstream) return [];
@@ -5201,6 +5216,14 @@ function write_music_lyric_lines(lyric, lines) {
   lyric.update(0);
 }
 
+function music_lyric_lines_are_placeholder(lines) {
+  if (!Array.isArray(lines) || !lines.length) return true;
+  var text = lines.map(function(line) {
+    return String(line && line[1] || "").trim();
+  }).filter(Boolean).join(" ").trim();
+  return !text || /^(?:loading|not available|歌词加载中…?|歌词暂时无法载入)$/iu.test(text);
+}
+
 function install_resilient_lyric_loader(player) {
   var lyric = player && player.lrc;
   if (!lyric || lyric.__yusenResilientLyrics) return;
@@ -5211,14 +5234,18 @@ function install_resilient_lyric_loader(player) {
     var activeIndex = Number(index);
     if (!Number.isInteger(activeIndex) || !this.player.list.audios[activeIndex]) return;
     var audio = this.player.list.audios[activeIndex];
-    var source = audio && audio.lrc;
+    var source = audio && (audio.lrc_source || audio.lrc);
     var requestId = ++this.__yusenLyricRequestId;
     var currentLyric = this;
 
-    if (this.parsed[activeIndex]) {
+    if (this.parsed[activeIndex] && !music_lyric_lines_are_placeholder(this.parsed[activeIndex])) {
       write_music_lyric_lines(this, this.parsed[activeIndex]);
       return;
     }
+    // APlayer 构造第一首曲目时会先写入 Loading；旧逻辑把它当成已经缓存的
+    // 正常歌词，可靠加载器因此从未发出同源请求，原始跨域 XHR 失败后就会永久
+    // 停在 Not available。占位内容不能作为成功缓存。
+    this.parsed[activeIndex] = null;
     if (!source || typeof source !== "string") {
       write_music_lyric_lines(this, [[0, "暂无歌词"]]);
       return;
@@ -5743,7 +5770,7 @@ function aplayer0() {
   try {
     window.ap0.destroy();
   } catch {}
-  var ap0_list = JSON.parse(JSON.stringify(ap_list_ptr[0]));
+  var ap0_list = prepare_music_lyrics_for_aplayer(JSON.parse(JSON.stringify(ap_list_ptr[0])));
   window.ap0 = new APlayer({
     element: document.getElementById("aplayer0"),
     fixed: false,
@@ -6090,7 +6117,7 @@ function aplayer0() {
 
 function aplayer1() {
 
-  var ap1_list = JSON.parse(JSON.stringify(ap_list_ptr[0]));
+  var ap1_list = prepare_music_lyrics_for_aplayer(JSON.parse(JSON.stringify(ap_list_ptr[0])));
   window.ap1 = new APlayer({
     element: document.getElementById("aplayer"),
     showlrc: false,
