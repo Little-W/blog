@@ -17,6 +17,11 @@
   var pending = false;
   var historyMutationPending = false;
   var proactivePending = false;
+  var proactiveTimer = 0;
+  var proactiveCycle = 0;
+  var preferredProactiveMode = "";
+  var recentProactive = [];
+  var lastContextSignature = "";
   var lastActivityAt = Date.now();
   var nextProactiveAt = Infinity;
 
@@ -293,12 +298,73 @@
     });
   }
 
+  function agentModeEnabled() {
+    try {
+      return Boolean(window.YusenLive2DControls &&
+        window.YusenLive2DControls.getState().agentMode === true);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function clearProactiveTimer() {
+    if (!proactiveTimer) return;
+    window.clearTimeout(proactiveTimer);
+    proactiveTimer = 0;
+  }
+
+  function scheduleProactiveTimer() {
+    clearProactiveTimer();
+    if (!agentModeEnabled() || !Number.isFinite(nextProactiveAt)) return;
+    var delay = Math.max(250, nextProactiveAt - Date.now());
+    proactiveTimer = window.setTimeout(function () {
+      proactiveTimer = 0;
+      if (!agentModeEnabled()) return;
+      if (document.hidden || pending || historyMutationPending) {
+        nextProactiveAt = Date.now() + 15 * 1000;
+        scheduleProactiveTimer();
+        return;
+      }
+      proactive();
+    }, delay);
+  }
+
   function applyAgentControls(payload, fallbackDelay) {
     var delay = Number(payload && payload.agent && payload.agent.proactiveAfterMs);
-    if (!Number.isFinite(delay) || delay < 15 * 1000 || delay > 60 * 60 * 1000) {
+    if (!Number.isFinite(delay) || delay < 8 * 1000 || delay > 60 * 60 * 1000) {
       delay = fallbackDelay;
     }
     nextProactiveAt = Date.now() + delay;
+    scheduleProactiveTimer();
+  }
+
+  function rememberProactiveLine(value) {
+    var line = String(value || "").trim().slice(0, 180);
+    if (!line) return;
+    recentProactive = recentProactive.filter(function (item) { return item !== line; });
+    recentProactive.push(line);
+    recentProactive = recentProactive.slice(-6);
+  }
+
+  function nextProactiveMode() {
+    if (preferredProactiveMode) {
+      var preferred = preferredProactiveMode;
+      preferredProactiveMode = "";
+      if (preferred === "context" && proactiveCycle % 2 === 0) proactiveCycle += 1;
+      return preferred;
+    }
+    var mode = proactiveCycle % 2 === 0 ? "context" : "hitokoto";
+    proactiveCycle += 1;
+    return mode;
+  }
+
+  function showProactiveMessage(value) {
+    var text = plainTipText(value);
+    if (typeof window.showAgentMessage === "function") {
+      window.showAgentMessage(text, 8500);
+    } else if (typeof window.showMessage === "function") {
+      window.showMessage(text, 8500);
+    }
   }
 
   function currentPageContext() {
@@ -338,6 +404,35 @@
         language: navigator.language || ""
       }
     };
+  }
+
+  function contextSignature() {
+    var page = currentPageContext();
+    var music = musicContext();
+    var current = music && music.current;
+    return [
+      page.path,
+      page.heading || page.title,
+      current && (current.mid || current.title) || "",
+      current && current.playing ? "playing" : "paused"
+    ].join("|");
+  }
+
+  function noticeContextChange() {
+    var signature = contextSignature();
+    if (!lastContextSignature) {
+      lastContextSignature = signature;
+      return;
+    }
+    if (signature === lastContextSignature) return;
+    lastContextSignature = signature;
+    if (!agentModeEnabled()) return;
+    preferredProactiveMode = "context";
+    var expeditedAt = Date.now() + 10 * 1000;
+    if (!Number.isFinite(nextProactiveAt) || nextProactiveAt > expeditedAt) {
+      nextProactiveAt = expeditedAt;
+      scheduleProactiveTimer();
+    }
   }
 
   function executeBrowserAction(action) {
@@ -411,13 +506,13 @@
       history = cleanLocalHistory(payload.history);
     }
     initialized = true;
-    applyAgentControls(payload, 60 * 1000);
+    applyAgentControls(payload, 20 * 1000);
     updatePersistenceLabel();
     if (!panel.hidden) renderHistory();
   }).catch(function () {
     owner = false;
     initialized = true;
-    applyAgentControls(null, 60 * 1000);
+    applyAgentControls(null, 20 * 1000);
     updatePersistenceLabel();
     if (!panel.hidden) renderHistory();
   });
@@ -473,13 +568,26 @@
   }
 
   function proactive() {
-    if (proactivePending || pending || Date.now() < nextProactiveAt || document.hidden) {
+    if (!agentModeEnabled()) {
+      clearProactiveTimer();
+      return Promise.resolve(false);
+    }
+    if (proactivePending || pending || historyMutationPending || document.hidden) {
+      nextProactiveAt = Date.now() + 15 * 1000;
+      scheduleProactiveTimer();
+      return Promise.resolve(false);
+    }
+    if (Date.now() < nextProactiveAt) {
+      scheduleProactiveTimer();
       return Promise.resolve(false);
     }
     proactivePending = true;
+    clearProactiveTimer();
     nextProactiveAt = Infinity;
+    var mode = nextProactiveMode();
     var hitokoto = "";
     return ready.then(function () {
+      if (mode !== "hitokoto") return "";
       return requestHitokoto().catch(function () { return ""; });
     }).then(function (sourceText) {
       hitokoto = sourceText;
@@ -491,23 +599,27 @@
             return {role: item.role, content: item.content, kind: item.kind};
           }),
           context: runtimeContext(),
-          hitokoto: hitokoto
+          hitokoto: hitokoto,
+          mode: mode,
+          recentProactive: recentProactive.slice(-6)
         })
       });
     }).then(function (payload) {
-      applyAgentControls(payload, 5 * 60 * 1000);
+      applyAgentControls(payload, 90 * 1000);
       owner = payload.owner === true;
       updatePersistenceLabel();
       var reply = String(payload.reply || "").trim();
       if (!payload.silent && reply) {
-        if (typeof window.showMessage === "function") window.showMessage(plainTipText(reply), 6500);
+        rememberProactiveLine(reply);
+        showProactiveMessage(reply);
       }
       return true;
     }).catch(function () {
       applyAgentControls(null, 60 * 1000);
       var fallback = localHitokotoFallback(hitokoto);
       if (fallback) {
-        if (typeof window.showMessage === "function") window.showMessage(plainTipText(fallback), 6500);
+        rememberProactiveLine(fallback);
+        showProactiveMessage(fallback);
         return true;
       }
       return false;
@@ -537,6 +649,36 @@
     }
   });
 
+  window.addEventListener("yusen:live2d-settings-change", function (event) {
+    var enabled = event && event.detail
+      ? event.detail.agentMode === true
+      : agentModeEnabled();
+    if (!enabled) {
+      clearProactiveTimer();
+      return;
+    }
+    ready.then(function () {
+      if (!Number.isFinite(nextProactiveAt) || nextProactiveAt <= Date.now()) {
+        nextProactiveAt = Date.now() + 3 * 1000;
+      }
+      scheduleProactiveTimer();
+    });
+  });
+  window.addEventListener("yusen:music-context-change", noticeContextChange);
+  window.addEventListener("popstate", function () {
+    window.setTimeout(noticeContextChange, 0);
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      clearProactiveTimer();
+    } else if (agentModeEnabled()) {
+      if (Date.now() >= nextProactiveAt) nextProactiveAt = Date.now() + 2 * 1000;
+      scheduleProactiveTimer();
+    }
+  });
+  lastContextSignature = contextSignature();
+  window.setInterval(noticeContextChange, 10 * 1000);
+
   window.__yusenWaifuChat = {
     open: function () { setOpen(true); },
     close: function () { setOpen(false); },
@@ -544,7 +686,15 @@
     proactive: proactive,
     getContext: runtimeContext,
     getState: function () {
-      return {owner: owner, persistence: owner ? "blob" : "local", historyLength: history.length, capabilities: capabilities};
+      return {
+        owner: owner,
+        persistence: owner ? "blob" : "local",
+        historyLength: history.length,
+        capabilities: capabilities,
+        nextProactiveAt: Number.isFinite(nextProactiveAt) ? nextProactiveAt : null,
+        proactiveTimerActive: Boolean(proactiveTimer),
+        recentProactive: recentProactive.slice()
+      };
     }
   };
 })();

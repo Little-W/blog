@@ -146,6 +146,17 @@ function music_context_track(player) {
   };
 }
 
+function notify_music_context_change(reason) {
+  window.setTimeout(function() {
+    window.dispatchEvent(new CustomEvent('yusen:music-context-change', {
+      detail: {
+        reason: String(reason || 'update'),
+        snapshot: get_music_context_snapshot(),
+      },
+    }));
+  }, 0);
+}
+
 function record_music_context_play(player) {
   var current = music_context_track(player);
   if (!current || !current.title) return;
@@ -169,17 +180,22 @@ function record_music_context_play(player) {
   });
   music_context_recent = music_context_recent.slice(0, MUSIC_CONTEXT_RECENT_LIMIT);
   save_music_context_recent();
+  notify_music_context_change('playing');
 }
 
 function register_music_context_player(player) {
   if (!player || player.__yusenMusicContextRegistered) return;
   player.__yusenMusicContextRegistered = true;
-  player.on('play', function() { music_context_active_player = player; });
+  player.on('play', function() {
+    music_context_active_player = player;
+    notify_music_context_change('play');
+  });
   player.on('playing', function() { record_music_context_play(player); });
   player.on('listswitch', function() {
     if (!music_context_active_player || music_context_active_player === player || !player.paused) {
       music_context_active_player = player;
     }
+    notify_music_context_change('listswitch');
   });
 }
 

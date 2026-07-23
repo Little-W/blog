@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-23.11';
+const AGENT_RUNTIME_VERSION = '2026-07-23.12';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -23,8 +23,8 @@ const MAX_MEMORY_EPISODES = 16;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS = 10;
-const PROACTIVE_INITIAL_DELAY_RANGE_MS = [45_000, 90_000];
-const PROACTIVE_REGULAR_DELAY_RANGE_MS = [4 * 60_000, 8 * 60_000];
+const PROACTIVE_INITIAL_DELAY_RANGE_MS = [12_000, 25_000];
+const PROACTIVE_REGULAR_DELAY_RANGE_MS = [60_000, 120_000];
 const rateLimits = new Map();
 const agentDataCache = new Map();
 const AGENT_DATA_CACHE_TTL_MS = 5 * 60_000;
@@ -214,10 +214,10 @@ export const WAIFU_VISITOR_SYSTEM_PROMPT = [
 export const WAIFU_SYSTEM_PROMPT = WAIFU_OWNER_SYSTEM_PROMPT;
 
 const PROACTIVE_INSTRUCTIONS = [
-  '你正在执行“主动陪伴”。请根据当前时间、页面、音乐和记忆，判断此刻是否有值得说的一句话，并只输出 JSON。',
-  '输出格式固定为 {"speak":true或false,"text":""}。不适合打扰时 speak=false 且 text 为空。',
-  '适合开口时，text 只写一句自然、具体、不重复的简体中文陈述句，通常不超过 55 个字；不要提问，不要解释为何适合，也不要写“适合说话”。',
-  '不得虚构伊珂丝刚刚或最近听过、看过、做过的事情。缺少有用资料、页面不可见或开口显得多余时，宁可保持安静。',
+  '你正在执行用户已经开启的“定时主动陪伴”。页面可见时应当说一句与当前页面或音乐有关的话，而不是再次判断是否要开口。',
+  '输出格式固定为 {"speak":true,"text":"..."}。text 只写一句自然、具体、不重复的简体中文陈述句，通常不超过 55 个字；不要提问，不要解释触发过程。',
+  '若正在播放音乐，优先结合运行时资料中的真实歌名、歌手或播放状态说一句；否则结合当前页面标题或正文标题。不要编造歌曲风格、文章内容或用户没有提供的阅读进度。',
+  '不得虚构伊珂丝刚刚或最近听过、看过、做过的事情。资料较少时可以对标题或页面类型作简短观察，但不能只复述路径。',
   '不要使用“你还在看某页面”“店长还在某页面”这种只复述页面状态的模板，也不要重复最近已经说过的主动台词。',
 ].join('\n');
 
@@ -2300,6 +2300,11 @@ function recentProactiveLines(state, fallbackHistory) {
     .slice(-6).map((message) => cleanText(message.content, 180)).filter(Boolean);
 }
 
+function cleanRecentProactiveLines(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-6).map((line) => cleanText(line, 180)).filter(Boolean);
+}
+
 function comparableProactiveText(value) {
   return cleanText(value, 180).normalize('NFKC').toLocaleLowerCase()
     .replace(/主人|店长|的说|joker|[\s，。！？!?、～~:：;；“”"'《》「」]/gi, '');
@@ -2313,6 +2318,38 @@ function repeatsRecentProactive(reply, recentLines) {
     return previous === candidate || (Math.min(previous.length, candidate.length) >= 10 &&
       (previous.includes(candidate) || candidate.includes(previous)));
   });
+}
+
+async function fetchHitokoto() {
+  try {
+    const response = await fetch('https://v1.hitokoto.cn/?encode=json&max_length=80', {
+      headers: {accept: 'application/json'},
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return '';
+    const payload = await response.json();
+    return cleanText(payload?.hitokoto, 180);
+  } catch {
+    return '';
+  }
+}
+
+function contextualProactiveFallback(context, recentLines = []) {
+  const candidates = [];
+  const current = context?.music?.current;
+  if (current?.title && current.playing) {
+    const artist = current.artist ? `，${current.artist}` : '';
+    candidates.push(`《${current.title}》${artist}正在播放，伊珂丝已经把曲名记下了的说。`);
+    candidates.push(`现在轮到《${current.title}》了，歌单的选择还算不错的说。`);
+  }
+  const heading = cleanText(context?.page?.heading || context?.page?.title, 80)
+    .replace(/\s*[-|｜]\s*Yusen(?:の小站)?\s*$/iu, '');
+  if (heading) {
+    candidates.push(`《${heading}》这一页值得慢慢拆开看，跳过细节可骗不过伊珂丝。`);
+    candidates.push(`现在的页面是《${heading}》，伊珂丝会替你盯住容易漏掉的细节。`);
+  }
+  candidates.push('隔一会儿换个角度再看，刚才漏掉的细节往往就会自己冒出来的说。');
+  return candidates.find((line) => !repeatsRecentProactive(line, recentLines)) || candidates[0];
 }
 
 function providerToolCall(call) {
@@ -2752,7 +2789,9 @@ async function interactiveChat(request, body) {
 async function proactiveChat(request, body) {
   const session = ownerSession(request);
   const context = cleanContext(body?.context);
-  const hitokoto = cleanText(body?.hitokoto, 180);
+  const requestedMode = body?.mode === 'hitokoto' ? 'hitokoto' : 'context';
+  let hitokoto = cleanText(body?.hitokoto, 180);
+  if (requestedMode === 'hitokoto' && !hitokoto) hitokoto = await fetchHitokoto();
   if (hitokoto) {
     return json({
       success: true,
@@ -2760,6 +2799,7 @@ async function proactiveChat(request, body) {
       silent: false,
       ephemeral: true,
       model: 'backend/hitokoto-relay',
+      proactiveMode: 'hitokoto',
       persistence: session ? 'blob' : 'local',
       owner: Boolean(session),
       agent: agentControls(false),
@@ -2767,7 +2807,10 @@ async function proactiveChat(request, body) {
   }
   let ownerState = null;
   if (session) ownerState = (await loadOwnerState(session)).state;
-  const recentProactive = recentProactiveLines(ownerState, body?.history);
+  const recentProactive = [
+    ...recentProactiveLines(ownerState, body?.history),
+    ...cleanRecentProactiveLines(body?.recentProactive),
+  ].slice(-6);
   const messages = [
     {role: 'system', content: [
       session ? WAIFU_OWNER_SYSTEM_PROMPT : WAIFU_VISITOR_SYSTEM_PROMPT,
@@ -2785,7 +2828,7 @@ async function proactiveChat(request, body) {
   let reply = decision?.speak === true ? normalizeYikesiExpression(cleanText(decision.text, 180)) : '';
   if (!reply || /[?？]/.test(reply) || repeatsRecentProactive(reply, recentProactive) ||
     /(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)|我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)|(?:主人|店长|你).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/.test(reply)) {
-    reply = '';
+    reply = contextualProactiveFallback(context, recentProactive);
   }
   const silent = !reply;
   if (session && !silent) {
@@ -2796,6 +2839,7 @@ async function proactiveChat(request, body) {
     reply,
     silent,
     model: completion.model,
+    proactiveMode: 'context',
     persistence: session ? 'blob' : 'local',
     owner: Boolean(session),
     ephemeral: false,

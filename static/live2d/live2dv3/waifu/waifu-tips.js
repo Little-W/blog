@@ -8,6 +8,7 @@ var Hitokoto;
 var sleepTimer_ = null;
 var live2dTipsStarted = false;
 var text_next = 0;
+var agentMessageVisibleUntil = 0;
 function renderTipText(template, context){
 	return String(template == null ? '' : template).replace(/(\\)?\{([^\{\}\\]+)(\\)?\}/g, function(word, slash1, token, slash2){
 		if(slash1 || slash2) return word.replace('\\', '');
@@ -42,15 +43,21 @@ function hideMessage(timeout){
 	if (timeout === null) timeout = 5000;
 	$(waifu_target).delay(timeout).fadeTo(200, 0);
 }	
-function showMessage(text, timeout){
+function showMessage(text, timeout, options){
 	if(!live2dTipsEnabled()) return;
+	var isAgentMessage = options && options.agent === true;
+	if(!isAgentMessage && Date.now() < agentMessageVisibleUntil) return;
 	if(Array.isArray(text)) text = text[Math.floor(Math.random() * text.length + 1)-1];
 	// console.log(text);
 	$(waifu_target).stop();
 	$(waifu_target).html(text).fadeTo(200, 1);
 	if (timeout === null) timeout = 5000;
+	if(isAgentMessage) agentMessageVisibleUntil = Date.now() + Math.max(1500, Number(timeout) || 5000);
 	hideMessage(timeout);
 }
+window.showAgentMessage = function(text, timeout){
+	showMessage(text, timeout, {agent: true});
+};
 function showQueuedWaifuTip(detail){
 	if(!detail || typeof detail.text !== 'string' || !detail.text) return;
 	showMessage(detail.text, typeof detail.timeout === 'number' ? detail.timeout : 3600);

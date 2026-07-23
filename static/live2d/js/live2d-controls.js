@@ -22,6 +22,7 @@
   var dragState = null;
   var resizeFrame = 0;
   var tipsResizeObserver = null;
+  var agentRuntimeRetryTimer = 0;
   var buttons = {};
 
   var icons = {
@@ -246,7 +247,11 @@
       state.agentMode = !state.agentMode;
       saveState();
       updateButtons();
-      if (state.agentMode) ensureAgentRuntime();
+      if (state.agentMode) ensureAgentRuntimeWithRetry(0).catch(function () {});
+      else if (agentRuntimeRetryTimer) {
+        window.clearTimeout(agentRuntimeRetryTimer);
+        agentRuntimeRetryTimer = 0;
+      }
       announce(state.agentMode
         ? "智能体模式已开启，我会结合时间、页面和音乐偶尔陪你聊一句~"
         : "智能体模式已关闭，恢复普通一言");
@@ -337,6 +342,22 @@
       throw error;
     });
     return window.__yusenWaifuChatPromise;
+  }
+
+  function ensureAgentRuntimeWithRetry(attempt) {
+    attempt = Math.max(0, Number(attempt) || 0);
+    if (agentRuntimeRetryTimer) {
+      window.clearTimeout(agentRuntimeRetryTimer);
+      agentRuntimeRetryTimer = 0;
+    }
+    return ensureAgentRuntime().catch(function (error) {
+      if (!state.agentMode || attempt >= 2) throw error;
+      agentRuntimeRetryTimer = window.setTimeout(function () {
+        agentRuntimeRetryTimer = 0;
+        ensureAgentRuntimeWithRetry(attempt + 1).catch(function () {});
+      }, (attempt + 1) * 5000);
+      throw error;
+    });
   }
 
   function getBaseSize() {
@@ -514,6 +535,11 @@
     applyTipsVisibility();
     applyRuntimeSettings();
     updateButtons();
+    if (state.agentMode) {
+      ensureAgentRuntimeWithRetry(0).catch(function () {
+        announce("智能体运行组件暂时没有加载成功，稍后会自动重试");
+      });
+    }
     return true;
   }
 

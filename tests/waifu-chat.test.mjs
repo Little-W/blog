@@ -212,8 +212,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.ok(historyPayload.capabilities.browser.includes('music.play_track'));
     assert.ok(historyPayload.capabilities.browser.includes('navigation.open'));
     assert.ok(historyPayload.capabilities.denied.includes('database.write'));
-    assert.ok(historyPayload.agent.proactiveAfterMs >= 45_000);
-    assert.ok(historyPayload.agent.proactiveAfterMs <= 90_000);
+    assert.ok(historyPayload.agent.proactiveAfterMs >= 12_000);
+    assert.ok(historyPayload.agent.proactiveAfterMs <= 25_000);
     const response = await handler(request('/api/waifu-chat', {
       method: 'POST',
       address: 'guest-chat',
@@ -422,8 +422,8 @@ test('waifu chat persistence and role prompts', async (t) => {
     }));
     assert.equal(guestResponse.status, 200);
     const guestPayload = await bodyOf(guestResponse);
-    assert.ok(guestPayload.agent.proactiveAfterMs >= 4 * 60_000);
-    assert.ok(guestPayload.agent.proactiveAfterMs <= 8 * 60_000);
+    assert.ok(guestPayload.agent.proactiveAfterMs >= 60_000);
+    assert.ok(guestPayload.agent.proactiveAfterMs <= 120_000);
     assert.equal(guestStore.writes, 0);
 
     const ownerStore = new MemoryStore({conflictOnce: true});
@@ -442,7 +442,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.deepEqual(history.history, []);
   });
 
-  await t.test('重复的主动台词会静默且不会污染普通对话上下文', async () => {
+  await t.test('重复的主动台词会改用上下文兜底且不会污染普通对话上下文', async () => {
     const store = new MemoryStore();
     const calls = [];
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -463,14 +463,16 @@ test('waifu chat persistence and role prompts', async (t) => {
     const repeated = await handler(request('/api/waifu-chat/proactive', {
       method: 'POST', cookie, address: 'owner-proactive-repeat-2', body: {context: {}},
     }));
-    assert.equal((await bodyOf(repeated)).silent, true);
+    const repeatedPayload = await bodyOf(repeated);
+    assert.equal(repeatedPayload.silent, false);
+    assert.doesNotMatch(repeatedPayload.reply, /夜深了，慢一点也没有关系/);
     const second = await handler(request('/api/waifu-chat', {
       method: 'POST', cookie, address: 'owner-after-proactive', body: {message: '我刚刚在看什么？', context: {}},
     }));
     assert.equal(second.status, 200);
     const chatCall = calls.at(-1);
     assert.ok(chatCall.messages.every((message) => !String(message.content || '').includes('夜深了，慢一点也没有关系')));
-    assert.equal(store.entries.get('owner/92/memory-v1.json').data.messages.length, 3);
+    assert.equal(store.entries.get('owner/92/memory-v1.json').data.messages.length, 4);
   });
 
   await t.test('一言只转述原文且不会调用模型或写入对话记录', async () => {
@@ -489,12 +491,62 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.silent, false);
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
+    assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
       cookie: ownerCookie(93), address: 'owner-hitokoto-history',
     })));
     assert.deepEqual(history.history, []);
+    assert.equal(store.writes, 0);
+  });
+
+  await t.test('浏览器未取得一言时由后端补充请求', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    const calls = [];
+    globalThis.fetch = async (url) => {
+      calls.push(String(url));
+      assert.match(String(url), /^https:\/\/v1\.hitokoto\.cn\//);
+      return Response.json({hitokoto: '世界以痛吻我，要我报之以歌。'});
+    };
+    const response = await handler(request('/api/waifu-chat/proactive', {
+      method: 'POST', address: 'guest-hitokoto-fallback', body: {
+        mode: 'hitokoto',
+        context: {page: {title: '音乐'}},
+      },
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(payload.proactiveMode, 'hitokoto');
+    assert.equal(payload.model, 'backend/hitokoto-relay');
+    assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
+    assert.equal(calls.length, 1);
+    assert.equal(store.writes, 0);
+  });
+
+  await t.test('模型选择静默时仍根据正在播放的音乐生成评论', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.fetch = async () => Response.json({
+      model: 'Qwen/Qwen3-8B',
+      choices: [{message: {content: JSON.stringify({speak: false, text: ''})}}],
+    });
+    const response = await handler(request('/api/waifu-chat/proactive', {
+      method: 'POST', address: 'guest-context-proactive', body: {
+        mode: 'context',
+        context: {
+          page: {title: '音乐 - Yusenの小站', heading: '音乐收藏'},
+          music: {current: {mid: 7, title: 'ANIMA', artist: 'ReoNa', playing: true}},
+        },
+      },
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(payload.silent, false);
+    assert.equal(payload.proactiveMode, 'context');
+    assert.match(payload.reply, /ANIMA/);
+    assert.match(payload.reply, /ReoNa/);
     assert.equal(store.writes, 0);
   });
 
@@ -906,7 +958,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.11');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.12');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
