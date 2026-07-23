@@ -119,6 +119,15 @@ function musicDatasetResponse(url) {
       {tag_id: 13, tag_order: 4, tag_name: '君の名は。OST', music_order: [261, 262, 263]},
       {tag_id: 18, tag_order: 5, tag_name: '天気の子 OST', music_order: [379, 380]},
       {tag_id: 51, tag_order: 6, tag_name: 'Blue Archive OST', music_order: [1695, 1696, 1697, 1698]},
+      ...Array.from({length: 22}, (_, index) => {
+        const number = index + 4;
+        return {
+          tag_id: 100 + number,
+          tag_order: 3 + number,
+          tag_name: `真实 OST ${String(number).padStart(2, '0')}`,
+          music_order: Array.from({length: number}, (__, trackIndex) => number * 100 + trackIndex),
+        };
+      }),
     ];
     return new Response(`${tags.map((tag) => JSON.stringify(tag)).join('\n')}\n`);
   }
@@ -495,7 +504,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-23.14');
+    assert.equal(payload.runtimeVersion, '2026-07-23.15');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
@@ -524,7 +533,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-23.14');
+    assert.equal(payload.runtimeVersion, '2026-07-23.15');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -550,7 +559,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-23.14');
+    assert.equal(payload.runtimeVersion, '2026-07-23.15');
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
@@ -984,7 +993,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.14');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.15');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -1151,13 +1160,90 @@ test('waifu chat persistence and role prompts', async (t) => {
       assert.equal(payload.toolStatus, 'called');
       assert.equal(payload.retrieval.type, 'playlists');
       assert.equal(payload.retrieval.query.toLowerCase(), 'ost');
-      assert.equal(payload.retrieval.totalMatches, 3);
-      assert.match(payload.reply, /站内找到 3 个名称含“ost”的歌单/u);
+      assert.equal(payload.retrieval.totalMatches, 25);
+      assert.match(payload.reply, /站内找到 25 个名称含“ost”的歌单/u);
       assert.match(payload.reply, /“君の名は。OST”（3 首）/u);
       assert.match(payload.reply, /“天気の子 OST”（2 首）/u);
       assert.match(payload.reply, /“Blue Archive OST”（4 首）/u);
       assert.doesNotMatch(payload.reply, /ACG|《irony》|\/music\/ost\//u);
     }
+
+    const followupResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-ost-playlists-followup-all',
+      body: {
+        message: '列出所有',
+        history: [
+          {role: 'user', content: '有什么ost歌单推荐', kind: 'chat'},
+          {role: 'assistant', content: '之前的回复可能不完整，不能作为数据库资料。', kind: 'chat'},
+        ],
+      },
+    }));
+    const followup = await bodyOf(followupResponse);
+    assert.equal(followup.model, 'backend/playlist-search');
+    assert.equal(followup.retrieval.query.toLowerCase(), 'ost');
+    assert.equal(followup.retrieval.totalMatches, 25);
+    assert.equal(followup.retrieval.returned, 25);
+    assert.match(followup.reply, /数据库中共有 25 个名称含“ost”的歌单/u);
+    assert.match(followup.reply, /1\. “君の名は。OST”（3 首）/u);
+    assert.match(followup.reply, /2\. “天気の子 OST”（2 首）/u);
+    assert.match(followup.reply, /3\. “Blue Archive OST”（4 首）/u);
+    assert.match(followup.reply, /25\. “真实 OST 25”（25 首）/u);
+    assert.doesNotMatch(followup.reply, /Code Geass|火影忍者|龙之谷/u);
+    assert.equal(modelCalls, 0);
+  });
+
+  await t.test('长歌单结果可完整展开，并在数量追问时重新查询数据库', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      throw new Error('歌单展开与后续筛选不应调用模型');
+    };
+    const history = [
+      {role: 'user', content: '搜索ost歌单', kind: 'chat'},
+      {role: 'assistant', content: '先列出一部分。', kind: 'chat'},
+    ];
+    const allResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-long-playlists-all',
+      body: {message: '列出所有', history},
+    }));
+    const all = await bodyOf(allResponse);
+    assert.equal(all.model, 'backend/playlist-search');
+    assert.equal(all.retrieval.totalMatches, 25);
+    assert.equal(all.retrieval.returned, 25);
+    assert.match(all.reply, /1\. “君の名は。OST”（3 首）/u);
+    assert.match(all.reply, /25\. “真实 OST 25”（25 首）/u);
+    assert.equal([...all.reply.matchAll(/^\d+\. “[^”]+”（\d+ 首）/gmu)].length, 25);
+
+    const filteredResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-long-playlists-filtered',
+      body: {message: '哪些超过20首', history},
+    }));
+    const filtered = await bodyOf(filteredResponse);
+    assert.equal(filtered.model, 'backend/playlist-search');
+    assert.equal(filtered.retrieval.totalMatches, 5);
+    assert.equal(filtered.retrieval.returned, 5);
+    assert.match(filtered.reply, /“真实 OST 21”（21 首）/u);
+    assert.match(filtered.reply, /“真实 OST 25”（25 首）/u);
+    assert.doesNotMatch(filtered.reply, /“真实 OST 20”/u);
+
+    const ordinalResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-long-playlists-ordinal',
+      body: {message: '第15个是什么', history},
+    }));
+    const ordinal = await bodyOf(ordinalResponse);
+    assert.equal(ordinal.model, 'backend/playlist-search');
+    assert.equal(ordinal.retrieval.totalMatches, 25);
+    assert.equal(ordinal.retrieval.returned, 1);
+    assert.match(ordinal.reply, /第 15 个是：\n“真实 OST 15”（15 首）/u);
+    assert.doesNotMatch(ordinal.reply, /真实 OST 14|真实 OST 16/u);
     assert.equal(modelCalls, 0);
   });
 
