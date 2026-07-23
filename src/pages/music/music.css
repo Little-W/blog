@@ -118,11 +118,11 @@ html[data-theme='dark'] .music-order-controls button[data-music-order-action="ed
 /* Playlist rail */
 .music-page #aplayer_list_parent { display:grid; grid-template-columns:42px minmax(0,1fr) 42px; gap:10px; align-items:center; width:100%; min-height:154px; height:auto; opacity:1; bottom:0; }
 .music-page #aplayer_list { grid-column:2; width:100%; border:0; border-radius:0; box-shadow:none; background:transparent; }
-.music-page #aplayer_list_sub { display:flex; align-items:stretch; gap:12px; height:154px; padding:1px 2px 9px; right:auto; overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:rgba(72,105,129,.42) transparent; scroll-snap-type:x proximity; }
+.music-page #aplayer_list_sub { display:flex; align-items:stretch; gap:12px; height:154px; padding:1px 2px 9px; right:auto; overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:rgba(72,105,129,.42) transparent; contain:layout paint style; transform:translateZ(0); will-change:scroll-position; }
 .music-page #aplayer_list_sub::-webkit-scrollbar { display:block; height:7px; }
 .music-page #aplayer_list_sub::-webkit-scrollbar-track { background:transparent; }
 .music-page #aplayer_list_sub::-webkit-scrollbar-thumb { border-radius:999px; background:rgba(72,105,129,.42); }
-.music-page .playlist-tag-group { display:grid; flex:0 0 calc(100% - 4px); width:calc(100% - 4px); grid-template-rows:repeat(3,42px); gap:8px; min-width:0; contain:layout paint; scroll-snap-align:start; }
+.music-page .playlist-tag-group { display:grid; flex:0 0 calc(100% - 4px); width:calc(100% - 4px); grid-template-rows:repeat(3,42px); gap:8px; min-width:0; contain:layout paint; content-visibility:auto; }
 .music-page .playlist-tag-group--measure { position:absolute; visibility:hidden; pointer-events:none; }
 .music-page .playlist-tag-row { display:flex; min-width:0; align-items:stretch; justify-content:flex-start; gap:9px; }
 .music-page .playlist-tag-row .sytle-button { --playlist-tag-hover-duration:.32s; --playlist-tag-hover-easing:cubic-bezier(.22,.61,.36,1); position:relative; isolation:isolate; flex:1 0 auto; min-width:max-content; max-width:none; overflow:visible; margin:0; padding:8px 12px; border:1px solid var(--music-border); border-radius:999px; background-color:var(--music-soft); background-image:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,0)); color:#273646; font-size:.86rem; text-align:center; text-overflow:clip; white-space:nowrap; box-shadow:none; transition:border-color var(--playlist-tag-hover-duration) var(--playlist-tag-hover-easing),background-color var(--playlist-tag-hover-duration) var(--playlist-tag-hover-easing),color var(--playlist-tag-hover-duration) var(--playlist-tag-hover-easing),box-shadow var(--playlist-tag-hover-duration) var(--playlist-tag-hover-easing); }
@@ -137,6 +137,7 @@ html[data-theme='dark'] .music-order-controls button[data-music-order-action="ed
 .music-page .sytle-button.--activated { border-color:var(--music-accent); background:#17344d; color:#fff; box-shadow:0 8px 24px rgba(23,52,77,.18); }
 .music-page .playlist-tag-row .sytle-button.--activated,
 .music-page .playlist-tag-row .sytle-button.--activated:hover { transform:none; border-color:var(--music-accent); background:#17344d; color:#fff; box-shadow:0 8px 24px rgba(23,52,77,.18); }
+.music-page #aplayer_list_sub.is-scrolling .sytle-button { transition:none; }
 .music-page .tag_list_switch_button { display:grid; place-items:center; width:40px; height:40px; margin:0; border:1px solid var(--music-border); border-radius:50%; background:var(--music-panel-solid); color:#23374a; cursor:pointer; box-shadow:0 5px 14px rgba(15,23,42,.08); transition:.2s ease; }
 .music-page #former_page_div { grid-column:1; }
 .music-page #next_page_div { grid-column:3; }
@@ -184,8 +185,8 @@ html[data-theme='dark'] .music-order-controls button[data-music-order-action="ed
 .music-track-reorder-tools { display:flex; align-items:center; justify-content:flex-end; gap:8px; }
 .music-track-drag-handle { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--music-border); border-radius:999px; color:var(--music-accent-strong); cursor:grab; user-select:none; }
 .music-track-reorder-tools input { width:64px; min-height:30px; border:1px solid var(--music-border); border-radius:9px; padding:3px 5px; background:var(--music-panel-solid); color:var(--music-text); font:inherit; text-align:center; }
-.music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-color:rgba(102,112,133,.3) transparent; contain:layout paint style; transition:none; }
-.music-page .music-list { position:relative; display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; overflow:hidden; contain:layout paint style; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; background:transparent; font-size:.86rem; line-height:normal; transform:none; isolation:isolate; transition:background-color .18s ease; }
+.music-page .music-list-ol { width:100%; border:0; border-radius:0; background:transparent; box-shadow:none; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-color:rgba(102,112,133,.3) transparent; contain:layout paint style; transform:translateZ(0); will-change:scroll-position; transition:none; }
+.music-page .music-list { position:relative; display:grid; grid-template-columns:38px 52px minmax(0,1fr) 280px; align-items:center; height:64px; min-height:64px; padding:6px 16px; overflow:hidden; contain:layout paint style; content-visibility:auto; contain-intrinsic-block-size:64px; border-top:0; border-bottom:1px solid var(--music-border); border-radius:8px; background:transparent; font-size:.86rem; line-height:normal; transform:none; isolation:isolate; transition:background-color .18s ease; }
 /* 恢复原版曲目表的白底、浅色悬停与浅蓝选中状态。保留明确的 is-selected
    类，避免 :has() 在长列表滚动时反复计算。 */
 .music-page .music-list::before { content:none; display:none; }
@@ -198,6 +199,17 @@ html[data-theme='dark'] .music-order-controls button[data-music-order-action="ed
 .music-page .music-list::after { content:''; position:absolute; z-index:0; left:var(--music-ripple-x,50%); top:var(--music-ripple-y,50%); width:28px; height:28px; border-radius:50%; background:radial-gradient(circle,rgba(17,151,209,.32) 0,rgba(17,151,209,.16) 38%,transparent 72%); opacity:0; pointer-events:none; transform:translate(-50%,-50%) scale(0); }
 .music-page .music-list.is-rippling::after { animation:music-list-ripple .46s cubic-bezier(.2,.72,.25,1) both; }
 @keyframes music-list-ripple { from { opacity:.72; transform:translate(-50%,-50%) scale(0); } to { opacity:0; transform:translate(-50%,-50%) scale(15); } }
+.music-page .music-list-ol.is-scrolling .music-list,
+.music-page .music-list-ol.is-scrolling .music-track-action { transition:none; }
+.music-page .music-list-ol.is-scrolling .music-list.is-rippling::after { animation:none; }
+
+/* 半透明面板的 backdrop-filter 会在内部列表位移时反复处理整块区域。拖动
+   滚动条的短暂阶段改用接近原面板颜色的高不透明背景；滚动停止后恢复模糊。 */
+html[data-yusen-blur='on'] .music-page .music-section.is-inner-scrolling {
+  background:color-mix(in srgb,var(--music-panel-solid) 92%,transparent);
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+}
 .music-track-index { color:var(--music-muted); text-align:center; font-variant-numeric:tabular-nums; pointer-events:none; }
 .music-track-cover { width:42px; height:42px; overflow:hidden; border-radius:7px; background:linear-gradient(145deg,#dceaf2,#a8bdcc); pointer-events:none; }
 .music-track-cover::after { content:'♪'; display:grid; place-items:center; width:100%; height:100%; color:rgba(20,45,67,.46); font-size:1.1rem; }

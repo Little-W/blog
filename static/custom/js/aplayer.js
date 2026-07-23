@@ -1141,15 +1141,21 @@ function install_list_scroll_hover_guard(scroller) {
     return scroller.__musicScrollHoverGuardStop;
   }
   var idleTimer = 0;
+  var section = scroller.closest && scroller.closest('.music-section');
   var finish = function() {
     if (idleTimer) window.clearTimeout(idleTimer);
     idleTimer = 0;
     scroller.classList.remove('is-scrolling');
+    if (section) section.classList.remove('is-inner-scrolling');
   };
   var handleScroll = function() {
     // 只切换容器上的一个类；曲目本身不逐项写样式，长列表滚动时不会产生
-    // 与项目数量成正比的脚本开销。停止滚动后再恢复悬停反馈。
+    // 与项目数量成正比的脚本开销。滚动期间同时停用外层面板的实时背景模糊，
+    // 避免拖动滚动条时每一帧都重新计算整块 backdrop-filter。
     if (!scroller.classList.contains('is-scrolling')) scroller.classList.add('is-scrolling');
+    if (section && !section.classList.contains('is-inner-scrolling')) {
+      section.classList.add('is-inner-scrolling');
+    }
     if (idleTimer) window.clearTimeout(idleTimer);
     idleTimer = window.setTimeout(finish, 140);
   };
@@ -1169,6 +1175,7 @@ function load_music_track_cover_images(list) {
   if (!list) return;
   var images = Array.prototype.slice.call(list.querySelectorAll('img[data-cover-pending="true"]'));
   var scrollFrame = 0;
+  var listScrollTimer = 0;
   var stopped = false;
   var resizeObserver = null;
 
@@ -1192,11 +1199,24 @@ function load_music_track_cover_images(list) {
   var scheduleRange = function() {
     if (!scrollFrame) scrollFrame = window.requestAnimationFrame(updateRange);
   };
-  list.addEventListener('scroll', scheduleRange, {passive: true});
+  var scheduleListRange = function() {
+    // 拖动滚动条时只保留最后一次封面范围计算，避免途经的每一段都加入下载和
+    // 图片解码队列。停稳后仍会立即覆盖可视项目及上下各 5 项。
+    if (listScrollTimer) window.clearTimeout(listScrollTimer);
+    listScrollTimer = window.setTimeout(function() {
+      listScrollTimer = 0;
+      scheduleRange();
+    }, 72);
+  };
+  var scheduleAncestorRange = function(event) {
+    if (event && event.target === list) return;
+    scheduleRange();
+  };
+  list.addEventListener('scroll', scheduleListRange, {passive: true});
   window.addEventListener('scroll', scheduleRange, {passive: true});
   window.addEventListener('resize', scheduleRange, {passive: true});
   // 捕获其他可滚动父容器产生的 scroll；scroll 事件本身不会冒泡。
-  document.addEventListener('scroll', scheduleRange, {passive: true, capture: true});
+  document.addEventListener('scroll', scheduleAncestorRange, {passive: true, capture: true});
   if (typeof window.ResizeObserver === 'function') {
     resizeObserver = new window.ResizeObserver(scheduleRange);
     resizeObserver.observe(list);
@@ -1206,10 +1226,11 @@ function load_music_track_cover_images(list) {
     stopped = true;
     if (resizeObserver) resizeObserver.disconnect();
     if (scrollFrame) window.cancelAnimationFrame(scrollFrame);
-    list.removeEventListener('scroll', scheduleRange);
+    if (listScrollTimer) window.clearTimeout(listScrollTimer);
+    list.removeEventListener('scroll', scheduleListRange);
     window.removeEventListener('scroll', scheduleRange);
     window.removeEventListener('resize', scheduleRange);
-    document.removeEventListener('scroll', scheduleRange, true);
+    document.removeEventListener('scroll', scheduleAncestorRange, true);
   };
 }
 
@@ -4490,6 +4511,7 @@ function init_custom_list() {
   var list_div_sel = document.querySelector("#aplayer_list_active");
   var ol = list_div.querySelector(".music-list-ol");
   if (ol && ol.__musicCoverStop) ol.__musicCoverStop();
+  if (ol && ol.__musicScrollHoverGuardStop) ol.__musicScrollHoverGuardStop();
   try {
     list_div_sel.removeChild(ol);
   } catch (err) {
@@ -4644,6 +4666,7 @@ function init_custom_list() {
     ol.appendChild(li);
   }
   list_div.appendChild(ol);
+  install_list_scroll_hover_guard(ol);
   load_music_track_cover_images(ol);
   var resultCount = document.getElementById('music-list-result-count');
   if (resultCount) {
@@ -6478,6 +6501,10 @@ function bind_playlist_sort_controls() {
 load_music_lists = function(skipTrackRender) {
   var div = document.getElementById('aplayer_list');
   if (!div) return;
+  var previousSubdiv = div.querySelector('#aplayer_list_sub');
+  if (previousSubdiv && previousSubdiv.__musicScrollHoverGuardStop) {
+    previousSubdiv.__musicScrollHoverGuardStop();
+  }
   ['former_page_div', 'next_page_div'].forEach(function(id) {
     var oldButton = document.getElementById(id);
     if (oldButton) oldButton.remove();
@@ -6515,6 +6542,7 @@ load_music_lists = function(skipTrackRender) {
   // 实际文字宽度连续填满三行；渲染后由 flex 把每行余宽分给现有项目，保证
   // 长名称完整可见，并让每页的三行都贴齐左右边缘。
   div.appendChild(subdiv);
+  install_list_scroll_hover_guard(subdiv);
   var measurementGroup = createTagGroup('playlist-tag-group--measure');
   subdiv.appendChild(measurementGroup);
   var measurementRow = measurementGroup.firstElementChild;
