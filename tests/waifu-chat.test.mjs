@@ -553,6 +553,24 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.doesNotMatch(payload.reply, /午后|适合/);
     assert.match(payload.reply, /播放器状态已经确认/);
     assert.equal(store.writes, 0);
+
+    globalThis.fetch = async () => Response.json({
+      model: 'Qwen/Qwen3-8B',
+      choices: [{message: {content: JSON.stringify({
+        speak: true,
+        text: '夜深了，音乐还是不错的，不介意的话，我可以帮你选首歌放松一下的说。',
+      })}}],
+    });
+    const serviceResponse = await handler(request('/api/waifu-chat/proactive', {
+      method: 'POST', address: 'guest-context-proactive-service', body: {
+        mode: 'context',
+        context: {page: {title: '音乐 - Yusenの小站', heading: '音乐收藏'}},
+      },
+    }));
+    const servicePayload = await bodyOf(serviceResponse);
+    assert.equal(servicePayload.silent, false);
+    assert.doesNotMatch(servicePayload.reply, /我可以帮你|不介意的话/);
+    assert.match(servicePayload.reply, /音乐收藏/);
   });
 
   await t.test('不合格回复会在后端重写一次', async () => {

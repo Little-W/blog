@@ -2835,6 +2835,7 @@ async function proactiveChat(request, body) {
   let reply = decision?.speak === true ? normalizeYikesiExpression(cleanText(decision.text, 180)) : '';
   if (!reply || /[?？]/.test(reply) || repeatsRecentProactive(reply, recentProactive) ||
     proactiveReplyInventsMusicDetails(reply, context) ||
+    /(?:要不要|需不需要|需要我|我可以帮你|可以帮你|不介意的话|想不想|要我来)/u.test(reply) ||
     /(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)|我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)|(?:主人|店长|你).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/.test(reply)) {
     reply = contextualProactiveFallback(context, recentProactive);
   }
