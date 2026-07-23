@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.19';
+const AGENT_RUNTIME_VERSION = '2026-07-24.20';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -311,6 +311,16 @@ function technicalTopicAnchors(message) {
 function explicitCorrectionValue(message) {
   const match = String(message || '').match(/(?:项目)?(?:代号|名字|称呼|叫法).{0,16}?(?:改成|改为|换成)\s*[“"'《「]?([^”"'》」\s，。！？!?]{1,30})/u);
   return cleanText(match?.[1], 30);
+}
+
+function initialProjectNameValue(message) {
+  const text = String(message || '');
+  if (/[?？]/u.test(text)) return '';
+  const match = text.match(
+    /(?:项目)?代号(?:先|暂时|现在)?\s*(?:记作|叫作|叫做|定为|设为|是)\s*[“"'《「]?([^”"'》」\s，。！？!?]{1,30})/u,
+  );
+  const value = cleanText(match?.[1], 30);
+  return /^(?:什么|哪个|哪一个)$/u.test(value) ? '' : value;
 }
 
 function comparableDialogueText(value) {
@@ -1567,14 +1577,34 @@ function rememberedImportantEvent(ownerState, messages) {
   return stored ? '正在准备' + cleanText(stored, 100) : '';
 }
 
+function rememberedProjectName(messages) {
+  let projectName = '';
+  messages.forEach((item) => {
+    projectName = explicitCorrectionValue(item) || initialProjectNameValue(item) || projectName;
+  });
+  return projectName;
+}
+
+function rememberedObservation(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (/[?？]/u.test(messages[index])) continue;
+    const match = messages[index].match(/(?:继续|正在|接下来(?:我们)?(?:继续)?)?观察\s*([^，。！？!?]{2,80})/u);
+    const topic = cleanText(match?.[1], 80);
+    if (topic && !/^(?:什么|哪些|哪个)$/u.test(topic)) return topic;
+  }
+  return '';
+}
+
 function resolveDirectMemoryRecallIntent(message, ownerState, recentHistory) {
   const text = cleanText(message, 240);
-  if (!/(?:记得|我现在叫什么|我的名字|我叫什么)/u.test(text)) return null;
+  const asksProjectName = /(?:项目)?代号.{0,10}(?:是什么|叫什么|什么)|(?:什么|哪个).{0,8}(?:项目)?代号/u.test(text);
+  const asksObservation = /(?:正在|目前|继续)?观察(?:的)?(?:是什么|什么)|正在关注什么/u.test(text);
+  if (!/(?:记得|我现在叫什么|我的名字|我叫什么)/u.test(text) && !asksProjectName && !asksObservation) return null;
   const asksName = /(?:叫什么|名字|称呼)/u.test(text);
   const asksMusic = /(?:喜欢谁的歌|喜欢.{0,12}(?:歌|音乐)|音乐偏好)/u.test(text);
   const asksWork = /(?:常在?.{0,12}写什么|常写|写什么|研究什么)/u.test(text);
   const asksEvent = /(?:有什么事|哪件大事|准备.{0,10}(?:什么|事情|大事)|下周五)/u.test(text);
-  if (!asksName && !asksMusic && !asksWork && !asksEvent) return null;
+  if (!asksName && !asksMusic && !asksWork && !asksEvent && !asksProjectName && !asksObservation) return null;
   const messages = userConversationMessages(ownerState, recentHistory);
   const facts = [];
   if (asksName) {
@@ -1592,6 +1622,14 @@ function resolveDirectMemoryRecallIntent(message, ownerState, recentHistory) {
   if (asksEvent) {
     const event = rememberedImportantEvent(ownerState, messages);
     if (event) facts.push(event);
+  }
+  if (asksProjectName) {
+    const projectName = rememberedProjectName(messages);
+    if (projectName) facts.push('项目代号是“' + projectName + '”');
+  }
+  if (asksObservation) {
+    const observation = rememberedObservation(messages);
+    if (observation) facts.push('正在观察' + observation);
   }
   if (!facts.length) return null;
   let reply;
@@ -1614,6 +1652,14 @@ function resolveDirectMemoryRecallIntent(message, ownerState, recentHistory) {
     if (asksEvent) {
       const event = rememberedImportantEvent(ownerState, messages);
       if (event) clauses.push('眼下正在挂心的是' + event.replace(/^正在准备/u, '').replace(/^下周五是/u, '下周五的'));
+    }
+    if (asksProjectName) {
+      const projectName = rememberedProjectName(messages);
+      if (projectName) clauses.push('项目代号是“' + projectName + '”');
+    }
+    if (asksObservation) {
+      const observation = rememberedObservation(messages);
+      if (observation) clauses.push('正在观察' + observation);
     }
     reply = '当然记得。' + clauses.join('；') + '。';
   }
@@ -1671,13 +1717,11 @@ function resolveDirectConversationIntent(message) {
       reply: '好，项目代号现在是“' + correctedProjectName + '”。',
     };
   }
-  const initialProjectName = text.match(
-    /(?:项目)?代号(?:先|暂时|现在)?\s*(?:记作|叫作|叫做|定为|设为|是)\s*[“"'《「]?([^”"'》」\s，。！？!?]{1,30})/u,
-  );
+  const initialProjectName = initialProjectNameValue(text);
   if (initialProjectName) {
     return {
       type: 'project-name',
-      reply: '好，项目代号先记作“' + cleanText(initialProjectName[1], 30) + '”。',
+      reply: '好，项目代号先记作“' + initialProjectName + '”。',
     };
   }
   if (/(?:回答|回复).{0,10}(?:简洁|简短)|不要.{0,10}(?:每次|总是|一直).{0,8}(?:反问|提问)/u.test(text)) {
