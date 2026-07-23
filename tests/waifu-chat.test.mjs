@@ -78,15 +78,15 @@ async function bodyOf(response) {
 }
 
 const musicFixture = [
-  {mid: 2, title: 'irony', author: 'ClariS'},
-  {mid: 3, title: 'ひらひら ひらら', author: 'ClariS'},
+  {mid: 2, title: 'irony', author: 'ClariS', list: [1, 3]},
+  {mid: 3, title: 'ひらひら ひらら', author: 'ClariS', list: [1, 3]},
   {mid: 123, title: 'リボン', author: 'ReoNa'},
-  {mid: 226, title: 'ANIMA', author: 'ReoNa'},
-  {mid: 227, title: 'forget-me-not', author: 'ReoNa'},
-  {mid: 228, title: '虹の彼方に', author: 'ReoNa'},
-  {mid: 2218, title: 'FRIENDS', author: 'ReoNa'},
-  {mid: 2219, title: 'HUMAN', author: 'ReoNa'},
-  {mid: 2220, title: 'Weaker', author: 'ReoNa'},
+  {mid: 226, title: 'ANIMA', author: 'ReoNa', list: [1, 3, 59]},
+  {mid: 227, title: 'forget-me-not', author: 'ReoNa', list: [1, 3, 59]},
+  {mid: 228, title: '虹の彼方に', author: 'ReoNa', list: [1, 3, 59]},
+  {mid: 2218, title: 'FRIENDS', author: 'ReoNa', list: [1, 3, 59]},
+  {mid: 2219, title: 'HUMAN', author: 'ReoNa', list: [1, 3, 59]},
+  {mid: 2220, title: 'Weaker', author: 'ReoNa', list: [1, 3, 59]},
   {mid: 2221, title: 'ないない', author: 'ReoNa'},
   {mid: 2222, title: 'シャル・ウィ・ダンス？', author: 'ReoNa'},
   {mid: 2223, title: 'さよナラ', author: 'ReoNa'},
@@ -100,7 +100,7 @@ const musicFixture = [
 ].map((track) => ({
   ...track,
   z_full_name: `${track.author} - ${track.title}`,
-  list: [1, 59],
+  list: track.list || [1, 59],
   url: `https://media.invalid/${track.mid}.mp3`,
   pic: `https://media.invalid/${track.mid}.jpg`,
   lrc: '',
@@ -112,7 +112,12 @@ function musicDatasetResponse(url) {
     return new Response(`${musicFixture.map((track) => JSON.stringify(track)).join('\n')}\n`);
   }
   if (href.includes('/data/music_tag.0.jsonl')) {
-    return new Response(`${JSON.stringify({tag_id: 59, tag_order: 1, tag_name: 'ReoNa', music_order: musicFixture.filter((track) => track.author === 'ReoNa').map((track) => track.mid)})}\n`);
+    const tags = [
+      {tag_id: 1, tag_order: 1, tag_name: '默认', music_order: musicFixture.map((track) => track.mid)},
+      {tag_id: 3, tag_order: 2, tag_name: 'ACG', music_order: musicFixture.filter((track) => track.list.includes(3)).map((track) => track.mid)},
+      {tag_id: 59, tag_order: 3, tag_name: 'ReoNa', music_order: musicFixture.filter((track) => track.author === 'ReoNa').map((track) => track.mid)},
+    ];
+    return new Response(`${tags.map((tag) => JSON.stringify(tag)).join('\n')}\n`);
   }
   return null;
 }
@@ -185,7 +190,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(WAIFU_RESPONSE_STYLE_REMINDER, /避免用“听起来……”作为固定开场/);
     assert.deepEqual(
       WAIFU_TOOL_DEFINITIONS.map((tool) => tool.function.name),
-      ['search_music_library', 'list_music_playlists', 'search_mv_library', 'search_blog_articles', 'play_music_track', 'control_music', 'open_blog_article', 'hide_waifu'],
+      ['search_music_library', 'list_music_playlists', 'get_music_playlist_tracks', 'search_mv_library', 'search_blog_articles', 'play_music_track', 'control_music', 'open_blog_article', 'hide_waifu'],
     );
   });
 
@@ -897,7 +902,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-23.9');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-23.10');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
@@ -957,6 +962,82 @@ test('waifu chat persistence and role prompts', async (t) => {
       assert.equal(retry.retrieval.query, 'ReoNa');
       assert.match(retry.reply, /《ANIMA》|《リボン》/);
     }
+  });
+
+  await t.test('按 ACG 歌单选歌会读取真实分类并支持连续换一批', async () => {
+    const store = new MemoryStore();
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    let modelCalls = 0;
+    globalThis.fetch = async (url) => {
+      const dataset = musicDatasetResponse(url);
+      if (dataset) return dataset;
+      modelCalls += 1;
+      return Response.json({model: 'Qwen/Qwen3-8B', choices: [{message: {content: '不应调用模型。'}}]});
+    };
+
+    const firstResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-acg-selection-first',
+      body: {message: '帮我选几首ACG的歌', history: []},
+    }));
+    const first = await bodyOf(firstResponse);
+    assert.equal(firstResponse.status, 200);
+    assert.equal(first.model, 'backend/playlist-tracks');
+    assert.equal(first.toolStatus, 'called');
+    assert.equal(first.retrieval.type, 'playlist-tracks');
+    assert.equal(first.retrieval.playlistName, 'ACG');
+    assert.equal(first.retrieval.totalMatches, 8);
+    assert.match(first.reply, /站内“ACG”歌单/);
+    assert.match(first.reply, /《irony》/);
+    assert.doesNotMatch(first.reply, /音量|稍等|马上|风格|可能/);
+
+    const history = [
+      {role: 'user', content: '帮我选几首ACG的歌', kind: 'chat'},
+      {role: 'assistant', content: first.reply, kind: 'chat'},
+    ];
+    const secondResponse = await handler(request('/api/waifu-chat', {
+      method: 'POST',
+      address: 'guest-acg-selection-next',
+      body: {message: '换几首歌', history},
+    }));
+    const second = await bodyOf(secondResponse);
+    const firstTitles = new Set([...first.reply.matchAll(/《([^》]+)》/gu)].map((match) => match[1]));
+    const secondTitles = [...second.reply.matchAll(/《([^》]+)》/gu)].map((match) => match[1]);
+    assert.equal(second.model, 'backend/playlist-tracks');
+    assert.equal(second.retrieval.playlistName, 'ACG');
+    assert.ok(secondTitles.length > 0);
+    assert.ok(secondTitles.every((title) => !firstTitles.has(title)));
+    assert.match(second.reply, /换一批/);
+
+    for (const [index, scenario] of [
+      {
+        message: '再换几首，从曲库里搜索',
+        history,
+      },
+      {
+        message: '搜索结果是什么',
+        history: [
+          {role: 'user', content: '找几首ACG的歌', kind: 'chat'},
+          {role: 'assistant', content: '我去搜索一下。', kind: 'chat'},
+        ],
+      },
+      {
+        message: '搜索整个ACG歌单',
+        history: [],
+      },
+    ].entries()) {
+      const response = await handler(request('/api/waifu-chat', {
+        method: 'POST',
+        address: `guest-acg-selection-scenario-${index}`,
+        body: scenario,
+      }));
+      const payload = await bodyOf(response);
+      assert.equal(payload.model, 'backend/playlist-tracks');
+      assert.equal(payload.retrieval.playlistName, 'ACG');
+      assert.match(payload.reply, /《(?:irony|ひらひら ひらら|ANIMA|forget-me-not|虹の彼方に|FRIENDS|HUMAN|Weaker)》/u);
+      assert.doesNotMatch(payload.reply, /站内歌单包括/);
+    }
+    assert.equal(modelCalls, 0);
   });
 
   await t.test('点歌会先查曲库再安排浏览器播放', async () => {
