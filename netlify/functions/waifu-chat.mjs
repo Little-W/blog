@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.22';
+const AGENT_RUNTIME_VERSION = '2026-07-24.23';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -2809,8 +2809,12 @@ function contextualProactiveFallback(context, recentLines = [], interactionStyle
 }
 
 function proactiveReplyInventsMusicDetails(reply, context) {
-  if (!context?.music?.current?.title) return false;
-  return /适合|(?:曲风|旋律|节奏|声音|氛围).{0,16}(?:温柔|治愈|热血|轻快|安静|忧伤|浪漫|有力|舒服)/u.test(reply);
+  const current = context?.music?.current;
+  if (!current?.title || !current.playing) return false;
+  const mentionsCurrent = String(reply || '').includes(current.title) ||
+    (current.artist && String(reply || '').includes(current.artist));
+  const unsupportedDescription = /(?:曲风|旋律|节奏|音色|声音|氛围|歌词|编曲|唱腔)|(?:这首歌|它).{0,16}(?:适合|温柔|治愈|热血|轻快|安静|忧伤|浪漫|有力|舒服|有趣|好听)/u.test(reply);
+  return !mentionsCurrent || unsupportedDescription;
 }
 
 function providerToolCall(call) {
