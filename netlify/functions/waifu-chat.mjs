@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.23';
+const AGENT_RUNTIME_VERSION = '2026-07-24.24';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -30,6 +30,7 @@ const rateLimits = new Map();
 const agentDataCache = new Map();
 const AGENT_DATA_CACHE_TTL_MS = 5 * 60_000;
 const MAX_TOOL_ROUNDS = 4;
+const MAX_RECENT_PROACTIVE_LINES = 24;
 
 export const WAIFU_TOOL_DEFINITIONS = [
   {
@@ -242,6 +243,7 @@ const PROACTIVE_INSTRUCTIONS = [
   '主动台词可以是伊珂丝带着研究天才和小恶魔气质的一句自言自语，也可以直接和用户说话。可以偶尔问一个轻松、容易回答且与当前资料有关的问题，但不能连续提问，不能使用“需要我吗”“有什么可以帮你”等客服句式。',
   '若正在播放音乐，可以结合资料中真实的歌名、歌手和播放状态交流；若正在阅读文章，可以围绕真实标题、当前小节或给出的正文片段说一句具体观察。没有这些内容时，以问候、近况、心情和轻松琐事等日常交流为主。',
   '不要编造歌曲风格、歌词、文章内容、用户阅读进度或现实环境。文章正文片段只作为本轮资料，不能推断片段之外的结论。',
+  '日常交流要像随口说出的真话，少用问句，避免鸡汤、格言和主持人口吻。不要反复使用“伊珂丝批准”“不算浪费时间”“不起眼的小事”“大计划”等模板。',
   '不得虚构伊珂丝刚刚或最近听过、看过、做过现实中的事情。资料较少时可以自然地想起数独、游戏、实验或 JOKER，但不要每次都提角色设定，也不能只复述路径。',
   '不要使用“你还在看某页面”“店长还在某页面”这种只复述页面状态的模板，也不要重复最近已经说过的主动台词。',
 ].join('\n');
@@ -2718,12 +2720,12 @@ function recentModelHistory(state, fallbackHistory) {
 function recentProactiveLines(state, fallbackHistory) {
   const source = state ? state.messages : (Array.isArray(fallbackHistory) ? fallbackHistory : []);
   return source.filter((message) => message?.role === 'assistant' && message?.kind === 'proactive')
-    .slice(-6).map((message) => cleanText(message.content, 180)).filter(Boolean);
+    .slice(-MAX_RECENT_PROACTIVE_LINES).map((message) => cleanText(message.content, 180)).filter(Boolean);
 }
 
 function cleanRecentProactiveLines(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(-6).map((line) => cleanText(line, 180)).filter(Boolean);
+  return value.slice(-MAX_RECENT_PROACTIVE_LINES).map((line) => cleanText(line, 180)).filter(Boolean);
 }
 
 function comparableProactiveText(value) {
@@ -2789,23 +2791,36 @@ function contextualProactiveFallback(context, recentLines = [], interactionStyle
   }
   const localHour = Math.max(0, Math.min(23, Number(context?.time?.localHour) || 0));
   if (localHour >= 23 || localHour < 6) {
-    statements.push('夜里安静下来以后，连细小的念头都会变得很清楚。伊珂丝会把声音放轻一点。');
+    statements.push('夜里安静下来以后，很多白天挤在一起的念头会慢慢分开。');
+    statements.push('这个时间还亮着的屏幕不多了，四周安静一点也挺好。');
+    statements.push('晚一点再决定也没关系，今晚不是所有事情都非要有答案。');
+    statements.push('嗯，夜深以后连时间都像走慢了半拍。');
     questions.push('这么晚还醒着，是舍不得结束今天，还是刚好没有睡意？');
+    questions.push('今晚有没有一件事，让你到现在还不想睡？');
   } else if (localHour < 11) {
-    statements.push('早上的思路通常最干净，先挑一件顺眼的小事开始就好。');
+    statements.push('早上的空气感总是干净一点，连脑子里的选项也没那么拥挤。');
+    statements.push('今天才刚开场，不用太早决定它最后会是什么样子。');
+    statements.push('嗯，先按自己的速度醒过来，早晨又不会偷偷跑掉。');
+    statements.push('新的一天像刚洗好的牌，暂时还看不出会抽到什么。');
     questions.push('今天醒来以后，有没有一件让你心情不错的小事？');
+    questions.push('今天第一件想做的事，和昨晚想的一样吗？');
   } else {
-    statements.push('偶尔留几分钟什么都不赶，也不算浪费时间。伊珂丝批准这段空白。');
-    statements.push('哼哼，日常里那些不起眼的小事，有时比大计划更值得记住。');
+    statements.push('嗯，下午的时间总有一点不上不下，照自己的节奏来就好。');
+    statements.push('不用把每一分钟都排满，空着的那几格也属于今天。');
+    statements.push('今天还没到结算画面，现在下结论可太早了。');
+    statements.push('哼哼，偶尔不按计划行动，也算给日常加一点随机数。');
+    statements.push('有些念头先放在那里，过一会儿反而会自己变清楚。');
+    statements.push('现在这样安静一会儿也不错，至少不用和谁比赛。');
     questions.push('今天有没有哪件小事，比你原先预想得顺利一点？');
     questions.push('如果现在可以暂时不管待办，你最想把几分钟花在哪里？');
+    questions.push('今天到现在，有没有一个瞬间让你觉得“还不错”？');
   }
   const candidates = interactionStyle === 'question'
     ? questions
     : interactionStyle === 'self-talk'
       ? statements
       : statements.concat(questions);
-  return candidates.find((line) => !repeatsRecentProactive(line, recentLines)) || candidates[0];
+  return candidates.find((line) => !repeatsRecentProactive(line, recentLines)) || '';
 }
 
 function proactiveReplyInventsMusicDetails(reply, context) {
@@ -2815,6 +2830,15 @@ function proactiveReplyInventsMusicDetails(reply, context) {
     (current.artist && String(reply || '').includes(current.artist));
   const unsupportedDescription = /(?:曲风|旋律|节奏|音色|声音|氛围|歌词|编曲|唱腔)|(?:这首歌|它).{0,16}(?:适合|温柔|治愈|热血|轻快|安静|忧伤|浪漫|有力|舒服|有趣|好听)/u.test(reply);
   return !mentionsCurrent || unsupportedDescription;
+}
+
+function proactiveReplyHasContextIssue(reply, context) {
+  const current = context?.music?.current;
+  const inventsWeather = /阳光|晴天|下雨|雨停|天气(?:不错|很好|很差)|外面(?:很冷|很热|起风)/u.test(reply);
+  const asksGenericMusic = !(current?.title && current.playing) &&
+    /(?:今天|现在)?.{0,6}(?:想|要).{0,5}(?:听|放).{0,8}(?:什么|哪).{0,6}(?:歌|音乐)/u.test(reply);
+  const staleTemplate = /伊珂丝批准|不算浪费时间|不起眼的小事.{0,12}大计划/u.test(reply);
+  return inventsWeather || asksGenericMusic || staleTemplate;
 }
 
 function providerToolCall(call) {
@@ -3308,8 +3332,15 @@ async function proactiveChat(request, body) {
   const interactionStyle = body?.interactionStyle === 'question'
     ? 'question'
     : body?.interactionStyle === 'self-talk' ? 'self-talk' : 'mixed';
+  let ownerState = null;
+  if (session) ownerState = (await loadOwnerState(session)).state;
+  const recentProactive = [...new Set([
+    ...recentProactiveLines(ownerState, body?.history),
+    ...cleanRecentProactiveLines(body?.recentProactive),
+  ])].slice(-MAX_RECENT_PROACTIVE_LINES);
   let hitokoto = sanitizeHitokoto(body?.hitokoto);
   if (requestedMode === 'hitokoto' && !hitokoto) hitokoto = sanitizeHitokoto(await fetchHitokoto());
+  if (hitokoto && repeatsRecentProactive(hitokoto, recentProactive)) hitokoto = '';
   if (hitokoto) {
     const proactiveMessage = newMessage('assistant', hitokoto, 'proactive', context);
     if (session) await persistOwnerMessages(session, [proactiveMessage]);
@@ -3327,12 +3358,6 @@ async function proactiveChat(request, body) {
       agent: agentControls(false),
     });
   }
-  let ownerState = null;
-  if (session) ownerState = (await loadOwnerState(session)).state;
-  const recentProactive = [
-    ...recentProactiveLines(ownerState, body?.history),
-    ...cleanRecentProactiveLines(body?.recentProactive),
-  ].slice(-6);
   const messages = [
     {role: 'system', content: [
       session ? WAIFU_OWNER_SYSTEM_PROMPT : WAIFU_VISITOR_SYSTEM_PROMPT,
@@ -3360,6 +3385,7 @@ async function proactiveChat(request, body) {
     (interactionStyle === 'self-talk' && proactiveQuestionCount !== 0) ||
     repeatsRecentProactive(reply, recentProactive) ||
     proactiveReplyInventsMusicDetails(reply, context) ||
+    proactiveReplyHasContextIssue(reply, context) ||
     /(?:要不要|需不需要|需要我|我可以帮你|可以帮你|不介意的话|想不想|要我来)/u.test(reply) ||
     /(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)|我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)|(?:主人|店长|你).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/.test(reply)) {
     reply = contextualProactiveFallback(context, recentProactive, interactionStyle);

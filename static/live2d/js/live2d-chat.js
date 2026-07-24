@@ -29,7 +29,7 @@
   function refreshRecentProactiveFromHistory() {
     recentProactive = history.filter(function (item) {
       return item && item.role === "assistant" && item.kind === "proactive";
-    }).slice(-6).map(function (item) {
+    }).slice(-24).map(function (item) {
       return String(item.content || "").trim().slice(0, 180);
     }).filter(Boolean);
   }
@@ -369,7 +369,7 @@
     if (!line) return;
     recentProactive = recentProactive.filter(function (item) { return item !== line; });
     recentProactive.push(line);
-    recentProactive = recentProactive.slice(-6);
+    recentProactive = recentProactive.slice(-24);
   }
 
   function nextProactiveMode() {
@@ -645,9 +645,11 @@
     clearProactiveTimer();
     nextProactiveAt = Infinity;
     var mode = nextProactiveMode();
-    var interactionStyle = mode === "context"
-      ? (contextProactiveCycle++ % 2 === 0 ? "self-talk" : "question")
-      : "";
+    var interactionStyle = "";
+    if (mode === "context") {
+      var recentQuestion = recentProactive.slice(-3).some(function (line) { return /[?？]/.test(line); });
+      interactionStyle = contextProactiveCycle++ % 5 === 4 && !recentQuestion ? "question" : "self-talk";
+    }
     var hitokoto = "";
     return ready.then(function () {
       if (mode !== "hitokoto") return "";
@@ -665,7 +667,7 @@
           hitokoto: hitokoto,
           mode: mode,
           interactionStyle: interactionStyle,
-          recentProactive: recentProactive.slice(-6)
+          recentProactive: recentProactive.slice(-24)
         })
       });
     }).then(function (payload) {
