@@ -26,6 +26,14 @@
   var lastActivityAt = Date.now();
   var nextProactiveAt = Infinity;
 
+  function refreshRecentProactiveFromHistory() {
+    recentProactive = history.filter(function (item) {
+      return item && item.role === "assistant" && item.kind === "proactive";
+    }).slice(-6).map(function (item) {
+      return String(item.content || "").trim().slice(0, 180);
+    }).filter(Boolean);
+  }
+
   function cleanLocalHistory(value) {
     if (!Array.isArray(value)) return [];
     return value.slice(-MAX_LOCAL_MESSAGES).map(function (item, index) {
@@ -370,7 +378,7 @@
       preferredProactiveMode = "";
       return preferred;
     }
-    var modes = ["context", "context", "hitokoto"];
+    var modes = ["context", "context", "context", "context", "hitokoto"];
     var mode = modes[proactiveCycle % modes.length];
     proactiveCycle += 1;
     return mode;
@@ -385,12 +393,39 @@
     }
   }
 
+  function currentArticleContext(heading) {
+    var root = document.querySelector(".theme-doc-markdown, [itemprop='articleBody']");
+    if (!root) return null;
+    var section = "";
+    var threshold = Math.min(window.innerHeight * 0.38, 320);
+    root.querySelectorAll("h2, h3").forEach(function (node) {
+      if (node.getBoundingClientRect().top <= threshold) section = node.textContent.trim();
+    });
+    var excerpt = "";
+    var blocks = Array.prototype.slice.call(root.querySelectorAll("p, li"));
+    var visible = blocks.find(function (node) {
+      var rect = node.getBoundingClientRect();
+      return rect.bottom > 72 && rect.top < window.innerHeight * 0.82 && node.textContent.trim().length >= 20;
+    });
+    if (!visible) visible = blocks.find(function (node) { return node.textContent.trim().length >= 20; });
+    if (visible) excerpt = visible.textContent.replace(/\s+/g, " ").trim().slice(0, 480);
+    return {
+      title: heading || document.title,
+      section: section,
+      excerpt: excerpt
+    };
+  }
+
   function currentPageContext() {
     var heading = document.querySelector("main h1, article h1, .theme-doc-markdown h1");
+    var headingText = heading ? heading.textContent.trim() : "";
+    var article = currentArticleContext(headingText);
     return {
       path: location.pathname + location.search,
       title: document.title,
-      heading: heading ? heading.textContent.trim() : ""
+      heading: headingText,
+      type: article ? "article" : location.pathname.indexOf("/music") === 0 ? "music" : "page",
+      article: article
     };
   }
 
@@ -411,6 +446,7 @@
       time: {
         iso: now.toISOString(),
         localText: now.toLocaleString(),
+        localHour: now.getHours(),
         timezone: timezone,
         weekday: now.toLocaleDateString(undefined, {weekday: "long"})
       },
@@ -523,6 +559,7 @@
       // 登录前的访客对话不上传。管理员只读取并续写本人已认证的云端记录。
       history = cleanLocalHistory(payload.history);
     }
+    refreshRecentProactiveFromHistory();
     initialized = true;
     applyAgentControls(payload, 20 * 1000);
     updatePersistenceLabel();

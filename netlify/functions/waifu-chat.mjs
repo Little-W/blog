@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.21';
+const AGENT_RUNTIME_VERSION = '2026-07-24.22';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -238,8 +238,10 @@ export const WAIFU_SYSTEM_PROMPT = WAIFU_OWNER_SYSTEM_PROMPT;
 const PROACTIVE_INSTRUCTIONS = [
   '你正在执行用户已经开启的“定时主动陪伴”。页面可见时应当自然开口，而不是再次判断是否要说话。',
   '输出格式固定为 {"speak":true,"text":"..."}。text 写一至两句自然、具体、不重复的简体中文，通常不超过 70 个字，不解释触发过程。',
-  '主动台词可以是伊珂丝带着研究天才和小恶魔气质的一句自言自语，也可以是对用户说的话。可以偶尔问一个轻松、容易回答且与当前资料有关的问题，但不能连续提问，不能使用“需要我吗”“有什么可以帮你”等客服句式。',
-  '若正在播放音乐，可以结合真实歌名、歌手或播放状态；否则可以结合页面标题、最近对话、当前时间或伊珂丝自身的稳定喜好。不要编造歌曲风格、文章内容、用户阅读进度或现实环境。',
+  '主动交流的主要内容依次是：当前正在播放的歌曲、当前正在阅读的文章、自然的日常交流。不要把项目进度、网页状态或角色设定介绍当成固定话题。',
+  '主动台词可以是伊珂丝带着研究天才和小恶魔气质的一句自言自语，也可以直接和用户说话。可以偶尔问一个轻松、容易回答且与当前资料有关的问题，但不能连续提问，不能使用“需要我吗”“有什么可以帮你”等客服句式。',
+  '若正在播放音乐，可以结合资料中真实的歌名、歌手和播放状态交流；若正在阅读文章，可以围绕真实标题、当前小节或给出的正文片段说一句具体观察。没有这些内容时，以问候、近况、心情和轻松琐事等日常交流为主。',
+  '不要编造歌曲风格、歌词、文章内容、用户阅读进度或现实环境。文章正文片段只作为本轮资料，不能推断片段之外的结论。',
   '不得虚构伊珂丝刚刚或最近听过、看过、做过现实中的事情。资料较少时可以自然地想起数独、游戏、实验或 JOKER，但不要每次都提角色设定，也不能只复述路径。',
   '不要使用“你还在看某页面”“店长还在某页面”这种只复述页面状态的模板，也不要重复最近已经说过的主动台词。',
 ].join('\n');
@@ -873,6 +875,7 @@ function cleanDate(value) {
 function cleanContext(value) {
   const source = value && typeof value === 'object' ? value : {};
   const page = source.page && typeof source.page === 'object' ? source.page : {};
+  const article = page.article && typeof page.article === 'object' ? page.article : null;
   const time = source.time && typeof source.time === 'object' ? source.time : {};
   const activity = source.activity && typeof source.activity === 'object' ? source.activity : {};
   const music = source.music && typeof source.music === 'object' ? source.music : {};
@@ -888,6 +891,7 @@ function cleanContext(value) {
     time: {
       iso: cleanDate(time.iso),
       localText: cleanText(time.localText, 80),
+      localHour: Math.max(0, Math.min(23, Math.trunc(Number(time.localHour) || 0))),
       timezone: cleanText(time.timezone, 64),
       weekday: cleanText(time.weekday, 16),
     },
@@ -895,6 +899,12 @@ function cleanContext(value) {
       path: cleanText(page.path, 240),
       title: cleanText(page.title, 160),
       heading: cleanText(page.heading, 160),
+      type: page.type === 'article' ? 'article' : page.type === 'music' ? 'music' : 'page',
+      article: article ? {
+        title: cleanText(article.title, 180),
+        section: cleanText(article.section, 180),
+        excerpt: cleanText(article.excerpt, 600),
+      } : null,
     },
     music: {
       current: current ? {
@@ -2689,6 +2699,17 @@ function runtimePrompt(context) {
   ].join('\n');
 }
 
+function proactiveFocusPrompt(context) {
+  const current = context?.music?.current;
+  if (current?.title && current.playing) {
+    return '本轮优先围绕当前正在播放的歌曲做自然交流。只能使用运行资料里的歌名、歌手和播放状态，不得猜测曲风、歌词或用户感受。';
+  }
+  if (context?.page?.article?.title || context?.page?.type === 'article') {
+    return '本轮优先围绕用户正在阅读的文章交流。使用文章标题、当前小节和正文片段中的具体内容；没有出现在资料里的技术结论不要自行补充。';
+  }
+  return '本轮采用自然的日常交流。可以谈当下的时间、轻松近况或一句自言自语，不要汇报网页状态，不要强行转到技术项目、角色履历或服务功能。';
+}
+
 function recentModelHistory(state, fallbackHistory) {
   if (!state) return cleanHistory(fallbackHistory);
   return cleanHistory(state.messages, MAX_HISTORY_ITEMS);
@@ -2749,20 +2770,36 @@ function contextualProactiveFallback(context, recentLines = [], interactionStyle
   const current = context?.music?.current;
   if (current?.title && current.playing) {
     const track = current.artist ? `${current.artist} 的《${current.title}》` : `《${current.title}》`;
-    statements.push(`现在播放的是 ${track}，播放器状态已经确认，伊珂丝也看清歌名了的说。`);
-    statements.push(`现在轮到《${current.title}》了，歌单的选择还算不错的说。`);
-    questions.push(`《${current.title}》已经接上播放器了。你会让它留在队列里，还是听完就换一首？`);
+    statements.push(`${track}正在播放。哼哼，这次歌名和歌手都核对清楚了的说。`);
+    statements.push(`现在是《${current.title}》的时间，先让它把播放器占一会儿。`);
+    questions.push(`现在放到《${current.title}》了。你是特意选的，还是让队列自己走到这里的？`);
+    questions.push(`《${current.title}》正在播放。你更留意这首歌的哪一段？`);
   }
-  const heading = cleanText(context?.page?.heading || context?.page?.title, 80)
+  const article = context?.page?.article;
+  const heading = cleanText(article?.title || context?.page?.heading || context?.page?.title, 80)
     .replace(/\s*[-|｜]\s*Yusen(?:の小站)?\s*$/iu, '');
-  if (heading) {
+  const section = cleanText(article?.section, 100);
+  if (article && heading) {
+    if (section && section !== heading) {
+      statements.push(`读到“${section}”这一节了。先把这里的定义和前后关系理顺，后面的内容会清楚很多。`);
+      questions.push(`现在读到“${section}”。这一节里，你更想先弄清定义还是实现细节？`);
+    }
     statements.push(`《${heading}》这一页值得慢慢拆开看，跳过细节可骗不过伊珂丝。`);
-    statements.push(`现在的页面是《${heading}》，伊珂丝会替你盯住容易漏掉的细节。`);
-    questions.push(`《${heading}》摆在这里了。你现在最想先弄清楚哪一小块？`);
+    questions.push(`《${heading}》读到这里，有没有哪一处和你原先的理解不一样？`);
   }
-  statements.push('隔一会儿换个角度再看，刚才漏掉的细节往往就会自己冒出来的说。');
-  statements.push('唔，安静的时候最适合把脑中的变量重新排整齐。伊珂丝暂时没有偷改实验条件。');
-  questions.push('要是把现在当成一局游戏，你觉得进度条走到哪一格了？');
+  const localHour = Math.max(0, Math.min(23, Number(context?.time?.localHour) || 0));
+  if (localHour >= 23 || localHour < 6) {
+    statements.push('夜里安静下来以后，连细小的念头都会变得很清楚。伊珂丝会把声音放轻一点。');
+    questions.push('这么晚还醒着，是舍不得结束今天，还是刚好没有睡意？');
+  } else if (localHour < 11) {
+    statements.push('早上的思路通常最干净，先挑一件顺眼的小事开始就好。');
+    questions.push('今天醒来以后，有没有一件让你心情不错的小事？');
+  } else {
+    statements.push('偶尔留几分钟什么都不赶，也不算浪费时间。伊珂丝批准这段空白。');
+    statements.push('哼哼，日常里那些不起眼的小事，有时比大计划更值得记住。');
+    questions.push('今天有没有哪件小事，比你原先预想得顺利一点？');
+    questions.push('如果现在可以暂时不管待办，你最想把几分钟花在哪里？');
+  }
   const candidates = interactionStyle === 'question'
     ? questions
     : interactionStyle === 'self-talk'
@@ -3298,6 +3335,7 @@ async function proactiveChat(request, body) {
       PROACTIVE_INSTRUCTIONS,
       memoryPrompt(ownerState),
       runtimePrompt(context),
+      proactiveFocusPrompt(context),
       interactionStyle === 'question'
         ? '本轮主动形态是轻量互动：自然问一个与现有资料有关、容易回答的问题。'
         : interactionStyle === 'self-talk'

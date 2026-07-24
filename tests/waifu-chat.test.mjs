@@ -529,7 +529,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, false);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-24.21');
+    assert.equal(payload.runtimeVersion, '2026-07-24.22');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(payload.message.kind, 'proactive');
     assert.equal(payload.message.content, payload.reply);
@@ -575,7 +575,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-24.21');
+    assert.equal(payload.runtimeVersion, '2026-07-24.22');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -601,13 +601,13 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-24.21');
+    assert.equal(payload.runtimeVersion, '2026-07-24.22');
     assert.equal(payload.message.kind, 'proactive');
     assert.equal(payload.message.content, payload.reply);
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
-    assert.match(payload.reply, /播放器状态已经确认/);
+    assert.match(payload.reply, /歌名和歌手都核对清楚/);
     assert.equal(store.writes, 0);
 
     globalThis.fetch = async () => Response.json({
@@ -626,7 +626,56 @@ test('waifu chat persistence and role prompts', async (t) => {
     const servicePayload = await bodyOf(serviceResponse);
     assert.equal(servicePayload.silent, false);
     assert.doesNotMatch(servicePayload.reply, /我可以帮你|不介意的话/);
-    assert.match(servicePayload.reply, /音乐收藏/);
+    assert.match(servicePayload.reply, /夜里|安静|日常|小事|空白/u);
+  });
+
+  await t.test('阅读文章时主动交流优先使用当前小节与正文片段', async () => {
+    const store = new MemoryStore();
+    const calls = [];
+    globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
+    globalThis.fetch = async (_url, options) => {
+      const requestPayload = JSON.parse(options.body);
+      calls.push(requestPayload);
+      return Response.json({
+        model: 'Qwen/Qwen3-8B',
+        choices: [{message: {content: JSON.stringify({
+          speak: true,
+          text: 'LMUL 不只是一个倍率数字，它还会改变向量寄存器组的组织方式的说。',
+        })}}],
+      });
+    };
+    const response = await handler(request('/api/waifu-chat/proactive', {
+      method: 'POST',
+      address: 'guest-article-proactive',
+      body: {
+        mode: 'context',
+        interactionStyle: 'self-talk',
+        context: {
+          page: {
+            type: 'article',
+            title: 'RISC-V Zve32x：嵌入式整数向量扩展',
+            heading: 'RISC-V Zve32x：嵌入式整数向量扩展',
+            article: {
+              title: 'RISC-V Zve32x：嵌入式整数向量扩展',
+              section: 'LMUL 与寄存器组',
+              excerpt: 'LMUL 表示一个逻辑向量寄存器组占用的物理向量寄存器数量。',
+            },
+          },
+          music: {current: null},
+          time: {localHour: 15},
+        },
+      },
+    }));
+    const payload = await bodyOf(response);
+    assert.equal(response.status, 200);
+    assert.equal(payload.silent, false);
+    assert.match(payload.reply, /LMUL|寄存器组/u);
+    const systemText = calls[0].messages.filter((message) => message.role === 'system')
+      .map((message) => String(message.content || '')).join('\n');
+    assert.match(systemText, /本轮优先围绕用户正在阅读的文章交流/u);
+    assert.match(systemText, /LMUL 与寄存器组/u);
+    assert.match(systemText, /逻辑向量寄存器组占用的物理向量寄存器数量/u);
+    assert.doesNotMatch(payload.reply, /播放|歌曲|曲库/u);
   });
 
   await t.test('主动陪伴允许一次贴合上下文的问题并保持伊珂丝口吻', async () => {
@@ -1136,7 +1185,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-24.21');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-24.22');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
