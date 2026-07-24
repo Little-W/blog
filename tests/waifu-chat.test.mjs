@@ -473,7 +473,10 @@ test('waifu chat persistence and role prompts', async (t) => {
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
       cookie: ownerCookie(91), address: 'owner-proactive-history',
     })));
-    assert.deepEqual(history.history, []);
+    assert.equal(history.history.length, 1);
+    assert.equal(history.history[0].kind, 'proactive');
+    assert.equal(history.history[0].content, state.messages[0].content);
+    assert.equal((await bodyOf(ownerResponse)).message.id, history.history[0].id);
   });
 
   await t.test('重复的主动台词会改用上下文兜底且不会污染普通对话上下文', async () => {
@@ -509,7 +512,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(store.entries.get('owner/92/memory-v1.json').data.messages.length, 4);
   });
 
-  await t.test('一言只转述原文且不会调用模型或写入对话记录', async () => {
+  await t.test('一言只转述原文且会写入主动对话记录但不调用模型', async () => {
     const store = new MemoryStore();
     const calls = [];
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -523,17 +526,22 @@ test('waifu chat persistence and role prompts', async (t) => {
     const payload = await bodyOf(response);
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
-    assert.equal(payload.ephemeral, true);
+    assert.equal(payload.ephemeral, false);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-24.20');
+    assert.equal(payload.runtimeVersion, '2026-07-24.21');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
+    assert.equal(payload.message.kind, 'proactive');
+    assert.equal(payload.message.content, payload.reply);
     assert.equal(calls.length, 0);
     const history = await bodyOf(await handler(request('/api/waifu-chat/history', {
       cookie: ownerCookie(93), address: 'owner-hitokoto-history',
     })));
-    assert.deepEqual(history.history, []);
-    assert.equal(store.writes, 0);
+    assert.equal(history.history.length, 1);
+    assert.equal(history.history[0].kind, 'proactive');
+    assert.equal(history.history[0].content, payload.reply);
+    assert.equal(history.history[0].id, payload.message.id);
+    assert.ok(store.writes >= 1);
 
     const sanitizedResponse = await handler(request('/api/waifu-chat/proactive', {
       method: 'POST',
@@ -567,7 +575,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-24.20');
+    assert.equal(payload.runtimeVersion, '2026-07-24.21');
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
@@ -593,7 +601,9 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-24.20');
+    assert.equal(payload.runtimeVersion, '2026-07-24.21');
+    assert.equal(payload.message.kind, 'proactive');
+    assert.equal(payload.message.content, payload.reply);
     assert.match(payload.reply, /ANIMA/);
     assert.match(payload.reply, /ReoNa/);
     assert.doesNotMatch(payload.reply, /午后|适合/);
@@ -662,7 +672,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.match(selfTalk.reply, /音乐收藏|伊珂丝|细节/u);
   });
 
-  await t.test('用户可以自然承接待机提问且临时台词不会写入对话历史', async () => {
+  await t.test('用户可以承接已记录的待机提问且主动台词不会写入用户记忆', async () => {
     const store = new MemoryStore();
     const calls = [];
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
@@ -1126,7 +1136,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-24.20');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-24.21');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);

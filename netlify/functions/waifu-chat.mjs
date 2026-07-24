@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.20';
+const AGENT_RUNTIME_VERSION = '2026-07-24.21';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -3270,16 +3270,19 @@ async function proactiveChat(request, body) {
   let hitokoto = sanitizeHitokoto(body?.hitokoto);
   if (requestedMode === 'hitokoto' && !hitokoto) hitokoto = sanitizeHitokoto(await fetchHitokoto());
   if (hitokoto) {
+    const proactiveMessage = newMessage('assistant', hitokoto, 'proactive', context);
+    if (session) await persistOwnerMessages(session, [proactiveMessage]);
     return json({
       success: true,
       reply: hitokoto,
       silent: false,
-      ephemeral: true,
+      ephemeral: false,
       model: 'backend/hitokoto-relay',
       proactiveMode: 'hitokoto',
       runtimeVersion: AGENT_RUNTIME_VERSION,
       persistence: session ? 'blob' : 'local',
       owner: Boolean(session),
+      message: publicMessage(proactiveMessage),
       agent: agentControls(false),
     });
   }
@@ -3320,9 +3323,8 @@ async function proactiveChat(request, body) {
     reply = contextualProactiveFallback(context, recentProactive, interactionStyle);
   }
   const silent = !reply;
-  if (session && !silent) {
-    await persistOwnerMessages(session, [newMessage('assistant', reply, 'proactive', context)]);
-  }
+  const proactiveMessage = silent ? null : newMessage('assistant', reply, 'proactive', context);
+  if (session && proactiveMessage) await persistOwnerMessages(session, [proactiveMessage]);
   return json({
     success: true,
     reply,
@@ -3334,18 +3336,23 @@ async function proactiveChat(request, body) {
     persistence: session ? 'blob' : 'local',
     owner: Boolean(session),
     ephemeral: false,
+    ...(proactiveMessage ? {message: publicMessage(proactiveMessage)} : {}),
     agent: agentControls(false),
   });
 }
 
-function publicHistory(state) {
-  return state.messages.filter((message) => message.kind !== 'proactive').slice(-MAX_RETURNED_MESSAGES).map((message) => ({
+function publicMessage(message) {
+  return {
     id: message.id,
     role: message.role,
     content: message.content,
     kind: message.kind,
     createdAt: message.createdAt,
-  }));
+  };
+}
+
+function publicHistory(state) {
+  return state.messages.slice(-MAX_RETURNED_MESSAGES).map(publicMessage);
 }
 
 async function getHistory(request) {

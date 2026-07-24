@@ -32,12 +32,11 @@
       var role = item && item.role === "assistant" ? "assistant" : item && item.role === "user" ? "user" : "";
       var content = item && typeof item.content === "string" ? item.content.trim().slice(0, 1200) : "";
       if (!role || !content) return null;
-      if (item.kind === "proactive") return null;
       return {
         id: item.id || "local-" + Date.now().toString(36) + "-" + index.toString(36),
         role: role,
         content: content,
-        kind: "chat",
+        kind: item.kind === "proactive" ? "proactive" : "chat",
         createdAt: item.createdAt || new Date().toISOString()
       };
     }).filter(Boolean);
@@ -73,6 +72,24 @@
       kind: kind === "proactive" ? "proactive" : "chat",
       createdAt: new Date().toISOString()
     };
+  }
+
+  function recordProactiveMessage(payload, reply) {
+    var source = payload && payload.message && typeof payload.message === "object" ? payload.message : null;
+    var item = source ? {
+      id: String(source.id || "").trim() || newLocalMessage("assistant", reply, "proactive").id,
+      role: "assistant",
+      content: String(source.content || reply || "").trim().slice(0, 1200),
+      kind: "proactive",
+      createdAt: source.createdAt || new Date().toISOString()
+    } : newLocalMessage("assistant", reply, "proactive");
+    if (!item.content || history.some(function (message) { return message.id === item.id; })) return null;
+    history.push(item);
+    history = history.slice(-MAX_LOCAL_MESSAGES);
+    saveLocalHistory();
+    if (!panel.hidden) appendMessage("assistant", item.content, false, item);
+    updateHistoryButtons();
+    return item;
   }
 
   function iconButton(className, label, svg) {
@@ -621,6 +638,7 @@
       var reply = String(payload.reply || "").trim();
       if (!payload.silent && reply) {
         rememberProactiveLine(reply);
+        recordProactiveMessage(payload, reply);
         showProactiveMessage(reply);
       }
       return true;
@@ -629,6 +647,7 @@
       var fallback = localHitokotoFallback(hitokoto);
       if (fallback) {
         rememberProactiveLine(fallback);
+        recordProactiveMessage(null, fallback);
         showProactiveMessage(fallback);
         return true;
       }
