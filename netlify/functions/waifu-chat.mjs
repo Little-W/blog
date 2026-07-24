@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.25';
+const AGENT_RUNTIME_VERSION = '2026-07-24.26';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -239,9 +239,10 @@ export const WAIFU_SYSTEM_PROMPT = WAIFU_OWNER_SYSTEM_PROMPT;
 const PROACTIVE_INSTRUCTIONS = [
   '你正在执行用户已经开启的“定时主动陪伴”。页面可见时应当自然开口，而不是再次判断是否要说话。',
   '输出格式固定为 {"speak":true,"text":"..."}。text 写一至两句自然、具体、不重复的简体中文，通常不超过 70 个字，不解释触发过程。',
-  '主动交流的主要内容依次是：当前正在播放的歌曲、当前正在阅读的文章、自然的日常交流。不要把项目进度、网页状态或角色设定介绍当成固定话题。',
+  '主动交流以当前正在阅读的文章和自然的日常交流为主。不要把项目进度、网页状态、播放器状态或角色设定介绍当成固定话题。',
   '主动台词可以是伊珂丝带着研究天才和小恶魔气质的一句自言自语，也可以直接和用户说话。可以偶尔问一个轻松、容易回答且与当前资料有关的问题，但不能连续提问，不能使用“需要我吗”“有什么可以帮你”等客服句式。',
-  '若正在播放音乐，可以结合资料中真实的歌名、歌手和播放状态交流；若正在阅读文章，可以围绕真实标题、当前小节或给出的正文片段说一句具体观察。没有这些内容时，以问候、近况、心情和轻松琐事等日常交流为主。',
+  '主动台词不得播报正在播放的歌名、歌手或播放状态，也不要询问歌曲是手动选择还是由队列切换、用户留意歌曲哪一段。只有用户在普通对话中主动谈论音乐时，才回应对应内容。',
+  '若正在阅读文章，可以围绕真实标题、当前小节或给出的正文片段说一句具体观察。没有文章内容时，以问候、近况、心情和轻松琐事等日常交流为主。',
   '不要编造歌曲风格、歌词、文章内容、用户阅读进度或现实环境。文章正文片段只作为本轮资料，不能推断片段之外的结论。',
   '日常交流要像随口说出的真话，少用问句，避免鸡汤、格言和主持人口吻。不要反复使用“伊珂丝批准”“不算浪费时间”“不起眼的小事”“大计划”等模板。',
   '不得虚构伊珂丝刚刚或最近听过、看过、做过现实中的事情。资料较少时可以自然地想起数独、游戏、实验或 JOKER，但不要每次都提角色设定，也不能只复述路径。',
@@ -2702,14 +2703,16 @@ function runtimePrompt(context) {
 }
 
 function proactiveFocusPrompt(context) {
-  const current = context?.music?.current;
-  if (current?.title && current.playing) {
-    return '本轮优先围绕当前正在播放的歌曲做自然交流。只能使用运行资料里的歌名、歌手和播放状态，不得猜测曲风、歌词或用户感受。';
-  }
   if (context?.page?.article?.title || context?.page?.type === 'article') {
     return '本轮优先围绕用户正在阅读的文章交流。使用文章标题、当前小节和正文片段中的具体内容；没有出现在资料里的技术结论不要自行补充。';
   }
-  return '本轮采用自然的日常交流。可以谈当下的时间、轻松近况或一句自言自语，不要汇报网页状态，不要强行转到技术项目、角色履历或服务功能。';
+  return '本轮采用自然的日常交流。可以谈当下的时间、轻松近况或一句自言自语，不要汇报网页或播放器状态，不要强行转到技术项目、角色履历或服务功能。';
+}
+
+function proactiveRuntimeContext(context) {
+  if (!context || typeof context !== 'object') return {};
+  const {music: _music, ...rest} = context;
+  return rest;
 }
 
 function recentModelHistory(state, fallbackHistory) {
@@ -2769,14 +2772,6 @@ function sanitizeHitokoto(value) {
 function contextualProactiveFallback(context, recentLines = [], interactionStyle = 'mixed') {
   const statements = [];
   const questions = [];
-  const current = context?.music?.current;
-  if (current?.title && current.playing) {
-    const track = current.artist ? `${current.artist} 的《${current.title}》` : `《${current.title}》`;
-    statements.push(`${track}正在播放。哼哼，这次歌名和歌手都核对清楚了的说。`);
-    statements.push(`现在是《${current.title}》的时间，先让它把播放器占一会儿。`);
-    questions.push(`现在放到《${current.title}》了。你是特意选的，还是让队列自己走到这里的？`);
-    questions.push(`《${current.title}》正在播放。你更留意这首歌的哪一段？`);
-  }
   const article = context?.page?.article;
   const heading = cleanText(article?.title || context?.page?.heading || context?.page?.title, 80)
     .replace(/\s*[-|｜]\s*Yusen(?:の小站)?\s*$/iu, '');
@@ -2823,13 +2818,15 @@ function contextualProactiveFallback(context, recentLines = [], interactionStyle
   return candidates.find((line) => !repeatsRecentProactive(line, recentLines)) || '';
 }
 
-function proactiveReplyInventsMusicDetails(reply, context) {
+function proactiveReplyHasPlaybackCommentary(reply, context) {
   const current = context?.music?.current;
-  if (!current?.title || !current.playing) return false;
-  const mentionsCurrent = String(reply || '').includes(current.title) ||
-    (current.artist && String(reply || '').includes(current.artist));
-  const unsupportedDescription = /(?:曲风|旋律|节奏|音色|声音|氛围|歌词|编曲|唱腔)|(?:这首歌|它).{0,16}(?:适合|温柔|治愈|热血|轻快|安静|忧伤|浪漫|有力|舒服|有趣|好听)/u.test(reply);
-  return !mentionsCurrent || unsupportedDescription;
+  const text = String(reply || '');
+  const mentionsCurrent = Boolean(current?.playing && (
+    (current.title && text.includes(current.title)) ||
+    (current.artist && text.includes(current.artist))
+  ));
+  return mentionsCurrent ||
+    /(?:正在播放|现在放到|当前播放|播放器.{0,8}(?:正在|放着)|歌名和歌手|队列.{0,12}(?:走到|切到|播放)|这首歌.{0,12}(?:哪一段|哪部分|为什么|怎么选|特意选)|你.{0,8}(?:手动|特意).{0,8}(?:选|点).{0,6}(?:歌|歌曲))/u.test(text);
 }
 
 function proactiveReplyHasContextIssue(reply, context) {
@@ -3360,7 +3357,7 @@ async function proactiveChat(request, body) {
       session ? WAIFU_OWNER_SYSTEM_PROMPT : WAIFU_VISITOR_SYSTEM_PROMPT,
       PROACTIVE_INSTRUCTIONS,
       memoryPrompt(ownerState),
-      runtimePrompt(context),
+      runtimePrompt(proactiveRuntimeContext(context)),
       proactiveFocusPrompt(context),
       interactionStyle === 'question'
         ? '本轮主动形态是轻量互动：自然问一个与现有资料有关、容易回答的问题。'
@@ -3381,7 +3378,7 @@ async function proactiveChat(request, body) {
     (interactionStyle === 'question' && proactiveQuestionCount !== 1) ||
     (interactionStyle === 'self-talk' && proactiveQuestionCount !== 0) ||
     repeatsRecentProactive(reply, recentProactive) ||
-    proactiveReplyInventsMusicDetails(reply, context) ||
+    proactiveReplyHasPlaybackCommentary(reply, context) ||
     proactiveReplyHasContextIssue(reply, context) ||
     /(?:要不要|需不需要|需要我|我可以帮你|可以帮你|不介意的话|想不想|要我来)/u.test(reply) ||
     /(?:现在|此刻)?(?:很)?适合(?:说|开口)|(?:^|[，。])\s*(?:可以开口|应该说)|我(?:刚刚|刚才|最近|也有在)(?:听|看|读|泡|等)|(?:主人|店长|你).{0,5}还在(?:看|浏览|阅读).{0,12}(?:页面|网页|文章)/.test(reply)) {

@@ -595,7 +595,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(payload.ephemeral, true);
     assert.equal(payload.model, 'backend/hitokoto-relay');
     assert.equal(payload.proactiveMode, 'hitokoto');
-    assert.equal(payload.runtimeVersion, '2026-07-24.25');
+    assert.equal(payload.runtimeVersion, '2026-07-24.26');
     assert.equal(payload.reply, '不要着急，最好的总会在最不经意的时候出现。');
     assert.equal(payload.message, undefined);
     assert.equal(calls.length, 0);
@@ -637,23 +637,27 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.proactiveMode, 'hitokoto');
     assert.equal(payload.model, 'backend/hitokoto-relay');
-    assert.equal(payload.runtimeVersion, '2026-07-24.25');
+    assert.equal(payload.runtimeVersion, '2026-07-24.26');
     assert.equal(payload.message, undefined);
     assert.equal(payload.reply, '世界以痛吻我，要我报之以歌。');
     assert.equal(calls.length, 1);
     assert.equal(store.writes, 0);
   });
 
-  await t.test('模型虚构音乐氛围时改用真实播放器状态生成评论', async () => {
+  await t.test('主动陪伴不播报当前歌曲或询问播放器状态', async () => {
     const store = new MemoryStore();
+    let proactiveRequest = null;
     globalThis.__YUSEN_WAIFU_MEMORY_STORE__ = store;
-    globalThis.fetch = async () => Response.json({
-      model: 'Qwen/Qwen3-8B',
-      choices: [{message: {content: JSON.stringify({
-        speak: true,
-        text: '这首歌的旋律很有趣，你常听 ReoNa 的歌吗？',
-      })}}],
-    });
+    globalThis.fetch = async (_url, options) => {
+      proactiveRequest = JSON.parse(options.body);
+      return Response.json({
+        model: 'Qwen/Qwen3-8B',
+        choices: [{message: {content: JSON.stringify({
+          speak: true,
+          text: '这首歌的旋律很有趣，你常听 ReoNa 的歌吗？',
+        })}}],
+      });
+    };
     const response = await handler(request('/api/waifu-chat/proactive', {
       method: 'POST', address: 'guest-context-proactive', body: {
         mode: 'context',
@@ -667,13 +671,16 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(response.status, 200);
     assert.equal(payload.silent, false);
     assert.equal(payload.proactiveMode, 'context');
-    assert.equal(payload.runtimeVersion, '2026-07-24.25');
+    assert.equal(payload.runtimeVersion, '2026-07-24.26');
     assert.equal(payload.message.kind, 'proactive');
     assert.equal(payload.message.content, payload.reply);
-    assert.match(payload.reply, /ANIMA/);
-    assert.match(payload.reply, /ReoNa/);
-    assert.doesNotMatch(payload.reply, /旋律|有趣|午后|适合/u);
-    assert.match(payload.reply, /歌名和歌手都核对清楚/);
+    assert.doesNotMatch(payload.reply, /ANIMA|ReoNa|旋律|这首歌|正在播放|现在放到|歌名和歌手|队列/u);
+    assert.match(payload.reply, /下午|时间|今天|念头|安静|日常/u);
+    const proactiveSystem = proactiveRequest.messages.filter((message) => message.role === 'system')
+      .map((message) => String(message.content || '')).join('\n');
+    const proactiveRuntime = proactiveSystem.match(/<runtime_context>(.*?)<\/runtime_context>/su)?.[1] || '';
+    assert.doesNotMatch(proactiveRuntime, /ANIMA|ReoNa|music/u);
+    assert.match(proactiveSystem, /不得播报正在播放的歌名、歌手或播放状态/u);
     assert.equal(store.writes, 0);
 
     globalThis.fetch = async () => Response.json({
@@ -1251,7 +1258,7 @@ test('waifu chat persistence and role prompts', async (t) => {
     assert.equal(modelCalls, 0);
     assert.equal(responsePayload.model, 'backend/music-search');
     assert.equal(responsePayload.toolStatus, 'called');
-    assert.equal(responsePayload.runtimeVersion, '2026-07-24.25');
+    assert.equal(responsePayload.runtimeVersion, '2026-07-24.26');
     assert.equal(responsePayload.retrieval.query, 'ReoNa ANIMA');
     assert.match(responsePayload.reply, /《ANIMA》/);
     assert.doesNotMatch(responsePayload.reply, /irony|ひらひら/);
