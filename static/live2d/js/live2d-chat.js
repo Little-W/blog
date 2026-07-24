@@ -677,7 +677,9 @@
       var reply = String(payload.reply || "").trim();
       if (!payload.silent && reply) {
         rememberProactiveLine(reply);
-        recordProactiveMessage(payload, reply);
+        if (payload.proactiveMode !== "hitokoto" && payload.ephemeral !== true) {
+          recordProactiveMessage(payload, reply);
+        }
         showProactiveMessage(reply);
       }
       return true;
@@ -686,7 +688,6 @@
       var fallback = localHitokotoFallback(hitokoto);
       if (fallback) {
         rememberProactiveLine(fallback);
-        recordProactiveMessage(null, fallback);
         showProactiveMessage(fallback);
         return true;
       }

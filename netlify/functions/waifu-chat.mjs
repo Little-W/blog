@@ -5,7 +5,7 @@ import musicHandler from './music.mjs';
 const SILICONFLOW_ENDPOINT = 'https://api.siliconflow.cn/v1/chat/completions';
 const DEFAULT_MODEL = 'THUDM/GLM-4-9B-0414';
 const DEFAULT_TOOL_MODEL = 'Qwen/Qwen3-8B';
-const AGENT_RUNTIME_VERSION = '2026-07-24.24';
+const AGENT_RUNTIME_VERSION = '2026-07-24.25';
 const SESSION_COOKIE = 'blog_admin_session';
 const MEMORY_STORE_NAME = 'waifu-agent-memory';
 const MEMORY_SCHEMA_VERSION = 1;
@@ -3342,19 +3342,16 @@ async function proactiveChat(request, body) {
   if (requestedMode === 'hitokoto' && !hitokoto) hitokoto = sanitizeHitokoto(await fetchHitokoto());
   if (hitokoto && repeatsRecentProactive(hitokoto, recentProactive)) hitokoto = '';
   if (hitokoto) {
-    const proactiveMessage = newMessage('assistant', hitokoto, 'proactive', context);
-    if (session) await persistOwnerMessages(session, [proactiveMessage]);
     return json({
       success: true,
       reply: hitokoto,
       silent: false,
-      ephemeral: false,
+      ephemeral: true,
       model: 'backend/hitokoto-relay',
       proactiveMode: 'hitokoto',
       runtimeVersion: AGENT_RUNTIME_VERSION,
       persistence: session ? 'blob' : 'local',
       owner: Boolean(session),
-      message: publicMessage(proactiveMessage),
       agent: agentControls(false),
     });
   }
