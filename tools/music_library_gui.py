@@ -111,6 +111,16 @@ def safe_file_name(value: str, fallback: str = 'untitled', max_bytes: int = 180)
     return ''.join(prefix).rstrip(' .') + suffix
 
 
+def safe_file_name_with_extension(value: str, max_bytes: int = 180) -> str:
+    """Shorten a sidecar filename without dropping its extension."""
+    suffix = Path(value).suffix
+    if len(value.encode('utf-8')) <= max_bytes:
+        return safe_file_name(value, max_bytes=max_bytes)
+    stem = Path(value).stem
+    stem_limit = max_bytes - len(suffix.encode('utf-8'))
+    return safe_file_name(stem, max_bytes=stem_limit) + suffix
+
+
 def metadata_value(tags: Any, keys: Iterable[str]) -> str:
     if not tags:
         return ''
@@ -240,6 +250,7 @@ class Track:
     lyrics: Path | None
     embedded_cover_extension: str | None = None
     tag_ids: tuple[int, ...] = ()
+    original_title: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -263,16 +274,17 @@ class Track:
     def sidecar_relative(self, sidecar: Path | None) -> Path | None:
         if not sidecar:
             return None
-        return self.output_directory / safe_file_name(sidecar.name)
+        return self.output_directory / safe_file_name_with_extension(sidecar.name)
 
     def cover_relative(self) -> Path | None:
         external = self.sidecar_relative(self.cover)
         if external:
             return external
         if self.embedded_cover_extension:
-            if self.output_directory == Path():
-                return Path(f'{self.display_name}.cover{self.embedded_cover_extension}')
-            return self.output_directory / f'cover{self.embedded_cover_extension}'
+            # Embedded artwork may differ between tracks even when the source
+            # files share a directory. Keep every exported image addressable
+            # by its track instead of letting the first image win.
+            return self.output_directory / f'{self.display_name}.cover{self.embedded_cover_extension}'
         return None
 
 
@@ -312,6 +324,7 @@ def read_track(path: Path, source_root: Path) -> Track:
         cover=cover,
         lyrics=discover_companion(path, ('.lrc',), ('lyrics.lrc', 'Lyrics.lrc')),
         embedded_cover_extension=None if cover else embedded_cover_extension(path),
+        original_title=clean_text(title) or path.stem,
     )
 
 

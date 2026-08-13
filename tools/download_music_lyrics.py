@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -29,6 +30,9 @@ from import_new_music import (
     classify_track,
     filter_tracks,
     load_known_tags,
+    resolve_album_duplicates,
+    set_batch_folder_name,
+    sort_tracks_by_album,
     scan_source_tracks,
     validate_track_tags,
 )
@@ -64,6 +68,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--asset-repo', type=Path, default=DEFAULT_ASSET_REPO)
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument('--raw-url', default=DEFAULT_RAW_URL)
+    parser.add_argument('--batch-date', default=None, help='与音频导入相同的一级日期目录，格式 YYYY-MM-DD。')
     parser.add_argument('--lddc-root', type=Path, default=DEFAULT_LDDC_ROOT)
     parser.add_argument('--min-score', type=float, default=68.0, help='LDDC 自动匹配最低分数。')
     parser.add_argument('--offset', type=int, default=0, help='跳过前 N 首候选曲目，便于分批恢复。')
@@ -93,12 +98,14 @@ def prepare_tracks(source_dir: Path, reference: Path, all_source_files: bool, da
     for track in tracks:
         classify_track(track, tag_ids_by_name)
     tracks, _, _ = filter_tracks(tracks)
+    tracks, _, _ = resolve_album_duplicates(tracks)
+    tracks = sort_tracks_by_album(tracks)
     validate_track_tags(tracks, tag_ids_by_name)
     return source_mode, roots, tracks
 
 
 def lyric_target(track: Track, asset_repo: Path) -> Path:
-    return batch_asset_repo(asset_repo) / track.output_directory / f'{track.display_name}.lrc'
+    return batch_asset_repo(asset_repo) / (track.sidecar_relative(Path(f'{track.display_name}.lrc')) or Path(f'{track.display_name}.lrc'))
 
 
 def is_obvious_instrumental(track: Track) -> bool:
@@ -206,12 +213,40 @@ def fetch_lyrics(track: Track, target: Path, min_score: float) -> tuple[str, str
 
     if is_obvious_instrumental(track):
         return 'skipped', '器乐或独白曲目'
-    info = SongInfo(Source.Local, title=track.title, artist=track.artist, album=track.album or None)
+    info = SongInfo(
+        Source.Local,
+        title=track.original_title or track.title,
+        artist=track.artist,
+        album=track.album or None,
+    )
     lyrics = auto_fetch(
         info=info,
         min_score=min_score,
         sources=(Source.QM, Source.KG, Source.NE, Source.LRCLIB),
     )
+    if lyrics.is_inst():
+        # Some providers return a cached instrumental for the full-width
+        # Japanese wave dash or when an album edition is supplied. Retry with
+        # a vocal-only source order and without the album constraint before
+        # accepting the instrumental result.
+        titles = dict.fromkeys(
+            title
+            for title in (
+                info.title,
+                info.title.replace('～', '~'),
+                info.title.replace('Ver.', 'Version'),
+            )
+            if title
+        )
+        for title in titles:
+            fallback = auto_fetch(
+                info=SongInfo(Source.Local, title=title, artist=track.artist),
+                min_score=min_score,
+                sources=(Source.KG, Source.NE, Source.LRCLIB),
+            )
+            if not fallback.is_inst():
+                lyrics = fallback
+                break
     if lyrics.is_inst():
         return 'skipped', 'LDDC 标记为器乐曲'
     content = lyrics.to(lyrics_format=LyricsFormat.LINEBYLINELRC, langs=['orig', 'ts'])
@@ -234,6 +269,7 @@ def write_report(path: Path, results: list[dict[str, Any]]) -> None:
 
 def main() -> int:
     args = parse_arguments()
+    set_batch_folder_name(args.batch_date or date.today().isoformat())
     if args.offset < 0 or args.limit < 0:
         raise ValueError('offset 和 limit 不能为负数。')
     repair_jobs: list[tuple[int, Track, Path]] = []

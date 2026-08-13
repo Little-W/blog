@@ -39,6 +39,42 @@ class MusicImportRuleTests(unittest.TestCase):
         self.assertEqual(second.cover_relative(), Path('Artist Two - Beta.cover.jpg'))
         self.assertNotEqual(first.cover_relative(), second.cover_relative())
 
+    def test_embedded_cover_names_are_unique_inside_one_source_directory(self) -> None:
+        first = Track(
+            source=Path('/tmp/a.flac'),
+            source_relative=Path('EGOIST/a.flac'),
+            title='Same Song (Album A)',
+            artist='EGOIST',
+            album='Album A',
+            cover=None,
+            lyrics=None,
+            embedded_cover_extension='.jpg',
+        )
+        second = Track(
+            source=Path('/tmp/b.flac'),
+            source_relative=Path('EGOIST/b.flac'),
+            title='Same Song (Album B)',
+            artist='EGOIST',
+            album='Album B',
+            cover=None,
+            lyrics=None,
+            embedded_cover_extension='.jpg',
+        )
+        self.assertNotEqual(first.cover_relative(), second.cover_relative())
+
+    def test_long_sidecar_name_keeps_extension(self) -> None:
+        track = Track(
+            source=Path('/tmp/a.flac'),
+            source_relative=Path('EGOIST/a.flac'),
+            title='歌曲' * 80,
+            artist='EGOIST',
+            album='Album',
+            cover=None,
+            lyrics=None,
+            embedded_cover_extension='.jpg',
+        )
+        self.assertTrue(track.sidecar_relative(Path(f'{track.display_name}.lrc')).name.endswith('.lrc'))
+
     def test_forbidden_tracks_are_excluded(self) -> None:
         instrumental = Track(
             source=Path('/tmp/instrumental.flac'),

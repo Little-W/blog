@@ -53,7 +53,7 @@ TAG_DEFINITIONS = (
     (64, 26, 'ChouCho'),
     (65, 36, 'ヰ世界情緒'),
 )
-OPTIONAL_TAGS = ('Ceui',)
+SINGER_TAG_NAMES = ('Ceui', 'EGOIST')
 DEFAULT_TAGS = (1,)
 ACG_TAGS = (1, 3)
 GUP_TAGS = (1, 62)
@@ -63,6 +63,7 @@ EUSTIA_ACG_TAGS = (1, 3, 63)
 CHOUCHO_TAGS = (1, 64)
 ISEKAI_JOUCHO_TAGS = (1, 65)
 CEUI_TAG_NAME = 'Ceui'
+EGOIST_TAG_NAME = 'EGOIST'
 YAMA_NO_SUSUME_ARTIST = 'あおい（井口裕香）＆ひなた（阿澄佳奈）'
 OFF_VOCAL_RE = re.compile(r'off[\s._-]*vocal', re.IGNORECASE)
 INSTRUMENTAL_RE = re.compile(r'(?:^|\s)(?:instrumental|inst\.?)(?:\s|$)', re.IGNORECASE)
@@ -101,6 +102,12 @@ def should_exclude_track(track: Track) -> tuple[bool, str]:
         return True, 'Instrumental'
     if KARAOKE_RE.search(text):
         return True, 'Karaoke'
+    if (
+        normalise_text(track.title) == 'prelude'
+        and normalise_text(track.artist) == 'egoist'
+        and '名前のない怪物' in track.album
+    ):
+        return True, 'LDDC 确认的器乐曲'
     return False, ''
 
 
@@ -109,7 +116,7 @@ def source_root_is_album(track: Track) -> bool:
 
 
 def planned_lyric_relative(track: Track) -> Path | None:
-    return track.output_directory / f'{track.display_name}.lrc'
+    return track.sidecar_relative(Path(f'{track.display_name}.lrc'))
 
 
 def cover_source(track: Track) -> str | None:
@@ -133,6 +140,15 @@ def batch_asset_repo(asset_repo: Path) -> Path:
 
 def batch_raw_url(raw_url: str) -> str:
     return raw_url.rstrip('/') + '/' + BATCH_FOLDER_NAME
+
+
+def set_batch_folder_name(value: str) -> None:
+    global BATCH_FOLDER_NAME
+    try:
+        date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(f'批次日期必须是 YYYY-MM-DD：{value}') from error
+    BATCH_FOLDER_NAME = value
 
 
 def load_known_tags(data_dir: Path) -> dict[str, int]:
@@ -179,13 +195,24 @@ def add_missing_tags(records: list[dict[str, object]]) -> list[dict[str, object]
             continue
         if tag_id in existing_ids:
             continue
-        record = {'tag_id': tag_id, 'tag_order': tag_order, 'tag_name': tag_name}
+        record = {'tag_id': tag_id, 'tag_order': tag_order, 'tag_name': tag_name, 'music_order': []}
         records.append(record)
         additions.append(record)
-    if CEUI_TAG_NAME not in existing_names:
-        record = {'tag_id': next_tag_id, 'tag_order': next_tag_order, 'tag_name': CEUI_TAG_NAME}
+    for tag_name in SINGER_TAG_NAMES:
+        if tag_name in existing_names:
+            continue
+        while next_tag_id in existing_ids:
+            next_tag_id += 1
+        while next_tag_order in existing_orders:
+            next_tag_order += 1
+        record = {'tag_id': next_tag_id, 'tag_order': next_tag_order, 'tag_name': tag_name, 'music_order': []}
         records.append(record)
         additions.append(record)
+        existing_ids.add(next_tag_id)
+        existing_orders.add(next_tag_order)
+        existing_names.add(tag_name)
+        next_tag_id += 1
+        next_tag_order += 1
     return additions
 
 
@@ -226,6 +253,9 @@ def classify_track(track: Track, tag_ids_by_name: dict[str, int]) -> None:
         track.artist = YAMA_NO_SUSUME_ARTIST
     if 'ceui' in normalized_source:
         track.tag_ids = (1, tag_ids_by_name[CEUI_TAG_NAME])
+    elif track.source_relative.parts and track.source_relative.parts[0].casefold() == 'egoist':
+        egoist_tag = tag_ids_by_name[EGOIST_TAG_NAME]
+        track.tag_ids = (1, 3, egoist_tag) if is_vocal_theme_release(track) else (1, egoist_tag)
     elif '一生中最爱' in normalized_source or '单车' in normalized_source or '富士山下' in normalized_source:
         track.tag_ids = (1, tag_ids_by_name.get('粤语', 53))
     elif '光放て' in normalized_source and 'atri' in normalized_source:
@@ -280,7 +310,6 @@ def filter_tracks(tracks: list[Track]) -> tuple[list[Track], list[dict[str, str]
                 'source': track.source_relative.as_posix(),
                 'reason': f'与 {previous.source_relative.as_posix()} 精确重复',
             })
-            continue
         previous_normalised = normalised_seen.get(normalised)
         if previous_normalised and previous_normalised.key != exact:
             review.append({
@@ -289,11 +318,143 @@ def filter_tracks(tracks: list[Track]) -> tuple[list[Track], list[dict[str, str]
                 'source': track.source_relative.as_posix(),
                 'reason': f'与 {previous_normalised.source_relative.as_posix()} 规范化后疑似重复',
             })
-            continue
+        # Keep all non-forbidden tracks until album-based disambiguation has
+        # run. A same-title/same-artist track from another album is a valid
+        # version and will receive an album suffix below.
         exact_seen[exact] = track
         normalised_seen[normalised] = track
         kept.append(track)
     return kept, excluded, review
+
+
+def resolve_album_duplicates(
+    tracks: list[Track],
+) -> tuple[list[Track], list[dict[str, str]], list[dict[str, str]]]:
+    """Keep album variants and label them; discard repeated files in one album."""
+    groups: dict[tuple[str, str], list[Track]] = {}
+    for track in tracks:
+        groups.setdefault(track_normalised_key(track), []).append(track)
+
+    kept: list[Track] = []
+    skipped: list[dict[str, str]] = []
+    disambiguated: list[dict[str, str]] = []
+    for track in tracks:
+        group = groups[track_normalised_key(track)]
+        if len(group) == 1:
+            kept.append(track)
+            continue
+        album_key = normalise_text(track.album)
+        prior_same_album = next(
+            (item for item in kept if item in group and normalise_text(item.album) == album_key),
+            None,
+        )
+        if prior_same_album is not None:
+            skipped.append({
+                'title': track.title,
+                'artist': track.artist,
+                'source': track.source_relative.as_posix(),
+                'reason': f'与 {prior_same_album.source_relative.as_posix()} 同专辑重复：{track.album}',
+            })
+            continue
+        original_title = track.original_title or track.title
+        if track.album:
+            track.title = f'{original_title} ({track.album})'
+            disambiguated.append({
+                'source': track.source_relative.as_posix(),
+                'original_title': original_title,
+                'title': track.title,
+                'album': track.album,
+                'artist': track.artist,
+                'reason': '同名歌曲使用专辑名区分',
+            })
+        kept.append(track)
+    return kept, skipped, disambiguated
+
+
+def sort_tracks_by_album(tracks: list[Track]) -> list[Track]:
+    """Allocate new mids in album blocks while keeping a stable track order."""
+    return sorted(
+        tracks,
+        key=lambda track: (
+            normalise_text(track.album),
+            normalise_text(track.artist),
+            normalise_text(track.original_title or track.title),
+            track.source_relative.as_posix().casefold(),
+        ),
+    )
+
+
+def update_tag_music_orders(data_dir: Path, tracks: list[Track]) -> None:
+    """Append imported mids to each selected playlist's ordering."""
+    path = data_dir / 'music_tag.0.jsonl'
+    records = read_jsonl_records(path, 'music_tag')
+    tags_by_id = {
+        record.get('tag_id'): record
+        for record in records
+        if isinstance(record.get('tag_id'), int)
+    }
+    hq = read_jsonl_records(data_dir / 'music_hq.0.jsonl', 'music_hq')
+    mids_by_key = {
+        (record.get('title'), record.get('author')): record.get('mid')
+        for record in hq
+        if isinstance(record.get('mid'), int)
+    }
+    changed = False
+    for track in tracks:
+        mid = mids_by_key.get((track.title, track.artist))
+        if not isinstance(mid, int):
+            raise ValueError(f'无法为歌单更新 mid：{track.display_name}')
+        for tag_id in track.tag_ids:
+            if tag_id == 1:
+                continue
+            record = tags_by_id.get(tag_id)
+            if record is None:
+                raise ValueError(f'无法为未知歌单更新 music_order：{tag_id}')
+            order = record.get('music_order')
+            if not isinstance(order, list):
+                order = []
+                record['music_order'] = order
+            if mid not in order:
+                order.append(mid)
+                changed = True
+    if changed:
+        write_jsonl_records(path, 'music_tag', records)
+
+
+def remove_excluded_existing_records(data_dir: Path, excluded: list[dict[str, str]]) -> None:
+    """Remove a previously partially imported record that is now excluded."""
+    keys = {(item.get('title'), item.get('artist')) for item in excluded}
+    if not keys:
+        return
+    removed_mids: set[int] = set()
+    for name in ('music_hq', 'music_sq'):
+        path = data_dir / f'{name}.0.jsonl'
+        records = read_jsonl_records(path, name)
+        kept_records: list[dict[str, object]] = []
+        changed = False
+        for record in records:
+            if (record.get('title'), record.get('author')) in keys:
+                if isinstance(record.get('mid'), int):
+                    removed_mids.add(record['mid'])
+                changed = True
+            else:
+                kept_records.append(record)
+        if changed:
+            write_jsonl_records(path, name, kept_records)
+    if not removed_mids:
+        return
+    path = data_dir / 'music_tag.0.jsonl'
+    records = read_jsonl_records(path, 'music_tag')
+    changed = False
+    for record in records:
+        order = record.get('music_order')
+        if isinstance(order, list):
+            filtered = [mid for mid in order if mid not in removed_mids]
+            if filtered != order:
+                record['music_order'] = filtered
+                changed = True
+    if changed:
+        write_jsonl_records(path, 'music_tag', records)
 
 
 def belongs_to_acg_vocal_releases(track: Track) -> bool:
@@ -324,6 +485,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--asset-repo', type=Path, default=DEFAULT_ASSET_REPO, help='HQ、SQ 共用的 Git 资源仓库。')
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA_DIR, help='博客 static/data 目录。')
     parser.add_argument('--raw-url', default=DEFAULT_RAW_URL, help='资源下载 URL 前缀。')
+    parser.add_argument('--batch-date', default=BATCH_FOLDER_NAME, help='本次资源的一级日期目录，格式 YYYY-MM-DD。')
     parser.add_argument('--apply', action='store_true', help='执行转码、复制和 JSONL 写入；默认仅预览。')
     parser.add_argument('--overwrite', action='store_true', help='覆盖资源仓库中的同名文件。')
     parser.add_argument('--push-assets', action='store_true', help='资源处理完成后提交并推送资源仓库。')
@@ -428,23 +590,28 @@ def write_report(
     skipped: list[dict[str, str]],
     off_vocal: list[dict[str, str]],
     review: list[dict[str, str]],
+    disambiguated: list[dict[str, str]],
 ) -> None:
     data = {
         'source_mode': source_mode,
         'source_roots': [item.as_posix() for item in roots],
         'track_count': len(tracks),
         'review_count': len(review),
+        'unresolved_suspicious_duplicates': [],
         'tag_counts': {
             ','.join(map(str, key)): value
             for key, value in sorted(Counter(track.tag_ids for track in tracks).items())
         },
         'duplicates_skipped': skipped,
+        'duplicate_candidates': review,
+        'duplicate_resolutions': disambiguated,
         'off_vocal_excluded': off_vocal,
         'suspicious_duplicates': review,
         'tracks': [
             {
                 'source': track.source_relative.as_posix(),
                 'title': track.title,
+                'original_title': track.original_title or track.title,
                 'artist': track.artist,
                 'album': track.album,
                 'cover_source': cover_source(track),
@@ -465,6 +632,7 @@ def write_report(
 
 def main() -> int:
     args = parse_arguments()
+    set_batch_folder_name(args.batch_date)
     if (args.push_assets or args.push_blog) and not args.apply:
         raise ValueError('--push-assets 与 --push-blog 需要同时使用 --apply。')
     source_mode, roots, tracks = scan_source_tracks(args.source_dir, args.reference, args.all_source_files)
@@ -472,20 +640,28 @@ def main() -> int:
     for track in tracks:
         classify_track(track, tag_ids_by_name)
     tracks, off_vocal, review = filter_tracks(tracks)
+    if args.apply:
+        remove_excluded_existing_records(args.data_dir, off_vocal)
+    tracks, skipped, disambiguated = resolve_album_duplicates(tracks)
+    tracks = sort_tracks_by_album(tracks)
     validate_track_tags(tracks, tag_ids_by_name)
     print(f'模式：{source_mode}')
-    print(f'待导入目录：{len(roots)} 个；音频：{len(tracks)} 首；跳过禁止类型：{len(off_vocal)} 首；疑似重复：{len(review)} 首。')
+    print(f'待导入目录：{len(roots)} 个；音频：{len(tracks)} 首；跳过禁止类型：{len(off_vocal)} 首；专辑区分：{len(disambiguated)} 首；同专辑重复：{len(skipped)} 首。')
     for root in roots:
         print(f'  - {root.name}')
     print('分类统计：')
     for tag_ids, count in sorted(Counter(track.tag_ids for track in tracks).items()):
         print(f'  {list(tag_ids)}：{count} 首')
-    if review:
-        print('疑似重复：')
-        for item in review:
+    if disambiguated:
+        print('按专辑区分的同名歌曲：')
+        for item in disambiguated:
+            print(f"  - {item['source']}：{item['title']}")
+    if skipped:
+        print('同专辑重复：')
+        for item in skipped:
             print(f"  - {item['source']}：{item['reason']}")
     if args.report:
-        write_report(args.report, source_mode, roots, tracks, [], off_vocal, review)
+        write_report(args.report, source_mode, roots, tracks, skipped, off_vocal, review, disambiguated)
         print(f'已写入清单：{args.report}')
     if not args.apply:
         print('这是预览；确认后增加 --apply 执行导入。')
@@ -509,6 +685,7 @@ def main() -> int:
     validate_track_tags(tracks, tag_ids_by_name)
     process_tracks(tracks, config, transcode=True, copy_source=True, progress=print)
     hq_count, sq_count = export_database(tracks, config, print)
+    update_tag_music_orders(args.data_dir, tracks)
     print(f'已更新资料：HQ {hq_count} 首，SQ {sq_count} 首。')
     if tag_additions:
         print(f'已新增分类：{ "、".join(str(item["tag_name"]) for item in tag_additions) }。')
