@@ -17,6 +17,7 @@ jobs:
   build-and-publish:
     name: 构建并同步到 blog_static
     runs-on: ubuntu-latest
+    environment: github-pages
     timeout-minutes: 20
     env:
       CI: 'true'
