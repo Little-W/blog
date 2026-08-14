@@ -377,7 +377,6 @@ def sort_tracks_by_album(tracks: list[Track]) -> list[Track]:
         tracks,
         key=lambda track: (
             normalise_text(track.album),
-            track.cover_fingerprint or '',
             track.track_number is None,
             track.track_number if track.track_number is not None else 0,
             normalise_text(track.artist),

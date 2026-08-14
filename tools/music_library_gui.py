@@ -231,19 +231,6 @@ def embedded_cover_extension(path: Path) -> str | None:
     return image_extension(*cover) if cover else None
 
 
-def cover_fingerprint(path: Path, external_cover: Path | None) -> str | None:
-    """Identify equal artwork even when exported filenames are track-specific."""
-    try:
-        if external_cover:
-            data = external_cover.read_bytes()
-        else:
-            embedded = embedded_cover_data(path)
-            data = embedded[0] if embedded else b''
-    except OSError:
-        return None
-    return hashlib.sha256(data).hexdigest() if data else None
-
-
 def relative_to_root(path: Path, root: Path) -> Path:
     try:
         return path.relative_to(root)
@@ -271,7 +258,6 @@ class Track:
     tag_ids: tuple[int, ...] = ()
     original_title: str | None = None
     track_number: int | None = None
-    cover_fingerprint: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -348,7 +334,6 @@ def read_track(path: Path, source_root: Path) -> Track:
         embedded_cover_extension=None if cover else embedded_cover_extension(path),
         original_title=clean_text(title) or path.stem,
         track_number=metadata_track_number(tags),
-        cover_fingerprint=cover_fingerprint(path, cover),
     )
 
 
