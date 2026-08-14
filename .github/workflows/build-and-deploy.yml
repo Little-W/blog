@@ -1,4 +1,4 @@
-name: 构建并部署博客
+name: 构建并发布博客静态文件
 
 on:
   push:
@@ -10,23 +10,22 @@ permissions:
   contents: read
 
 concurrency:
-  group: netlify-production
+  group: static-site-production
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
-    name: Docusaurus 构建与 Netlify 部署
+  build-and-publish:
+    name: 构建并同步到 blog_static
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       CI: 'true'
       BILI_PARSER_API: /api
       BILI_PARSER_MODE: netlify
-      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      BLOG_STATIC_TOKEN: ${{ secrets.BLOG_STATIC_TOKEN }}
 
     steps:
-      - name: 检出源码
+      - name: 检出博客源码
         uses: actions/checkout@v4
 
       - name: 配置 Node.js
@@ -41,10 +40,48 @@ jobs:
       - name: 构建静态网站
         run: npm run build
 
-      - name: 部署网站与 Netlify Functions
-        run: >-
-          npx --yes netlify-cli@26.2.0 deploy
-          --prod
-          --dir=build
-          --functions=netlify/functions
-          --message="GitHub Actions ${GITHUB_SHA}"
+      - name: 检查跨仓库发布凭据
+        run: |
+          if [ -z "$BLOG_STATIC_TOKEN" ]; then
+            echo '缺少 BLOG_STATIC_TOKEN。请添加一个对 Little-W/blog_static 具有 Contents: Read and write 权限的 Secret。' >&2
+            exit 1
+          fi
+
+      - name: 检出 blog_static
+        uses: actions/checkout@v4
+        with:
+          repository: Little-W/blog_static
+          ref: main
+          token: ${{ secrets.BLOG_STATIC_TOKEN }}
+          path: .deploy/blog_static
+          persist-credentials: true
+
+      - name: 同步编译结果和 Netlify Functions
+        env:
+          TARGET_REPO: ${{ github.workspace }}/.deploy/blog_static
+        run: |
+          # blog_static 仍保留 netlify.toml、Functions、CNAME 和 .nojekyll；
+          # 其余站点文件由本次 build 完整替换，避免旧页面残留。
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.nojekyll' \
+            --exclude='CNAME' \
+            --exclude='NETLIFY-BILI-PARSER.md' \
+            --exclude='netlify/' \
+            --exclude='netlify.toml' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='.gitignore' \
+            build/ "$TARGET_REPO/"
+          rsync -a --delete netlify/functions/ "$TARGET_REPO/netlify/functions/"
+
+          cd "$TARGET_REPO"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          if git diff --cached --quiet; then
+            echo 'blog_static 已是最新，无需提交。'
+            exit 0
+          fi
+          git commit -m "站点：同步 ${GITHUB_SHA::12} 的编译产物"
+          git push origin HEAD:main

@@ -59,6 +59,11 @@ This command generates static content into the `build` directory and can be serv
 
 ### Deployment
 
+主仓库的 `main` 更新后，GitHub Actions 会构建站点并将 `build/` 同步到
+[`Little-W/blog_static`](https://github.com/Little-W/blog_static) 的 `main` 分支，
+同时同步 Netlify Functions。工作流需要一个名为 `BLOG_STATIC_TOKEN` 的 GitHub
+Actions Secret；该 Token 只需对目标仓库授予 `Contents: Read and write` 权限。
+
 Using SSH:
 
 ```
