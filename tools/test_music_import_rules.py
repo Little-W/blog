@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from import_new_music import should_exclude_track  # noqa: E402
+from import_new_music import should_exclude_track, sort_tracks_by_album  # noqa: E402
 from music_library_gui import Track  # noqa: E402
 
 
@@ -74,6 +74,29 @@ class MusicImportRuleTests(unittest.TestCase):
             embedded_cover_extension='.jpg',
         )
         self.assertTrue(track.sidecar_relative(Path(f'{track.display_name}.lrc')).name.endswith('.lrc'))
+
+    def test_album_sort_uses_track_number(self) -> None:
+        later = Track(
+            source=Path('/tmp/later.flac'),
+            source_relative=Path('EGOIST/later.flac'),
+            title='Later',
+            artist='EGOIST',
+            album='Album',
+            cover=None,
+            lyrics=None,
+            track_number=2,
+        )
+        earlier = Track(
+            source=Path('/tmp/earlier.flac'),
+            source_relative=Path('EGOIST/earlier.flac'),
+            title='Earlier',
+            artist='EGOIST',
+            album='Album',
+            cover=None,
+            lyrics=None,
+            track_number=1,
+        )
+        self.assertEqual([item.title for item in sort_tracks_by_album([later, earlier])], ['Earlier', 'Later'])
 
     def test_forbidden_tracks_are_excluded(self) -> None:
         instrumental = Track(

@@ -255,7 +255,7 @@ def classify_track(track: Track, tag_ids_by_name: dict[str, int]) -> None:
         track.tag_ids = (1, tag_ids_by_name[CEUI_TAG_NAME])
     elif track.source_relative.parts and track.source_relative.parts[0].casefold() == 'egoist':
         egoist_tag = tag_ids_by_name[EGOIST_TAG_NAME]
-        track.tag_ids = (1, 3, egoist_tag) if is_vocal_theme_release(track) else (1, egoist_tag)
+        track.tag_ids = (1, egoist_tag)
     elif '一生中最爱' in normalized_source or '单车' in normalized_source or '富士山下' in normalized_source:
         track.tag_ids = (1, tag_ids_by_name.get('粤语', 53))
     elif '光放て' in normalized_source and 'atri' in normalized_source:
@@ -372,11 +372,14 @@ def resolve_album_duplicates(
 
 
 def sort_tracks_by_album(tracks: list[Track]) -> list[Track]:
-    """Allocate new mids in album blocks while keeping a stable track order."""
+    """Allocate new mids in album blocks and album track order."""
     return sorted(
         tracks,
         key=lambda track: (
             normalise_text(track.album),
+            track.cover_fingerprint or '',
+            track.track_number is None,
+            track.track_number if track.track_number is not None else 0,
             normalise_text(track.artist),
             normalise_text(track.original_title or track.title),
             track.source_relative.as_posix().casefold(),

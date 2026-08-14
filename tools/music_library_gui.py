@@ -135,6 +135,12 @@ def metadata_value(tags: Any, keys: Iterable[str]) -> str:
     return ''
 
 
+def metadata_track_number(tags: Any) -> int | None:
+    value = metadata_value(tags, ('tracknumber', 'TRACKNUMBER', 'track', 'TRACK'))
+    match = re.match(r'\s*(\d+)', value)
+    return int(match.group(1)) if match else None
+
+
 def file_name_metadata(path: Path) -> tuple[str, str]:
     candidate = path.stem.strip()
     match = re.match(r'^(.+?)\s*[-–—]\s*(.+)$', candidate)
@@ -225,6 +231,19 @@ def embedded_cover_extension(path: Path) -> str | None:
     return image_extension(*cover) if cover else None
 
 
+def cover_fingerprint(path: Path, external_cover: Path | None) -> str | None:
+    """Identify equal artwork even when exported filenames are track-specific."""
+    try:
+        if external_cover:
+            data = external_cover.read_bytes()
+        else:
+            embedded = embedded_cover_data(path)
+            data = embedded[0] if embedded else b''
+    except OSError:
+        return None
+    return hashlib.sha256(data).hexdigest() if data else None
+
+
 def relative_to_root(path: Path, root: Path) -> Path:
     try:
         return path.relative_to(root)
@@ -251,6 +270,8 @@ class Track:
     embedded_cover_extension: str | None = None
     tag_ids: tuple[int, ...] = ()
     original_title: str | None = None
+    track_number: int | None = None
+    cover_fingerprint: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -305,6 +326,7 @@ def read_track(path: Path, source_root: Path) -> Track:
     title = fallback_title
     artist = fallback_artist
     album = ''
+    tags = None
     try:
         audio = MutagenFile(path, easy=True)
         tags = getattr(audio, 'tags', None)
@@ -325,6 +347,8 @@ def read_track(path: Path, source_root: Path) -> Track:
         lyrics=discover_companion(path, ('.lrc',), ('lyrics.lrc', 'Lyrics.lrc')),
         embedded_cover_extension=None if cover else embedded_cover_extension(path),
         original_title=clean_text(title) or path.stem,
+        track_number=metadata_track_number(tags),
+        cover_fingerprint=cover_fingerprint(path, cover),
     )
 
 
