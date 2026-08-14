@@ -70,6 +70,17 @@ test('歌单默认使用独立顺序数组，MID 排序仍可单独选择', () =
   assert.deepEqual(sortTracks(ordered, 'id').map((record) => record.mid), [1, 2, 3]);
 });
 
+test('EGOIST 歌单接口使用专辑顺序而不是 mid 顺序', async () => {
+  const result = await payload(await post({quality: 'hq', listId: 72}));
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    result.body.data.records.slice(0, 6).map((record) => record.mid),
+    [2851, 2853, 2852, 2854, 2856, 2855],
+  );
+  assert.equal(result.body.data.records.at(-2).mid, 2848);
+  assert.equal(result.body.data.records.at(-1).mid, 2923);
+});
+
 test('搜索结果按页限制并返回匹配总数', async () => {
   const result = await payload(await post({quality: 'hq', query: '-', page: 0, pageSize: 25}));
   assert.equal(result.status, 200);

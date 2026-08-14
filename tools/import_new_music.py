@@ -65,6 +65,36 @@ ISEKAI_JOUCHO_TAGS = (1, 65)
 CEUI_TAG_NAME = 'Ceui'
 EGOIST_TAG_NAME = 'EGOIST'
 YAMA_NO_SUSUME_ARTIST = 'あおい（井口裕香）＆ひなた（阿澄佳奈）'
+# The source tags use curly quotation marks for part of the Greatest Hits
+# release.  It is the same album as the ASCII-quote entries, and the user's
+# album list uses the ASCII spelling, so keep one display name.
+ALBUM_NAME_ALIASES = {
+    'GREATEST HITS 2011-2017 “ALTER EGO”': 'GREATEST HITS 2011-2017 "ALTER EGO"',
+    'GREATEST HITS 2011-2017 ”ALTER EGO”': 'GREATEST HITS 2011-2017 "ALTER EGO"',
+    'リローデッド / Reloaded': 'リローデッド/ Reloaded',
+}
+EGOIST_ALBUM_ORDER = (
+    'Departures ~あなたにおくるアイの歌~',
+    'Departures ～あなたにおくるアイの歌～(初回生産限定盤)',
+    'Extra terrestrial Biological Entities(初回生産限定盤)',
+    'GUILTY CROWN Vol. 1: THEME SONGS COLLECTION [Bonus Disc]',
+    'The Everlasting Guilty Crown(初回生産限定盤)',
+    '名前のない怪物(初回生産限定盤)',
+    # This source album is present in workspace although it was omitted from
+    # the supplied year list; its 2013 release belongs between 2012 and 2014.
+    'All Alone With You(初回生産限定盤)',
+    'Fallen(初回生産限定盤)',
+    'リローデッド/ Reloaded',
+    'Great Distance',
+    'KABANERI OF THE IRON FORTRESS',
+    'ninelie EP',
+    'GREATEST HITS 2011-2017 "ALTER EGO"',
+    '英雄 運命の詩',
+    '咲かせや咲かせ',
+    'PSYCHO-PASS Sinners of the System Theme songs + Dedicated by Masayuki Nakano',
+    '1,000,000 TIMES',
+    '最後の花弁 (The meaning of love)',
+)
 OFF_VOCAL_RE = re.compile(r'off[\s._-]*vocal', re.IGNORECASE)
 INSTRUMENTAL_RE = re.compile(r'(?:^|\s)(?:instrumental|inst\.?)(?:\s|$)', re.IGNORECASE)
 KARAOKE_RE = re.compile(r'(?:karaoke|カラオケ|伴奏|纯音乐版|纯音乐)', re.IGNORECASE)
@@ -76,6 +106,44 @@ PUNCTUATION_CATEGORIES = {'P', 'S'}
 def normalise_text(value: str) -> str:
     text = unicodedata.normalize('NFKC', value).casefold()
     return ''.join(character for character in text if not (character.isspace() or unicodedata.category(character)[0] in PUNCTUATION_CATEGORIES))
+
+
+def canonical_album_name(value: str) -> str:
+    return ALBUM_NAME_ALIASES.get(value, value)
+
+
+def canonicalize_album_names(tracks: list[Track]) -> None:
+    for track in tracks:
+        track.album = canonical_album_name(track.album)
+
+
+def canonicalize_album_covers(tracks: list[Track]) -> None:
+    """Use one authoritative cover per artist/album group.
+
+    Embedded artwork is often release/track artwork rather than a stable
+    album cover.  The audio album tag remains authoritative; the first track
+    by album track number supplies the display cover for the whole group.
+    """
+    groups: dict[tuple[str, str], list[Track]] = {}
+    for track in tracks:
+        key = (normalise_text(track.artist), normalise_text(track.album))
+        groups.setdefault(key, []).append(track)
+    for group in groups.values():
+        representative = min(
+            group,
+            key=lambda track: (
+                track.track_number is None,
+                track.track_number if track.track_number is not None else 0,
+                track.source_relative.as_posix().casefold(),
+            ),
+        )
+        cover_relative = representative.cover_relative()
+        if cover_relative is None:
+            continue
+        for track in group:
+            track.cover_relative_override = cover_relative
+            track.cover_path_override = representative.cover
+            track.cover_audio_override = None if representative.cover else representative.source
 
 
 def normalise_for_match(*parts: str) -> str:
@@ -373,16 +441,27 @@ def resolve_album_duplicates(
 
 def sort_tracks_by_album(tracks: list[Track]) -> list[Track]:
     """Allocate new mids in album blocks and album track order."""
-    return sorted(
-        tracks,
-        key=lambda track: (
-            normalise_text(track.album),
+    album_order = {
+        normalise_text(album): index
+        for index, album in enumerate(EGOIST_ALBUM_ORDER)
+    }
+
+    def sort_key(track: Track) -> tuple[object, ...]:
+        album_key = normalise_text(canonical_album_name(track.album))
+        known_order = album_order.get(album_key)
+        return (
+            0 if known_order is not None else 1,
+            known_order if known_order is not None else album_key,
             track.track_number is None,
             track.track_number if track.track_number is not None else 0,
             normalise_text(track.artist),
             normalise_text(track.original_title or track.title),
             track.source_relative.as_posix().casefold(),
-        ),
+        )
+
+    return sorted(
+        tracks,
+        key=sort_key,
     )
 
 
@@ -638,6 +717,7 @@ def main() -> int:
     if (args.push_assets or args.push_blog) and not args.apply:
         raise ValueError('--push-assets 与 --push-blog 需要同时使用 --apply。')
     source_mode, roots, tracks = scan_source_tracks(args.source_dir, args.reference, args.all_source_files)
+    canonicalize_album_names(tracks)
     tag_additions, tag_ids_by_name = ensure_tag_catalog(args.data_dir, args.apply)
     for track in tracks:
         classify_track(track, tag_ids_by_name)
@@ -645,6 +725,7 @@ def main() -> int:
     if args.apply:
         remove_excluded_existing_records(args.data_dir, off_vocal)
     tracks, skipped, disambiguated = resolve_album_duplicates(tracks)
+    canonicalize_album_covers(tracks)
     tracks = sort_tracks_by_album(tracks)
     validate_track_tags(tracks, tag_ids_by_name)
     print(f'模式：{source_mode}')

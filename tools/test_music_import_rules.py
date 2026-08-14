@@ -9,7 +9,12 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from import_new_music import should_exclude_track, sort_tracks_by_album  # noqa: E402
+from import_new_music import (  # noqa: E402
+    canonicalize_album_covers,
+    canonicalize_album_names,
+    should_exclude_track,
+    sort_tracks_by_album,
+)
 from music_library_gui import Track  # noqa: E402
 
 
@@ -97,6 +102,59 @@ class MusicImportRuleTests(unittest.TestCase):
             track_number=1,
         )
         self.assertEqual([item.title for item in sort_tracks_by_album([later, earlier])], ['Earlier', 'Later'])
+
+    def test_egoist_album_sort_uses_supplied_release_order(self) -> None:
+        early = Track(
+            source=Path('/tmp/early.flac'),
+            source_relative=Path('EGOIST/early.flac'),
+            title='Early',
+            artist='EGOIST',
+            album='Departures ~あなたにおくるアイの歌~',
+            cover=None,
+            lyrics=None,
+            track_number=1,
+        )
+        late = Track(
+            source=Path('/tmp/late.flac'),
+            source_relative=Path('EGOIST/late.flac'),
+            title='Late',
+            artist='EGOIST',
+            album='1,000,000 TIMES',
+            cover=None,
+            lyrics=None,
+            track_number=1,
+        )
+        self.assertEqual([item.title for item in sort_tracks_by_album([late, early])], ['Early', 'Late'])
+
+    def test_album_alias_and_cover_grouping(self) -> None:
+        first = Track(
+            source=Path('/tmp/first.flac'),
+            source_relative=Path('EGOIST/first.flac'),
+            title='First',
+            artist='EGOIST',
+            album='GREATEST HITS 2011-2017 “ALTER EGO”',
+            cover=None,
+            lyrics=None,
+            embedded_cover_extension='.jpg',
+            track_number=1,
+        )
+        second = Track(
+            source=Path('/tmp/second.flac'),
+            source_relative=Path('EGOIST/second.flac'),
+            title='Second',
+            artist='EGOIST',
+            album='GREATEST HITS 2011-2017 "ALTER EGO"',
+            cover=None,
+            lyrics=None,
+            embedded_cover_extension='.jpg',
+            track_number=2,
+        )
+        tracks = [first, second]
+        canonicalize_album_names(tracks)
+        canonicalize_album_covers(tracks)
+        self.assertEqual(first.album, second.album)
+        self.assertEqual(first.cover_relative(), second.cover_relative())
+        self.assertEqual(second.cover_audio_override, first.source)
 
     def test_forbidden_tracks_are_excluded(self) -> None:
         instrumental = Track(

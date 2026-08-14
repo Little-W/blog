@@ -258,6 +258,9 @@ class Track:
     tag_ids: tuple[int, ...] = ()
     original_title: str | None = None
     track_number: int | None = None
+    cover_relative_override: Path | None = None
+    cover_path_override: Path | None = None
+    cover_audio_override: Path | None = None
 
     @property
     def display_name(self) -> str:
@@ -284,6 +287,8 @@ class Track:
         return self.output_directory / safe_file_name_with_extension(sidecar.name)
 
     def cover_relative(self) -> Path | None:
+        if self.cover_relative_override is not None:
+            return self.cover_relative_override
         external = self.sidecar_relative(self.cover)
         if external:
             return external
@@ -362,12 +367,17 @@ def copy_if_needed(source: Path | None, target: Path | None, overwrite: bool) ->
     return f'复制 {target.name}'
 
 
-def export_embedded_cover(track: Track, target: Path | None, overwrite: bool) -> str:
+def export_embedded_cover(
+    track: Track,
+    target: Path | None,
+    overwrite: bool,
+    source: Path | None = None,
+) -> str:
     if not target or not track.embedded_cover_extension:
         return '无侧车文件'
     if target.exists() and not overwrite:
         return f'保留 {target.name}'
-    cover = embedded_cover_data(track.source)
+    cover = embedded_cover_data(source or track.source)
     if not cover:
         return '未找到内嵌封面'
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -439,9 +449,11 @@ def process_tracks(
             cover_target = config.mp3_repo_dir / cover_relative if cover_relative else None
             lyric_target = config.mp3_repo_dir / track.sidecar_relative(track.lyrics) if track.lyrics else None
             progress(f'  MP3：{mp3_target.relative_to(config.mp3_repo_dir)}')
+            cover_source = track.cover_path_override or track.cover
             cover_action = (
-                copy_if_needed(track.cover, cover_target, config.overwrite)
-                if track.cover else export_embedded_cover(track, cover_target, config.overwrite)
+                copy_if_needed(cover_source, cover_target, config.overwrite)
+                if cover_source
+                else export_embedded_cover(track, cover_target, config.overwrite, track.cover_audio_override)
             )
             for action in (cover_action, copy_if_needed(track.lyrics, lyric_target, config.overwrite)):
                 if action != '无侧车文件':

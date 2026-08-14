@@ -23,7 +23,7 @@ var music_search_base_list = [];
 var music_library_count = 0;
 // 静态资料曾以 stale-while-revalidate 缓存，数据表发布后浏览器仍可能先拿到
 // 上一版歌单。此值仅用于本地静态备用；生产环境以部署修订号检查一致性。
-var MUSIC_DATA_CACHE_VERSION = '20260719-acg101';
+var MUSIC_DATA_CACHE_VERSION = '20260814-egoist-album-order-covers';
 var music_data_revision = MUSIC_DATA_CACHE_VERSION;
 var MUSIC_PLAYLIST_CACHE_NAME = 'yusen-music-playlists-v1';
 var MUSIC_PLAYLIST_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
