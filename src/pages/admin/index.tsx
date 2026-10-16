@@ -37,6 +37,7 @@ type MusicOrderItem = {
   title: string;
 };
 type DatasetSort = 'id' | 'list_order';
+type DatasetOrder = 'asc' | 'desc';
 type EditorField = {
   id: string;
   key: string;
@@ -370,6 +371,7 @@ function DataConsole({repository}: {repository: string | null}) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [datasetSort, setDatasetSort] = useState<DatasetSort>('id');
+  const [datasetOrder, setDatasetOrder] = useState<DatasetOrder>('asc');
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
@@ -418,6 +420,7 @@ function DataConsole({repository}: {repository: string | null}) {
         pageSize: String(name === 'music_tag' ? 200 : pageSize),
         query: search,
         sort: supportsTagFilter && tagFilter !== 'all' ? datasetSort : 'id',
+        order: datasetOrder,
       });
       if (supportsTagFilter && tagFilter !== 'all') params.set('tagId', String(tagFilter));
       const data = await consoleApi<DatasetPayload>(`/api/console/dataset?${params.toString()}`);
@@ -457,7 +460,7 @@ function DataConsole({repository}: {repository: string | null}) {
 
   useEffect(() => {
     if (selectedName) void loadDataset(selectedName);
-  }, [selectedName, page, search, tagFilter, datasetSort]);
+  }, [selectedName, page, search, tagFilter, datasetSort, datasetOrder]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -853,6 +856,26 @@ function DataConsole({repository}: {repository: string | null}) {
               </select>
             </label>
           ) : null}
+          <div className={styles.sortOrder} role="group" aria-label="排序方向">
+            <button
+              type="button"
+              className={datasetOrder === 'asc' ? styles.sortOrderActive : styles.sortOrderButton}
+              onClick={() => { setPage(0); setDatasetOrder('asc'); }}
+              aria-pressed={datasetOrder === 'asc'}
+              aria-label="正序"
+              title="正序">
+              <Icon icon="lucide:arrow-up-narrow-wide" />
+            </button>
+            <button
+              type="button"
+              className={datasetOrder === 'desc' ? styles.sortOrderActive : styles.sortOrderButton}
+              onClick={() => { setPage(0); setDatasetOrder('desc'); }}
+              aria-pressed={datasetOrder === 'desc'}
+              aria-label="倒序"
+              title="倒序">
+              <Icon icon="lucide:arrow-down-wide-narrow" />
+            </button>
+          </div>
           <span>{dataset?.count || 0} 条匹配</span>
           {dirty ? <strong className={styles.dirtyMark}>有未提交修改</strong> : null}
         </div>
@@ -1076,9 +1099,11 @@ function DataConsole({repository}: {repository: string | null}) {
           {busy ? <div className={styles.loadingState}><Icon icon="lucide:loader-circle" />正在处理…</div> : null}
         </div>
         <div className={styles.pagination}>
-          <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0} aria-label="上一页"><Icon icon="lucide:chevron-left" /></button>
+          <button type="button" onClick={() => setPage(0)} disabled={page === 0} aria-label="第一页" title="第一页"><Icon icon="lucide:chevrons-left" /></button>
+          <button type="button" onClick={() => setPage((value) => Math.max(0, value - 1))} disabled={page === 0} aria-label="上一页" title="上一页"><Icon icon="lucide:chevron-left" /></button>
           <span>{page + 1} / {pageCount}</span>
-          <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={page >= pageCount - 1} aria-label="下一页"><Icon icon="lucide:chevron-right" /></button>
+          <button type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))} disabled={page >= pageCount - 1} aria-label="下一页" title="下一页"><Icon icon="lucide:chevron-right" /></button>
+          <button type="button" onClick={() => setPage(pageCount - 1)} disabled={page >= pageCount - 1} aria-label="最后一页" title="最后一页"><Icon icon="lucide:chevrons-right" /></button>
         </div>
 
         {(creating || selectedIndex !== null) ? (

@@ -660,6 +660,8 @@ async function getDataset(url) {
       return String(left[dataset.idField] || '').localeCompare(String(right[dataset.idField] || ''), 'zh-CN', {numeric: true});
     });
   }
+  const order = String(url.searchParams.get('order') || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc';
+  if (order === 'desc') records = records.slice().reverse();
   const count = records.length;
   const offset = page * pageSize;
   return json({
