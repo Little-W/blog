@@ -61,11 +61,15 @@ function jstDate(daysAgo = 0) {
   return new Date(Date.now() + 9 * 3600 * 1000 - daysAgo * 86400 * 1000).toISOString().slice(0, 10);
 }
 
-async function requestRanking(accessToken, mode, date) {
+function publicImageUrl(url) {
+  return typeof url === 'string' ? url.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/') : '';
+}
+
+async function requestRanking(accessToken, mode, date, offset) {
   const url = new URL('https://app-api.pixiv.net/v1/illust/ranking');
   url.searchParams.set('mode', mode);
   url.searchParams.set('date', date);
-  url.searchParams.set('offset', '0');
+  url.searchParams.set('offset', String(offset));
 
   const res = await fetch(url.toString(), {
     headers: {
@@ -85,26 +89,25 @@ async function requestRanking(accessToken, mode, date) {
     illusts: body.illusts.map((illust, index) => {
       const tags = (illust.tags || []).map((t) => t.name);
       return {
-        rank: index + 1,
+        rank: offset + index + 1,
         id: illust.id,
         title: illust.title,
         author: illust.user?.name ?? '未知',
         authorId: String(illust.user?.id ?? ''),
-        url: `https://www.pixiv.net/artworks/${illust.id}`,
-        thumb: illust.image_urls?.medium || illust.image_urls?.small || '',
+        thumb: publicImageUrl(illust.image_urls?.medium || illust.image_urls?.small || ''),
         tags,
       };
     }),
-    nextUrl: body.next_url || null,
+    nextOffset: body.illusts.length === 30 && offset < 480 ? offset + 30 : null,
   };
 }
 
-async function fetchPixivRanking(accessToken, mode = 'day', date = '') {
+async function fetchPixivRanking(accessToken, mode = 'day', date = '', offset = 0) {
   // 指定日期就只取该日；默认取 JST 昨天（当日榜单尚未结算），为空再往前退一天。
   const candidates = date ? [date] : [jstDate(1), jstDate(2), jstDate(3)];
   let result = null;
   for (const day of candidates) {
-    result = await requestRanking(accessToken, mode, day);
+    result = await requestRanking(accessToken, mode, day, offset);
     if (result.illusts.length) break;
   }
   return result;
@@ -125,11 +128,16 @@ export default async (request) => {
   const clientSecret = process.env.PIXIV_CLIENT_SECRET || DEFAULT_CLIENT_SECRET;
   const refreshToken = process.env.PIXIV_REFRESH_TOKEN;
   const mode = url.searchParams.get('mode') || 'day';
+  const rawOffset = url.searchParams.get('offset') || '0';
+  const offset = Number(rawOffset);
 
   if (!RANKING_MODES.has(mode)) {
     return fail('不支持的榜单类型。', 'INVALID_MODE', 400);
   }
-  const cacheKey = `pixiv/ranking/${mode}.json`;
+  if (!Number.isInteger(offset) || offset < 0 || offset > 480 || offset % 30 !== 0) {
+    return fail('榜单分页参数无效。', 'INVALID_OFFSET', 400);
+  }
+  const cacheKey = `pixiv/ranking/${mode}/${offset}.json`;
 
   // 未配置 refresh_token 时返回明确提示，前端展示占位，不中断站点。
   if (!refreshToken) {
@@ -137,7 +145,7 @@ export default async (request) => {
       success: false,
       code: 'MISSING_PIXIV_CREDENTIALS',
       message: '未配置 PIXIV_REFRESH_TOKEN 环境变量，请先运行 node scripts/pixiv-token.mjs 导出后配置到 Netlify。',
-      data: {illusts: [], date: '', mode},
+      data: {illusts: [], date: '', mode, nextOffset: null},
     }, 200, 'no-store');
   }
 
@@ -149,7 +157,7 @@ export default async (request) => {
     }
 
     const {accessToken} = await refreshAccessToken(clientId, clientSecret, refreshToken);
-    const data = await fetchPixivRanking(accessToken, mode);
+    const data = await fetchPixivRanking(accessToken, mode, '', offset);
 
     await writeContent(cacheKey, JSON.stringify({
       data,

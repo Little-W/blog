@@ -1,7 +1,5 @@
-// 代理 Pixiv 缩略图：i.pximg.net 有防盗链，只有带 Referer: https://www.pixiv.net/ 才返回 200。
-// 仅允许代理 i.pximg.net，避免被当作通用 SSRF 代理。
-const ALLOWED_HOST = 'i.pximg.net';
-const PIXIV_REFERER = 'https://www.pixiv.net/';
+// 仅代理开源图床 i.pixiv.re，可选以附件形式返回用于下载。
+const ALLOWED_HOST = 'i.pixiv.re';
 
 export const config = {
   path: '/api/pixiv-thumb',
@@ -31,7 +29,6 @@ export default async (request) => {
   try {
     upstream = await fetch(target.toString(), {
       headers: {
-        Referer: PIXIV_REFERER,
         'User-Agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
         Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       },
@@ -44,12 +41,20 @@ export default async (request) => {
     return new Response('Upstream error', {status: 502});
   }
 
+  const headers = {
+    'content-type': upstream.headers.get('content-type') || 'image/jpeg',
+    'cache-control': 'public, max-age=86400, immutable',
+    'x-content-type-options': 'nosniff',
+  };
+  const filename = url.searchParams.get('download');
+  if (filename) {
+    const safeName = filename.replace(/[\\/\r\n\";]/g, '_').slice(0, 180) || 'pixiv-artwork.jpg';
+    headers['content-disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`;
+    headers['cache-control'] = 'private, no-store';
+  }
+
   return new Response(upstream.body, {
     status: 200,
-    headers: {
-      'content-type': upstream.headers.get('content-type') || 'image/jpeg',
-      'cache-control': 'public, max-age=86400, immutable',
-      'x-content-type-options': 'nosniff',
-    },
+    headers,
   });
 };
