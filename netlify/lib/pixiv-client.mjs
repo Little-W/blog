@@ -1,7 +1,7 @@
 const DEFAULT_CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
 const DEFAULT_CLIENT_SECRET = 'lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj';
 
-export async function getPixivAccessToken() {
+export async function getPixivAuth() {
   const refreshToken = process.env.PIXIV_REFRESH_TOKEN;
   if (!refreshToken) throw new Error('MISSING_PIXIV_CREDENTIALS');
 
@@ -28,21 +28,29 @@ export async function getPixivAccessToken() {
   if (!response.ok || !auth.access_token) {
     throw new Error(`刷新 Pixiv token 失败：${response.status}`);
   }
-  return auth.access_token;
+  return {accessToken: auth.access_token, user: auth.user || null};
 }
 
-export async function pixivApi(path, accessToken) {
+export async function getPixivAccessToken() {
+  const auth = await getPixivAuth();
+  return auth.accessToken;
+}
+
+export async function pixivApi(path, accessToken, {method = 'GET', body: requestBody} = {}) {
   const response = await fetch(`https://app-api.pixiv.net${path}`, {
+    method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'App-OS': 'ios',
       'App-OS-Version': '17.0',
       'User-Agent': 'PixivIOSApp/7.13.3 (iOS 17.0; iPhone14,3)',
+      ...(requestBody ? {'content-type': 'application/x-www-form-urlencoded'} : {}),
     },
+    ...(requestBody ? {body: requestBody} : {}),
   });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.error) throw new Error(`Pixiv API error: ${response.status}`);
-  return body;
+  const responseBody = await response.json().catch(() => ({}));
+  if (!response.ok || responseBody.error) throw new Error(`Pixiv API error: ${response.status}`);
+  return responseBody;
 }
 
 export function publicImageUrls(value) {
@@ -50,7 +58,7 @@ export function publicImageUrls(value) {
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, publicImageUrls(item)]));
   }
-  return typeof value === 'string'
-    ? value.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/')
-    : value;
+  if (typeof value !== 'string') return value;
+  if (/^https:\/\/s\.pximg\.net\//.test(value)) return '';
+  return value.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/');
 }

@@ -62,7 +62,8 @@ function jstDate(daysAgo = 0) {
 }
 
 function publicImageUrl(url) {
-  return typeof url === 'string' ? url.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/') : '';
+  if (typeof url !== 'string' || /^https:\/\/s\.pximg\.net\//.test(url)) return '';
+  return url.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/');
 }
 
 async function requestRanking(accessToken, mode, date, offset) {
@@ -96,9 +97,11 @@ async function requestRanking(accessToken, mode, date, offset) {
         authorId: String(illust.user?.id ?? ''),
         thumb: publicImageUrl(illust.image_urls?.medium || illust.image_urls?.small || ''),
         tags,
+        isBookmarked: Boolean(illust.is_bookmarked),
       };
     }),
     nextOffset: body.illusts.length === 30 && offset < 480 ? offset + 30 : null,
+    nextCursor: null,
   };
 }
 
@@ -145,7 +148,7 @@ export default async (request) => {
       success: false,
       code: 'MISSING_PIXIV_CREDENTIALS',
       message: '未配置 PIXIV_REFRESH_TOKEN 环境变量，请先运行 node scripts/pixiv-token.mjs 导出后配置到 Netlify。',
-      data: {illusts: [], date: '', mode, nextOffset: null},
+      data: {illusts: [], date: '', mode, nextOffset: null, nextCursor: null},
     }, 200, 'no-store');
   }
 

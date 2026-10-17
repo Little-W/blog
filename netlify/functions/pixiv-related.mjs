@@ -22,6 +22,7 @@ function compactRelated(illust) {
     title: illust.title || '无题',
     author: illust.user?.name || '未知',
     thumb: illust.image_urls?.medium || illust.image_urls?.small || '',
+    isBookmarked: Boolean(illust.is_bookmarked),
   };
 }
 

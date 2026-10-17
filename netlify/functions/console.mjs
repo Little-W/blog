@@ -299,6 +299,11 @@ async function requireSession(request, verifyOwner = false) {
   return session;
 }
 
+// Shared server-side gate for personal Pixiv actions; verifies the signed session and repo owner.
+export async function requireAdminSession(request) {
+  return requireSession(request, true);
+}
+
 async function startLogin(request, url) {
   const clientId = requiredEnvironment('GITHUB_OAUTH_CLIENT_ID', 8);
   const nonce = randomBytes(24).toString('base64url');

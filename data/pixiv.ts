@@ -6,6 +6,7 @@ export type PixivItem = {
   authorId: string;
   thumb: string;
   tags: string[];
+  isBookmarked?: boolean;
 };
 
 export type PixivRankingData = {
@@ -13,7 +14,8 @@ export type PixivRankingData = {
   mode: string;
   illusts: PixivItem[];
   nextOffset: number | null;
+  nextCursor: string | null;
 };
 
 // 仅供本地开发/未配置 Pixiv 凭据时的兜底占位，非真实榜单。
-export const emptyRanking: PixivRankingData = {date: '', mode: 'day', illusts: [], nextOffset: null};
+export const emptyRanking: PixivRankingData = {date: '', mode: 'day', illusts: [], nextOffset: null, nextCursor: null};
