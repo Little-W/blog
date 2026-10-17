@@ -164,6 +164,10 @@
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
 }
 
+.coverWrap {
+  position: relative;
+}
+
 .cover {
   display: block;
   position: relative;
@@ -173,6 +177,51 @@
   background: transparent;
   cursor: zoom-in;
   line-height: 0;
+}
+
+.favoriteButton {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  z-index: 2;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: rgba(17, 24, 39, 0.76);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+}
+
+.favoriteButton svg,
+.detailFavoriteButton svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.favoriteButton.favoriteActive,
+.detailFavoriteButton.favoriteActive {
+  color: #ff5d81;
+}
+
+.favoriteButton.favoriteActive svg,
+.detailFavoriteButton.favoriteActive svg {
+  fill: currentColor;
+}
+
+.favoriteButton:disabled,
+.detailFavoriteButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .cover img {
@@ -342,6 +391,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .detailImageCanvas {
@@ -465,6 +515,26 @@
 
 .downloadButton:hover { background: #006384; color: #fff; text-decoration: none; }
 
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.detailFavoriteButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-color-emphasis-800);
+  font-weight: 650;
+  cursor: pointer;
+}
+
 .detailTags {
   display: flex;
   flex-wrap: wrap;
@@ -504,7 +574,6 @@
   display: block;
   width: 100%;
   margin: 0 0 12px;
-  padding: 0;
   break-inside: avoid;
   overflow: hidden;
   border: 1px solid var(--ifm-color-emphasis-200);
@@ -512,7 +581,19 @@
   background: var(--ifm-background-surface-color);
   color: var(--ifm-font-color-base);
   text-align: left;
-  cursor: pointer;
+}
+
+.relatedCoverWrap {
+  position: relative;
+}
+
+.relatedCover {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
 }
 
 .relatedCard img {
@@ -521,17 +602,34 @@
   height: auto;
 }
 
-.relatedCard span,
-.relatedCard small {
+.relatedInfo {
+  padding: 7px 8px 8px;
+}
+
+.relatedTitle {
   display: block;
-  margin: 7px 8px 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.relatedCard span { font-size: 0.85rem; font-weight: 600; }
-.relatedCard small { margin-top: 3px; margin-bottom: 8px; color: var(--ifm-color-emphasis-700); }
+.relatedInfo small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--ifm-color-emphasis-700);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 :global([data-theme='dark']) .hero::before { background: rgba(9, 18, 32, 0.88); }
 :global([data-theme='dark']) .heroTitle { color: #f0f7ff; }

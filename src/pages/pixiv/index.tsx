@@ -4,11 +4,14 @@ import {PageMetadata} from '@docusaurus/theme-common';
 import Layout from '@theme/Layout';
 import BackToTopButton from '@theme/BackToTopButton';
 import {type PixivItem, type PixivRankingData, emptyRanking} from '@site/data/pixiv';
+import {useAdminSession} from '@site/src/components/AdminSession';
 import PixivImage from './PixivImage';
 import {IMAGE_MIRRORS, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from './image-mirrors';
 import styles from './pixiv.module.css';
 
 const API_URL = '/api/pixiv-ranking';
+const LIST_API_URL = '/api/pixiv-list';
+const BOOKMARK_API_URL = '/api/pixiv-bookmark';
 const DETAIL_URL = '/api/pixiv-detail';
 const RELATED_URL = '/api/pixiv-related';
 const MODES = [
@@ -17,7 +20,11 @@ const MODES = [
   {key: 'month', label: '月榜'},
   {key: 'week_rookie', label: '新人榜'},
   {key: 'week_original', label: '原创榜'},
+  {key: 'recommended', label: '推荐'},
+  {key: 'bookmarks', label: '收藏'},
 ];
+const RANKING_MODES = new Set(['day', 'week', 'month', 'week_rookie', 'week_original']);
+const PERSONAL_MODES = new Set(['recommended', 'bookmarks']);
 
 type Artwork = {
   id: number;
@@ -28,6 +35,7 @@ type Artwork = {
   page_count?: number;
   total_view?: number;
   total_bookmarks?: number;
+  is_bookmarked?: boolean;
   create_date?: string;
   user?: {name?: string};
   tags?: Array<{name: string; translated_name?: string}>;
@@ -36,7 +44,7 @@ type Artwork = {
   meta_pages?: Array<{image_urls?: {large?: string; original?: string}}>;
 };
 
-type RelatedArtwork = {id: number; title: string; author: string; thumb: string};
+type RelatedArtwork = {id: number; title: string; author: string; thumb: string; isBookmarked?: boolean};
 type ArtworkDetail = {illust: Artwork; related: RelatedArtwork[]};
 
 function rankClass(rank: number): string {
@@ -88,6 +96,7 @@ function imageExtension(url: string): string {
 }
 
 export default function PixivRanking() {
+  const {authenticated: adminAuthenticated, loading: adminSessionLoading} = useAdminSession();
   const [mode, setMode] = useState('day');
   const [data, setData] = useState<PixivRankingData>(emptyRanking);
   const [loading, setLoading] = useState(true);
@@ -102,6 +111,9 @@ export default function PixivRanking() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [relatedLoading, setRelatedLoading] = useState(false);
+  const [bookmarkBusy, setBookmarkBusy] = useState<Set<number>>(new Set());
+  const [bookmarkError, setBookmarkError] = useState<string | null>(null);
+  const [bookmarkOverrides, setBookmarkOverrides] = useState<Record<number, boolean>>({});
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({x: 0, y: 0});
@@ -121,7 +133,7 @@ export default function PixivRanking() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pointerDragRef = useRef<{pointerId: number; startX: number; startY: number; panX: number; panY: number} | null>(null);
 
-  const fetchRanking = useCallback(async (targetMode: string, offset = 0, append = false, noCache = false) => {
+  const fetchRanking = useCallback(async (targetMode: string, pageParam: number | string = 0, append = false, noCache = false) => {
     if (append && loadMoreLock.current) return;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -138,7 +150,11 @@ export default function PixivRanking() {
     }
 
     try {
-      const response = await fetch(`${API_URL}?mode=${encodeURIComponent(targetMode)}&offset=${offset}`, {
+      const isPersonalized = PERSONAL_MODES.has(targetMode);
+      const pageUrl = isPersonalized
+        ? `${LIST_API_URL}?type=${encodeURIComponent(targetMode)}${typeof pageParam === 'string' && pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`
+        : `${API_URL}?mode=${encodeURIComponent(targetMode)}&offset=${typeof pageParam === 'number' ? pageParam : 0}`;
+      const response = await fetch(pageUrl, {
         signal: controller.signal,
         cache: noCache ? 'no-store' : 'default',
         headers: noCache ? {'cache-control': 'no-cache'} : {},
@@ -147,12 +163,12 @@ export default function PixivRanking() {
       if (!response.ok || !payload.success) {
         throw new Error(payload.message || `榜单加载失败（${response.status}）`);
       }
-      const page = payload.data as PixivRankingData;
-      if (!append && !page.illusts.some((item) => item.thumb)) setSpeedTesting(false);
+      const pageData = payload.data as PixivRankingData;
+      if (!append && !pageData.illusts.some((item) => item.thumb)) setSpeedTesting(false);
       setData((current) => {
-        if (!append) return page;
+        if (!append) return pageData;
         const seen = new Set(current.illusts.map((item) => item.id));
-        return {...page, illusts: [...current.illusts, ...page.illusts.filter((item) => !seen.has(item.id))]};
+        return {...pageData, illusts: [...current.illusts, ...pageData.illusts.filter((item) => !seen.has(item.id))]};
       });
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
@@ -177,16 +193,39 @@ export default function PixivRanking() {
   }, [mode, fetchRanking]);
 
   useEffect(() => {
+    if (!adminSessionLoading && !adminAuthenticated && PERSONAL_MODES.has(mode)) setMode('day');
+  }, [adminAuthenticated, adminSessionLoading, mode]);
+
+  useEffect(() => {
+    if (!adminAuthenticated) {
+      setBookmarkOverrides({});
+      return;
+    }
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('pixiv-bookmark-overrides') || 'null');
+      if (!saved || Date.now() - saved.savedAt > 24 * 60 * 60 * 1000 || typeof saved.values !== 'object') return;
+      const values: Record<number, boolean> = {};
+      for (const [id, value] of Object.entries(saved.values)) {
+        if (/^\d+$/.test(id) && typeof value === 'boolean') values[Number(id)] = value;
+      }
+      setBookmarkOverrides(values);
+    } catch {
+      setBookmarkOverrides({});
+    }
+  }, [adminAuthenticated]);
+
+  useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || data.nextOffset === null || loading || loadingMore || error) return undefined;
+    const nextPage = PERSONAL_MODES.has(mode) ? data.nextCursor : data.nextOffset;
+    if (!node || nextPage === null || loading || loadingMore || error) return undefined;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) {
-        void fetchRanking(mode, data.nextOffset!, true);
+        void fetchRanking(mode, nextPage!, true);
       }
     }, {rootMargin: '700px 0px'});
     observer.observe(node);
     return () => observer.disconnect();
-  }, [data.nextOffset, error, fetchRanking, loading, loadingMore, mode]);
+  }, [data.nextCursor, data.nextOffset, error, fetchRanking, loading, loadingMore, mode]);
 
   useEffect(() => {
     const grid = gridRef.current;
@@ -359,13 +398,66 @@ export default function PixivRanking() {
     void fetchRanking(mode, 0, false, true);
   };
 
+  const toggleBookmark = async (id: number, currentlyBookmarked: boolean) => {
+    if (!adminAuthenticated || bookmarkBusy.has(id)) return;
+    setBookmarkError(null);
+    setBookmarkBusy((current) => new Set(current).add(id));
+    try {
+      const response = await fetch(BOOKMARK_API_URL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'content-type': 'application/json', accept: 'application/json'},
+        body: JSON.stringify({id, action: currentlyBookmarked ? 'remove' : 'add'}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.success) throw new Error(payload.message || '收藏操作失败。');
+      const isBookmarked = Boolean(payload.data?.isBookmarked);
+      setBookmarkOverrides((current) => {
+        const values = {...current, [id]: isBookmarked};
+        try {
+          window.localStorage.setItem('pixiv-bookmark-overrides', JSON.stringify({savedAt: Date.now(), values}));
+        } catch {
+          // The current page state still updates if storage is unavailable.
+        }
+        return values;
+      });
+      setData((current) => ({
+        ...current,
+        illusts: current.illusts
+          .map((item) => item.id === id ? {...item, isBookmarked} : item)
+          .filter((item) => mode !== 'bookmarks' || isBookmarked),
+      }));
+      if (mode === 'bookmarks' && currentlyBookmarked && data.illusts.length <= 1 && data.nextCursor) {
+        void fetchRanking('bookmarks', data.nextCursor, true);
+      }
+      setDetail((current) => current ? {
+        ...current,
+        illust: current.illust.id === id ? {...current.illust, is_bookmarked: isBookmarked} : current.illust,
+        related: current.related.map((item) => item.id === id ? {...item, isBookmarked} : item),
+      } : current);
+    } catch (caught) {
+      setBookmarkError(caught instanceof Error ? caught.message : '收藏操作失败。');
+    } finally {
+      setBookmarkBusy((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   const items = data.illusts || [];
+  const isRankingMode = RANKING_MODES.has(mode);
+  const nextPage = PERSONAL_MODES.has(mode) ? data.nextCursor : data.nextOffset;
   const banner = items.find((item) => item.thumb)?.thumb;
   const dateLabel = data.date ? formatDate(data.date) : '';
   const artwork = detail?.illust;
   const pageCount = Math.max(1, artwork?.page_count || artwork?.meta_pages?.length || 1);
   const pageOriginal = artwork ? originalPage(artwork, pageIndex) : '';
   const pageDisplay = artwork ? displayPage(artwork, pageIndex) : '';
+  const selectedItem = selectedId === null ? undefined : items.find((item) => item.id === selectedId);
+  const detailBookmarked = artwork ? bookmarkOverrides[artwork.id] ?? Boolean(artwork.is_bookmarked ?? selectedItem?.isBookmarked) : false;
+  const isBookmarked = (id: number, fallback?: boolean) => bookmarkOverrides[id] ?? Boolean(fallback);
   const filename = `${(artwork?.title || 'pixiv-artwork').replace(/[\\/:*?"<>|]/g, '_')}_p${pageIndex + 1}${imageExtension(pageOriginal)}`;
 
   useEffect(() => {
@@ -384,6 +476,19 @@ export default function PixivRanking() {
     const preferred = readMirrorPreference();
     setMirror(preferred);
   }, []);
+
+  useEffect(() => {
+    const viewport = viewerViewportRef.current;
+    if (!viewport || !pageDisplay) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+      setZoom((current) => Math.min(5, Math.max(1, current * factor)));
+    };
+    viewport.addEventListener('wheel', onWheel, {passive: false});
+    return () => viewport.removeEventListener('wheel', onWheel);
+  }, [pageDisplay, selectedId]);
 
   useEffect(() => {
     const probeImage = items.find((item) => item.thumb)?.thumb;
@@ -413,12 +518,6 @@ export default function PixivRanking() {
       return fallback;
     });
   }, []);
-
-  const handleViewerWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setZoom((current) => Math.min(5, Math.max(1, current * factor)));
-  };
 
   const handlePreviewImageLoad: React.ReactEventHandler<HTMLImageElement> = (event) => {
     setPreviewImage(event.currentTarget);
@@ -466,10 +565,10 @@ export default function PixivRanking() {
           </button>
           <h1 className={styles.heroTitle}>Pixiv 美图榜</h1>
           <p className={styles.heroSub}>
-            {loading ? '正在加载榜单…' : dateLabel ? `正在查看 ${dateLabel} 榜单` : '暂无榜单数据'}
+            {loading ? '正在加载图集…' : isRankingMode ? dateLabel ? `正在查看 ${dateLabel} 榜单` : '暂无榜单数据' : mode === 'recommended' ? '为当前账户推荐的图集' : '当前账户收藏的图集'}
           </p>
           <nav className={styles.tabs} aria-label="榜单类型">
-            {MODES.map((entry) => (
+            {MODES.filter((entry) => !PERSONAL_MODES.has(entry.key) || (adminAuthenticated && !adminSessionLoading)).map((entry) => (
               <button
                 key={entry.key}
                 type="button"
@@ -484,30 +583,48 @@ export default function PixivRanking() {
         </header>
 
         {error && <p className={styles.tip} role="status">提示：{error}</p>}
+        {bookmarkError && <p className={styles.tip} role="status">提示：{bookmarkError}</p>}
 
         {items.length === 0 && !loading ? (
           <p className={styles.empty}>暂无数据。</p>
         ) : (
           <>
             <div className={styles.waterfall} ref={gridRef}>
-              {items.map((item: PixivItem) => (
-                <article key={item.id} className={styles.card}>
-                  <button type="button" className={styles.cover} onClick={() => setSelectedId(item.id)} aria-label={`查看作品：${item.title}`}>
-                    <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>
-                    {item.thumb ? speedTesting
-                      ? <span className={styles.imagePlaceholder} aria-hidden="true" />
-                      : <PixivImage src={item.thumb} preferredMirror={mirror} priority={item.rank} onMirrorFailure={handleMirrorFailure} onLoad={item.rank === 1 ? () => setBannerLoaded(true) : undefined} alt={item.title} />
-                      : <span className={styles.coverFallback}>无缩略图</span>}
-                  </button>
+              {items.map((item: PixivItem, index) => {
+                const bookmarked = isBookmarked(item.id, item.isBookmarked);
+                return (
+                  <article key={item.id} className={styles.card}>
+                  <div className={styles.coverWrap}>
+                    <button type="button" className={styles.cover} onClick={() => setSelectedId(item.id)} aria-label={`查看作品：${item.title}`}>
+                      {isRankingMode && item.rank > 0 && <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>}
+                      {item.thumb ? speedTesting
+                        ? <span className={styles.imagePlaceholder} aria-hidden="true" />
+                        : <PixivImage src={item.thumb} preferredMirror={mirror} priority={item.rank || 500 + index} onMirrorFailure={handleMirrorFailure} onLoad={(isRankingMode ? item.rank === 1 : index === 0) ? () => setBannerLoaded(true) : undefined} alt={item.title} />
+                        : <span className={styles.coverFallback}>无缩略图</span>}
+                    </button>
+                    {adminAuthenticated && !adminSessionLoading && (
+                      <button
+                        type="button"
+                        className={clsx(styles.favoriteButton, bookmarked && styles.favoriteActive)}
+                        aria-label={bookmarked ? '取消收藏' : '收藏图集'}
+                        aria-pressed={bookmarked}
+                        disabled={bookmarkBusy.has(item.id)}
+                        onClick={() => void toggleBookmark(item.id, bookmarked)}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.4 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" /></svg>
+                      </button>
+                    )}
+                  </div>
                   <div className={styles.info}>
                     <button type="button" className={styles.cardTitle} onClick={() => setSelectedId(item.id)}>{item.title || '无题'}</button>
                     <div className={styles.cardAuthor}>By: {item.author}</div>
                   </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
             <div className={styles.loadStatus} ref={sentinelRef} aria-live="polite">
-              {loadingMore ? '正在加载更多作品…' : data.nextOffset !== null ? '继续向下滚动以加载更多' : items.length ? '已经到底了' : loading ? '正在加载榜单…' : ''}
+              {loadingMore ? '正在加载更多作品…' : nextPage !== null ? '继续向下滚动以加载更多' : items.length ? '已经到底了' : loading ? '正在加载图集…' : ''}
             </div>
           </>
         )}
@@ -524,7 +641,7 @@ export default function PixivRanking() {
               {artwork && (
                 <>
                   <div className={styles.detailLayout}>
-                    <div className={styles.detailImagePanel} onWheel={handleViewerWheel}>
+                    <div className={styles.detailImagePanel}>
                       {pageDisplay && (
                         <div className={styles.detailImageViewport} ref={viewerViewportRef}>
                           {!previewImage && <span className={styles.detailImagePlaceholder} aria-hidden="true" />}
@@ -584,7 +701,21 @@ export default function PixivRanking() {
                         <span>收藏 {formatCount(artwork.total_bookmarks)}</span>
                         <span>{artwork.width || '—'} × {artwork.height || '—'}</span>
                       </div>
-                      <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename, mirror)}>下载原图</a>
+                      <div className={styles.detailActions}>
+                        <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename, mirror)}>下载原图</a>
+                        {adminAuthenticated && !adminSessionLoading && (
+                          <button
+                            type="button"
+                            className={clsx(styles.detailFavoriteButton, detailBookmarked && styles.favoriteActive)}
+                            aria-pressed={detailBookmarked}
+                            disabled={bookmarkBusy.has(artwork.id)}
+                            onClick={() => void toggleBookmark(artwork.id, detailBookmarked)}
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.4 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" /></svg>
+                            {detailBookmarked ? '已收藏' : '收藏'}
+                          </button>
+                        )}
+                      </div>
                       {artwork.tags?.length ? (
                         <div className={styles.detailTags}>
                           {artwork.tags.map((tag, index) => <span key={`${tag.name}-${index}`}>{tag.translated_name || tag.name}</span>)}
@@ -598,13 +729,34 @@ export default function PixivRanking() {
                     <h3>相似推荐</h3>
                     {detail.related.length ? (
                       <div className={styles.relatedGrid}>
-                        {detail.related.map((related, index) => (
-                          <button type="button" className={styles.relatedCard} key={related.id} onClick={() => setSelectedId(related.id)}>
-                            <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
-                            <span>{related.title}</span>
-                            <small>By: {related.author}</small>
-                          </button>
-                        ))}
+                        {detail.related.map((related, index) => {
+                          const bookmarked = isBookmarked(related.id, related.isBookmarked);
+                          return (
+                            <article className={styles.relatedCard} key={related.id}>
+                              <div className={styles.relatedCoverWrap}>
+                                <button type="button" className={clsx(styles.cover, styles.relatedCover)} onClick={() => setSelectedId(related.id)} aria-label={`查看作品：${related.title}`}>
+                                  <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
+                                </button>
+                                {adminAuthenticated && !adminSessionLoading && (
+                                  <button
+                                    type="button"
+                                    className={clsx(styles.favoriteButton, styles.relatedFavorite, bookmarked && styles.favoriteActive)}
+                                    aria-label={bookmarked ? '取消收藏' : '收藏图集'}
+                                    aria-pressed={bookmarked}
+                                    disabled={bookmarkBusy.has(related.id)}
+                                    onClick={() => void toggleBookmark(related.id, bookmarked)}
+                                  >
+                                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.4 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" /></svg>
+                                  </button>
+                                )}
+                              </div>
+                              <div className={styles.relatedInfo}>
+                                <button type="button" className={styles.relatedTitle} onClick={() => setSelectedId(related.id)}>{related.title}</button>
+                                <small>By: {related.author}</small>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     ) : <p className={styles.modalMessage}>{relatedLoading ? '正在加载相似推荐…' : '暂时没有相似推荐。'}</p>}
                   </section>
