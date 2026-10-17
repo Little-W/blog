@@ -12,9 +12,11 @@ type ImageJob = {
   resolve: (release: () => void) => void;
   reject: (error: DOMException) => void;
   onAbort: () => void;
+  onPreempt?: () => void;
 };
 
 const imageQueue: ImageJob[] = [];
+const activeJobs = new Set<{priority: number; sequence: number; preempt: () => void; release: () => void}>();
 let activeImageCount = 0;
 let jobSequence = 0;
 let pumpQueued = false;
@@ -25,23 +27,38 @@ function scheduleImageQueue(): void {
   queueMicrotask(() => {
     pumpQueued = false;
     imageQueue.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
-    while (activeImageCount < MAX_IMAGE_CONCURRENCY && imageQueue.length > 0) {
+    while (imageQueue.length > 0) {
+      if (activeImageCount >= MAX_IMAGE_CONCURRENCY) {
+        const pending = imageQueue[0];
+        const worstActive = [...activeJobs].sort((left, right) => right.priority - left.priority || right.sequence - left.sequence)[0];
+        if (!worstActive || pending.priority >= worstActive.priority) break;
+        worstActive.preempt();
+        if (activeImageCount >= MAX_IMAGE_CONCURRENCY) break;
+      }
       const job = imageQueue.shift()!;
       if (job.signal.aborted) continue;
       job.signal.removeEventListener('abort', job.onAbort);
       activeImageCount += 1;
       let released = false;
-      job.resolve(() => {
-        if (released) return;
-        released = true;
-        activeImageCount = Math.max(0, activeImageCount - 1);
-        scheduleImageQueue();
-      });
+      const activeJob = {
+        priority: job.priority,
+        sequence: job.sequence,
+        preempt: job.onPreempt || (() => {}),
+        release: () => {
+          if (released) return;
+          released = true;
+          activeJobs.delete(activeJob);
+          activeImageCount = Math.max(0, activeImageCount - 1);
+          scheduleImageQueue();
+        },
+      };
+      activeJobs.add(activeJob);
+      job.resolve(activeJob.release);
     }
   });
 }
 
-export function acquireImageSlot(priority: number, signal: AbortSignal): Promise<() => void> {
+export function acquireImageSlot(priority: number, signal: AbortSignal, onPreempt?: () => void): Promise<() => void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
       reject(new DOMException('Image load cancelled', 'AbortError'));
@@ -53,6 +70,7 @@ export function acquireImageSlot(priority: number, signal: AbortSignal): Promise
       signal,
       resolve,
       reject,
+      onPreempt,
       onAbort: () => {
         const index = imageQueue.indexOf(job);
         if (index !== -1) imageQueue.splice(index, 1);

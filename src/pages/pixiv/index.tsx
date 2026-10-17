@@ -5,11 +5,12 @@ import Layout from '@theme/Layout';
 import BackToTopButton from '@theme/BackToTopButton';
 import {type PixivItem, type PixivRankingData, emptyRanking} from '@site/data/pixiv';
 import PixivImage from './PixivImage';
-import {IMAGE_MIRRORS, MAX_IMAGE_CONCURRENCY, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from './image-mirrors';
+import {IMAGE_MIRRORS, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from './image-mirrors';
 import styles from './pixiv.module.css';
 
 const API_URL = '/api/pixiv-ranking';
 const DETAIL_URL = '/api/pixiv-detail';
+const RELATED_URL = '/api/pixiv-related';
 const MODES = [
   {key: 'day', label: '日榜'},
   {key: 'week', label: '周榜'},
@@ -66,7 +67,9 @@ function originalPage(illust: Artwork, page: number): string {
 
 function displayPage(illust: Artwork, page: number): string {
   return illust.meta_pages?.[page]?.image_urls?.large
+    || (page === 0 ? illust.image_urls?.large : '')
     || illust.meta_pages?.[page]?.image_urls?.original
+    || (page === 0 ? illust.meta_single_page?.original_image_url : '')
     || illust.image_urls?.large
     || originalPage(illust, page);
 }
@@ -98,15 +101,25 @@ export default function PixivRanking() {
   const [detail, setDetail] = useState<ArtworkDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [relatedLoading, setRelatedLoading] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({x: 0, y: 0});
+  const [dragging, setDragging] = useState(false);
+  const [previewImage, setPreviewImage] = useState<HTMLImageElement | null>(null);
+  const [canvasSize, setCanvasSize] = useState({width: 0, height: 0});
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
+  const relatedAbortRef = useRef<AbortController | null>(null);
   const loadMoreLock = useRef(false);
   const speedProbeStarted = useRef(false);
   const failedMirrors = useRef<Set<ImageMirror>>(new Set());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
+  const viewerViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pointerDragRef = useRef<{pointerId: number; startX: number; startY: number; panX: number; panY: number} | null>(null);
 
   const fetchRanking = useCallback(async (targetMode: string, offset = 0, append = false, noCache = false) => {
     if (append && loadMoreLock.current) return;
@@ -179,28 +192,43 @@ export default function PixivRanking() {
     const grid = gridRef.current;
     if (!grid || typeof ResizeObserver === 'undefined') return undefined;
     let frame = 0;
-    const arrangeRows = () => {
-      const styles = getComputedStyle(grid);
-      const columns = Math.max(1, styles.gridTemplateColumns.split(' ').length);
-      const rowHeight = Number.parseFloat(styles.gridAutoRows) || 8;
-      const rowGap = Number.parseFloat(styles.rowGap) || 14;
+    const arrangeMasonry = () => {
+      const computed = getComputedStyle(grid);
+      const columns = Math.max(1, Number.parseInt(computed.getPropertyValue('--waterfall-columns'), 10) || 1);
+      const columnGap = Number.parseFloat(computed.columnGap) || 16;
+      const rowGap = Number.parseFloat(computed.rowGap) || 14;
       const cards = [...grid.querySelectorAll<HTMLElement>(':scope > article')];
-      let rowStart = 1;
-
-      for (let index = 0; index < cards.length; index += columns) {
-        const row = cards.slice(index, index + columns);
-        const spans = row.map((card) => Math.max(1, Math.ceil((card.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap))));
-        row.forEach((card, column) => {
-          card.style.gridColumnStart = String(column + 1);
-          card.style.gridRowStart = String(rowStart);
-          card.style.gridRowEnd = `span ${spans[column]}`;
-        });
-        rowStart += Math.max(...spans);
+      if (!cards.length) {
+        grid.style.height = '0px';
+        return;
       }
+
+      const columnWidth = (grid.clientWidth - columnGap * (columns - 1)) / columns;
+      cards.forEach((card) => {
+        card.style.position = 'absolute';
+        card.style.width = `${columnWidth}px`;
+        card.style.gridColumnStart = '';
+        card.style.gridRowStart = '';
+        card.style.gridRowEnd = '';
+        card.dataset.masonryPositioned = 'true';
+      });
+
+      const columnBottoms = Array(columns).fill(0) as number[];
+      cards.forEach((card, index) => {
+        const column = index < columns
+          ? index
+          : columnBottoms.indexOf(Math.min(...columnBottoms));
+        const top = columnBottoms[column];
+        card.style.left = `${column * (columnWidth + columnGap)}px`;
+        card.style.top = `${top}px`;
+        columnBottoms[column] = top + card.getBoundingClientRect().height + rowGap;
+      });
+
+      grid.style.height = `${Math.max(...columnBottoms) - rowGap}px`;
     };
     const scheduleArrange = () => {
       window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(arrangeRows);
+      frame = window.requestAnimationFrame(arrangeMasonry);
     };
     const resizeObserver = new ResizeObserver(scheduleArrange);
     grid.querySelectorAll<HTMLElement>(':scope > article').forEach((card) => resizeObserver.observe(card));
@@ -213,32 +241,56 @@ export default function PixivRanking() {
   }, [data.illusts.length, mode]);
 
   useEffect(() => {
+    relatedAbortRef.current?.abort();
     if (selectedId === null) {
       detailAbortRef.current?.abort();
       setDetail(null);
+      setRelatedLoading(false);
       return undefined;
     }
     detailAbortRef.current?.abort();
     const controller = new AbortController();
     detailAbortRef.current = controller;
+    const relatedController = new AbortController();
+    relatedAbortRef.current = relatedController;
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
+    setRelatedLoading(true);
     setPageIndex(0);
     void (async () => {
       try {
         const response = await fetch(`${DETAIL_URL}?id=${selectedId}`, {signal: controller.signal});
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.success) throw new Error(payload.message || '作品详情加载失败。');
-        setDetail(payload.data as ArtworkDetail);
+        setDetail({illust: payload.data.illust as Artwork, related: []});
+        void (async () => {
+          try {
+            const relatedResponse = await fetch(`${RELATED_URL}?id=${selectedId}`, {signal: relatedController.signal});
+            const relatedPayload = await relatedResponse.json().catch(() => ({}));
+            if (!relatedResponse.ok || !relatedPayload.success) throw new Error(relatedPayload.message || '相似推荐加载失败。');
+            const related = (relatedPayload.data?.illusts || []) as RelatedArtwork[];
+            setDetail((current) => current?.illust.id === selectedId ? {...current, related} : current);
+          } catch (caught) {
+            if (!(caught instanceof DOMException && caught.name === 'AbortError')) {
+              setDetail((current) => current?.illust.id === selectedId ? {...current, related: []} : current);
+            }
+          } finally {
+            if (!relatedController.signal.aborted) setRelatedLoading(false);
+          }
+        })();
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return;
         setDetailError(caught instanceof Error ? caught.message : '作品详情加载失败。');
+        setRelatedLoading(false);
       } finally {
         if (!controller.signal.aborted) setDetailLoading(false);
       }
     })();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      relatedController.abort();
+    };
   }, [selectedId]);
 
   useEffect(() => {
@@ -256,6 +308,52 @@ export default function PixivRanking() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    setZoom(1);
+    setPan({x: 0, y: 0});
+    setDragging(false);
+    pointerDragRef.current = null;
+  }, [selectedId, pageIndex]);
+
+  useEffect(() => {
+    if (zoom === 1) setPan({x: 0, y: 0});
+  }, [zoom]);
+
+  useEffect(() => {
+    setPreviewImage(null);
+    setCanvasSize({width: 0, height: 0});
+  }, [detail?.illust?.id, pageIndex]);
+
+  useEffect(() => {
+    const image = previewImage;
+    const viewport = viewerViewportRef.current;
+    const canvas = previewCanvasRef.current;
+    if (!image || !viewport || !canvas || image.naturalWidth === 0 || image.naturalHeight === 0) return undefined;
+
+    const drawPreview = () => {
+      const pixelScale = Math.min(
+        1,
+        4096 / image.naturalWidth,
+        4096 / image.naturalHeight,
+        Math.sqrt(12_000_000 / (image.naturalWidth * image.naturalHeight)),
+      );
+      const pixelWidth = Math.max(1, Math.round(image.naturalWidth * pixelScale));
+      const pixelHeight = Math.max(1, Math.round(image.naturalHeight * pixelScale));
+      const fit = Math.min(viewport.clientWidth / pixelWidth, viewport.clientHeight / pixelHeight);
+      if (!Number.isFinite(fit) || fit <= 0) return;
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+      const context = canvas.getContext('2d');
+      context?.drawImage(image, 0, 0, pixelWidth, pixelHeight);
+      setCanvasSize({width: pixelWidth * fit, height: pixelHeight * fit});
+    };
+
+    drawPreview();
+    const observer = new ResizeObserver(drawPreview);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [detail?.illust?.id, pageIndex, previewImage]);
+
   const handleRefresh = () => {
     setRefreshing(true);
     void fetchRanking(mode, 0, false, true);
@@ -269,6 +367,18 @@ export default function PixivRanking() {
   const pageOriginal = artwork ? originalPage(artwork, pageIndex) : '';
   const pageDisplay = artwork ? displayPage(artwork, pageIndex) : '';
   const filename = `${(artwork?.title || 'pixiv-artwork').replace(/[\\/:*?"<>|]/g, '_')}_p${pageIndex + 1}${imageExtension(pageOriginal)}`;
+
+  useEffect(() => {
+    const viewport = viewerViewportRef.current;
+    if (!pageDisplay || speedTesting || previewImage || !viewport) return undefined;
+    const captureLoadedImage = () => {
+      const image = viewport.querySelector<HTMLImageElement>(`.${styles.detailSourceImage}`);
+      if (image?.complete && image.naturalWidth > 0) setPreviewImage(image);
+    };
+    captureLoadedImage();
+    const timer = window.setInterval(captureLoadedImage, 120);
+    return () => window.clearInterval(timer);
+  }, [pageDisplay, previewImage, speedTesting]);
 
   useEffect(() => {
     const preferred = readMirrorPreference();
@@ -304,6 +414,48 @@ export default function PixivRanking() {
     });
   }, []);
 
+  const handleViewerWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setZoom((current) => Math.min(5, Math.max(1, current * factor)));
+  };
+
+  const handlePreviewImageLoad: React.ReactEventHandler<HTMLImageElement> = (event) => {
+    setPreviewImage(event.currentTarget);
+  };
+
+  const handleViewerPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (zoom <= 1 || event.button !== 0) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may be unavailable in synthetic events; dragging still works while the pointer stays over the image.
+    }
+    pointerDragRef.current = {pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y};
+    setDragging(true);
+  };
+
+  const handleViewerPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = pointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setPan({x: drag.panX + event.clientX - drag.startX, y: drag.panY + event.clientY - drag.startY});
+  };
+
+  const finishViewerDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pointerDragRef.current?.pointerId !== event.pointerId) return;
+    pointerDragRef.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const resetViewer = () => {
+    setZoom(1);
+    setPan({x: 0, y: 0});
+    setDragging(false);
+    pointerDragRef.current = null;
+  };
+
   return (
     <Layout title="P站美图榜" description="Pixiv 插画榜单">
       <PageMetadata title="P站美图榜" description="Pixiv 插画榜单" />
@@ -315,9 +467,6 @@ export default function PixivRanking() {
           <h1 className={styles.heroTitle}>Pixiv 美图榜</h1>
           <p className={styles.heroSub}>
             {loading ? '正在加载榜单…' : dateLabel ? `正在查看 ${dateLabel} 榜单` : '暂无榜单数据'}
-          </p>
-          <p className={styles.mirrorStatus} aria-live="polite">
-            {speedTesting ? '正在测速图床镜像…' : `图片线路：${mirror} · 最多 ${MAX_IMAGE_CONCURRENCY} 张同时加载`}
           </p>
           <nav className={styles.tabs} aria-label="榜单类型">
             {MODES.map((entry) => (
@@ -375,8 +524,50 @@ export default function PixivRanking() {
               {artwork && (
                 <>
                   <div className={styles.detailLayout}>
-                    <div className={styles.detailImagePanel}>
-                      {pageDisplay && <PixivImage className={styles.detailImage} placeholderClassName={styles.detailImagePlaceholder} src={pageDisplay} preferredMirror={mirror} priority={0} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={artwork.title} />}
+                    <div className={styles.detailImagePanel} onWheel={handleViewerWheel}>
+                      {pageDisplay && (
+                        <div className={styles.detailImageViewport} ref={viewerViewportRef}>
+                          {!previewImage && <span className={styles.detailImagePlaceholder} aria-hidden="true" />}
+                          <PixivImage
+                            className={styles.detailSourceImage}
+                            placeholderClassName={styles.detailSourcePlaceholder}
+                            src={pageDisplay}
+                            preferredMirror={mirror}
+                            priority={-100}
+                            enabled={!speedTesting}
+                            onMirrorFailure={handleMirrorFailure}
+                            onLoad={handlePreviewImageLoad}
+                            alt={artwork.title}
+                          />
+                          {previewImage && (
+                            <canvas
+                              ref={previewCanvasRef}
+                              className={styles.detailImageCanvas}
+                              style={{
+                                width: `${canvasSize.width * zoom}px`,
+                                height: `${canvasSize.height * zoom}px`,
+                                left: '50%',
+                                top: '50%',
+                                marginLeft: `${pan.x - canvasSize.width * zoom / 2}px`,
+                                marginTop: `${pan.y - canvasSize.height * zoom / 2}px`,
+                                cursor: dragging ? 'grabbing' : zoom > 1 ? 'grab' : 'zoom-in',
+                              }}
+                              aria-label={artwork.title}
+                              onPointerDown={handleViewerPointerDown}
+                              onPointerMove={handleViewerPointerMove}
+                              onPointerUp={finishViewerDrag}
+                              onPointerCancel={finishViewerDrag}
+                            />
+                          )}
+                        </div>
+                      )}
+                      <div className={styles.zoomTools}>
+                        <span className={styles.zoomHint}>滚轮缩放 · 放大后可拖动</span>
+                        <button type="button" onClick={() => setZoom((current) => Math.max(1, current / 1.25))} disabled={zoom <= 1} aria-label="缩小">−</button>
+                        <span className={styles.zoomValue}>{Math.round(zoom * 100)}%</span>
+                        <button type="button" onClick={() => setZoom((current) => Math.min(5, current * 1.25))} disabled={zoom >= 5} aria-label="放大">+</button>
+                        <button type="button" onClick={resetViewer}>重置</button>
+                      </div>
                       {pageCount > 1 && (
                         <div className={styles.pageControls}>
                           <button type="button" onClick={() => setPageIndex((page) => Math.max(0, page - 1))} disabled={pageIndex === 0}>上一张</button>
@@ -415,7 +606,7 @@ export default function PixivRanking() {
                           </button>
                         ))}
                       </div>
-                    ) : <p className={styles.modalMessage}>暂时没有相似推荐。</p>}
+                    ) : <p className={styles.modalMessage}>{relatedLoading ? '正在加载相似推荐…' : '暂时没有相似推荐。'}</p>}
                   </section>
                 </>
               )}

@@ -17,6 +17,7 @@ export default function PixivImage({src, preferredMirror, priority, enabled = tr
   const [attempt, setAttempt] = useState(0);
   const [nearViewport, setNearViewport] = useState(false);
   const [activeAttempt, setActiveAttempt] = useState<number | null>(null);
+  const [loadCycle, setLoadCycle] = useState(0);
   const imageRef = useRef<HTMLElement | null>(null);
   const releaseRef = useRef<(() => void) | null>(null);
 
@@ -43,7 +44,14 @@ export default function PixivImage({src, preferredMirror, priority, enabled = tr
     if (!enabled || !nearViewport || !src) return undefined;
     const controller = new AbortController();
     setActiveAttempt(null);
-    void acquireImageSlot(priority, controller.signal).then((release) => {
+    const preempt = () => {
+      if (imageRef.current instanceof HTMLImageElement) imageRef.current.removeAttribute('src');
+      releaseRef.current?.();
+      releaseRef.current = null;
+      setActiveAttempt(null);
+      setLoadCycle((cycle) => cycle + 1);
+    };
+    void acquireImageSlot(priority, controller.signal, preempt).then((release) => {
       if (controller.signal.aborted) {
         release();
         return;
@@ -58,7 +66,7 @@ export default function PixivImage({src, preferredMirror, priority, enabled = tr
       releaseRef.current?.();
       releaseRef.current = null;
     };
-  }, [attempt, enabled, nearViewport, priority, src]);
+  }, [attempt, enabled, loadCycle, nearViewport, priority, src]);
 
   const releaseSlot = () => {
     releaseRef.current?.();

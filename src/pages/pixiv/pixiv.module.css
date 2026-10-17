@@ -1,4 +1,5 @@
 .page {
+  width: 100%;
   max-width: 1320px;
   margin: 0 auto;
   padding: 1.25rem 16px 3rem;
@@ -41,13 +42,6 @@
   margin: 0.5rem 0 0;
   color: #334e68;
   font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.mirrorStatus {
-  margin: 0.25rem 0 0;
-  color: #526579;
-  font-size: 0.78rem;
   font-weight: 600;
 }
 
@@ -127,31 +121,30 @@
 }
 
 .waterfall {
+  --waterfall-columns: 2;
+  position: relative;
   display: grid;
-  grid-auto-flow: row;
-  grid-auto-rows: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 16px;
 }
 
 @media (min-width: 576px) {
-  .waterfall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .waterfall { --waterfall-columns: 3; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (min-width: 768px) {
-  .waterfall { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .waterfall { --waterfall-columns: 4; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (min-width: 996px) {
-  .waterfall { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .waterfall { --waterfall-columns: 5; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 @media (min-width: 1200px) {
-  .waterfall { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .waterfall { --waterfall-columns: 6; grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 .card {
-  align-self: start;
   min-width: 0;
   border: 1px solid var(--ifm-color-emphasis-200);
   border-radius: 10px;
@@ -159,6 +152,11 @@
   background: var(--ifm-background-surface-color);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card[data-masonry-positioned='true'] {
+  position: absolute;
+  margin: 0;
 }
 
 .card:hover {
@@ -326,6 +324,7 @@
 
 .detailImagePanel {
   display: flex;
+  position: relative;
   min-height: 420px;
   flex-direction: column;
   align-items: center;
@@ -334,19 +333,76 @@
   background: #10151d;
 }
 
-.detailImage {
+.detailImageViewport {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: min(60vh, 560px);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.detailImageCanvas {
+  position: absolute;
   display: block;
-  max-width: 100%;
-  max-height: 72vh;
-  object-fit: contain;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  touch-action: none;
+  image-rendering: auto;
 }
 
 .detailImagePlaceholder {
+  position: absolute;
+  inset: 0;
   display: block;
-  width: min(100%, 640px);
-  min-height: min(65vh, 640px);
+  width: 100%;
+  height: 100%;
   background: #1d2633;
 }
+
+.detailSourceImage,
+.detailSourcePlaceholder {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 0;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.zoomTools {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 12px;
+  color: #e5edf5;
+  font-size: 0.82rem;
+}
+
+.zoomHint {
+  margin-right: 0.35rem;
+  color: #bac8d6;
+}
+
+.zoomTools button {
+  min-width: 34px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+}
+
+.zoomTools button:disabled { opacity: 0.45; cursor: not-allowed; }
+.zoomValue { min-width: 42px; text-align: center; }
 
 .pageControls {
   display: flex;
@@ -480,7 +536,6 @@
 :global([data-theme='dark']) .hero::before { background: rgba(9, 18, 32, 0.88); }
 :global([data-theme='dark']) .heroTitle { color: #f0f7ff; }
 :global([data-theme='dark']) .heroSub { color: #e1edf7; }
-:global([data-theme='dark']) .mirrorStatus { color: #c0d2e3; }
 :global([data-theme='dark']) .tabs { border-color: rgba(255, 255, 255, 0.35); background: rgba(15, 23, 42, 0.92); }
 :global([data-theme='dark']) .tab { color: #edf4fb; }
 :global([data-theme='dark']) .tab:hover { background: #243b53; }
@@ -498,7 +553,10 @@
   .modalScroll { max-height: 100vh; }
   .detailLayout { display: flex; flex-direction: column; }
   .detailImagePanel { min-height: 280px; padding: 54px 12px 14px; }
-  .detailImage { max-height: 62vh; }
+  .detailImageViewport { height: min(50vh, 420px); }
+  .detailImageCanvas { max-width: none; max-height: none; }
+  .zoomTools { flex-wrap: wrap; }
+  .zoomHint { width: 100%; margin: 0 0 0.25rem; text-align: center; }
   .detailInfo { padding: 1.25rem; }
   .relatedSection { padding: 1.25rem; }
 }
