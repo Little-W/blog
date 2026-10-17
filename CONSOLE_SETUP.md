@@ -29,8 +29,12 @@
 | `GITHUB_REPO_OWNER` | `Little-W` |
 | `GITHUB_REPO_NAME` | `blog` |
 | `GITHUB_REPO_BRANCH` | `main` |
+| `PIXIV_REFRESH_TOKEN` | Pixiv 账号 refresh token（`node scripts/pixiv-token.mjs` 导出） |
+| `BILI_SESSION_ENCRYPTION_KEY` | B 站会话加密密钥，不少于 24 字符 |
+| `BILI_PARSER_ADMIN_TOKEN` | B 站解析管理接口使用的 Bearer token |
+| `SILICONFLOW_API_KEY` | 看板娘 AI 对话 API Key |
 
-这些变量需要包含 Functions 作用域。更新变量后重新部署一次。
+这些变量需要包含 Functions 作用域。`GITHUB_REPO_OWNER/NAME/BRANCH` 默认分别为 `Little-W`、`blog`、`main`；`PIXIV_CLIENT_ID/PIXIV_CLIENT_SECRET` 使用内置值即可，无需设置。`GITHUB_OAUTH_PUBLIC_ORIGIN`、`BILI_ALLOWED_ORIGIN` 和 `WAIFU_CHAT_PUBLIC_ORIGIN` 建议设为 `https://blog.yusen.best`。更新变量后重新部署一次。
 
 `GITHUB_SESSION_SECRET` 可用以下命令生成：
 
@@ -40,14 +44,13 @@ openssl rand -base64 48
 
 ## 4. 配置 GitHub Actions
 
-在 `Little-W/blog` 的 `Settings > Secrets and variables > Actions` 中添加：
+在 `Little-W/blog` 的 `Settings > Environments > github-pages` 中添加以下 Secret：
 
 | Secret | 内容 |
 | --- | --- |
-| `NETLIFY_AUTH_TOKEN` | Netlify personal access token |
-| `NETLIFY_SITE_ID` | Netlify 项目 ID |
+| `BLOG_STATIC_TOKEN` | 仅可读写 `Little-W/blog_static` 的 fine-grained PAT，Contents 设为 `Read and write` |
 
-`.github/workflows/build-and-deploy.yml` 会在 `main` 分支每次提交后执行 `npm ci`、Docusaurus 构建和 Netlify 生产部署。如果 Netlify 仍开启仓库自动构建，同一次提交会产生两个部署任务；使用本工作流时应在 Netlify 中停止重复的仓库构建。
+`.github/workflows/build-and-deploy.yml` 会在 `main` 分支每次提交后执行 `npm ci`、Docusaurus 构建，并将静态文件和 Functions 同步推送到 `Little-W/blog_static`。Netlify 通过该发布仓库自动部署；当前工作流不使用 `NETLIFY_AUTH_TOKEN` 或 `NETLIFY_SITE_ID`。
 
 ## 5. 使用方式
 
