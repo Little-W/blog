@@ -6,8 +6,9 @@ import {Icon} from '@iconify/react';
 import {useAdminSession} from '@site/src/components/AdminSession';
 
 import styles from './styles.module.css';
+import {consoleApi} from '@site/src/components/admin/consoleApi';
+import ArticleConsole from '@site/src/components/admin/ArticleConsole';
 
-type ApiResult<T> = {success: boolean; data: T; message?: string; code?: string};
 type DatasetInfo = {name: string; label: string; path: string};
 type JsonRecord = Record<string, unknown>;
 type DatasetPayload = {
@@ -44,34 +45,6 @@ type EditorField = {
   type: 'string' | 'number' | 'boolean' | 'json' | 'null';
   value: string;
 };
-
-class ConsoleApiError extends Error {
-  status: number;
-  code?: string;
-
-  constructor(message: string, status: number, code?: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
-
-async function consoleApi<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: 'same-origin',
-    headers: {
-      accept: 'application/json',
-      ...(init?.body ? {'content-type': 'application/json; charset=utf-8'} : {}),
-      ...init?.headers,
-    },
-  });
-  const payload = (await response.json()) as ApiResult<T>;
-  if (!response.ok || !payload.success) {
-    throw new ConsoleApiError(payload.message || `请求失败（${response.status}）`, response.status, payload.code);
-  }
-  return payload.data;
-}
 
 async function clearMusicBrowserCaches() {
   if (typeof window === 'undefined') return;
@@ -1159,139 +1132,6 @@ function DataConsole({repository}: {repository: string | null}) {
             {importMode === 'append' ? '导入并新增' : '导入并覆盖'}
           </button>
         </section>
-      </section>
-    </div>
-  );
-}
-
-function ArticleConsole({initialPath, repository}: {initialPath: string; repository: string | null}) {
-  const [files, setFiles] = useState<string[]>([]);
-  const [selectedPath, setSelectedPath] = useState(initialPath);
-  const [content, setContent] = useState('');
-  const [baseline, setBaseline] = useState('');
-  const [headSha, setHeadSha] = useState('');
-  const [message, setMessage] = useState('');
-  const [filter, setFilter] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const dirty = content !== baseline;
-
-  const loadFile = async (path: string) => {
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      const data = await consoleApi<{path: string; content: string; headSha: string}>(`/api/console/file?path=${encodeURIComponent(path)}`);
-      setSelectedPath(data.path);
-      setContent(data.content);
-      setBaseline(data.content);
-      setHeadSha(data.headSha);
-      setMessage(`文章：通过控制台更新 ${data.path}`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法读取文章。');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    void consoleApi<{files: string[]}>('/api/console/files')
-      .then(({files: values}) => {
-        setFiles(values);
-        const target = initialPath && values.includes(initialPath) ? initialPath : values[0];
-        if (target) void loadFile(target);
-      })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : '无法读取文章列表。'));
-  }, []);
-
-  useEffect(() => {
-    const beforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', beforeUnload);
-    return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [dirty]);
-
-  const chooseFile = (path: string) => {
-    if (path === selectedPath) return;
-    if (dirty && !window.confirm('当前文章有未提交的修改，确定放弃吗？')) return;
-    void loadFile(path);
-  };
-
-  const save = async () => {
-    if (!selectedPath || !dirty) return;
-    setBusy(true);
-    setError('');
-    try {
-      const result = await consoleApi<{commitSha: string}>('/api/console/file', {
-        method: 'POST',
-        body: JSON.stringify({path: selectedPath, content, baseHeadSha: headSha, message}),
-      });
-      await loadFile(selectedPath);
-      setNotice(`文章已写入仓库，提交编号为 ${result.commitSha.slice(0, 8)}。`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '文章提交失败。');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const visibleFiles = files.filter((path) => path.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
-
-  return (
-    <div className={styles.articleGrid}>
-      <aside className={styles.fileSidebar}>
-        <label className={styles.searchBox}>
-          <Icon icon="lucide:search" />
-          <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="搜索文章文件" />
-        </label>
-        <div className={styles.fileList}>
-          {visibleFiles.map((path) => (
-            <button type="button" key={path} className={path === selectedPath ? styles.fileActive : styles.fileButton} onClick={() => chooseFile(path)}>
-              <Icon icon="lucide:file-text" />
-              <span>{path.split('/').pop()}<small>{path}</small></span>
-            </button>
-          ))}
-        </div>
-      </aside>
-      <section className={styles.articleEditor}>
-        <div className={styles.workspaceHeader}>
-          <div>
-            <span className={styles.eyebrow}>MARKDOWN EDITOR</span>
-            <h2>{selectedPath ? selectedPath.split('/').pop() : '选择文章'}</h2>
-            <p>{selectedPath || '从左侧列表选择 Markdown 文件'}</p>
-          </div>
-          <button type="button" className={styles.primaryButton} onClick={() => void save()} disabled={!dirty || busy}>
-            <Icon icon="lucide:git-commit-horizontal" />
-            提交文章
-          </button>
-        </div>
-        {error ? <div className={styles.errorBanner}><Icon icon="lucide:circle-alert" />{error}</div> : null}
-        {notice ? (
-          <div className={styles.noticeBanner}>
-            <Icon icon="lucide:circle-check" />
-            <span>{notice} GitHub Actions 将继续构建和部署。</span>
-            {repository ? <a href={`https://github.com/${repository}/actions`} target="_blank" rel="noreferrer">查看 Actions</a> : null}
-          </div>
-        ) : null}
-        <textarea
-          className={styles.markdownEditor}
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          spellCheck={false}
-          aria-label="Markdown 源文件"
-          disabled={!selectedPath || busy}
-        />
-        <div className={styles.commitRow}>
-          <label>
-            <span>提交说明</span>
-            <input value={message} onChange={(event) => setMessage(event.target.value)} maxLength={240} />
-          </label>
-          <span className={dirty ? styles.dirtyMark : styles.savedMark}>{dirty ? '有未提交修改' : '已与仓库同步'}</span>
-        </div>
       </section>
     </div>
   );

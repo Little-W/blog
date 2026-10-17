@@ -535,7 +535,7 @@ async function commitFiles({files, baseHeadSha, message}) {
   const paths = new Set();
   files.forEach(({path, content}) => {
     if (typeof path !== 'string' || !path || paths.has(path)) throw requestError('文件路径无效或重复。');
-    if (typeof content !== 'string') throw requestError(`文件 ${path} 的内容无效。`);
+    if (content !== null && typeof content !== 'string') throw requestError(`文件 ${path} 的内容无效。`);
     paths.add(path);
   });
   const snapshot = await repoSnapshot();
@@ -546,6 +546,7 @@ async function commitFiles({files, baseHeadSha, message}) {
     throw error;
   }
   const blobs = await Promise.all(files.map(async ({path, content}) => {
+    if (content === null) return {path, mode: '100644', type: 'blob', sha: null};
     const blob = await githubRequest(`${snapshot.root}/git/blobs`, {
       method: 'POST',
       body: {content, encoding: 'utf-8'},
@@ -593,7 +594,9 @@ async function listFiles() {
     .map((item) => item.path)
     .filter((path) => allowedContentPath(path))
     .sort((left, right) => left.localeCompare(right, 'zh-CN'));
-  return json({success: true, data: {files, headSha: snapshot.headSha}});
+  const sections = [...new Set(files.map((path) => path.split('/').slice(0, -1).join('/')).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  return json({success: true, data: {files, sections, headSha: snapshot.headSha}});
 }
 
 async function getFile(url) {
@@ -611,11 +614,30 @@ async function saveFile(request) {
   if (typeof body.content !== 'string' || Buffer.byteLength(body.content) > MAX_SOURCE_BYTES) {
     return fail('Markdown 正文必须是不超过 3 MiB 的字符串。', 'INVALID_CONTENT');
   }
-  const result = await commitFile({
-    path,
-    content: body.content,
+  const files = [{path, content: body.content}];
+  if (body.previousPath && body.previousPath !== path) {
+    const previousPath = allowedContentPath(body.previousPath);
+    if (!previousPath) return fail('原文件路径无效。', 'INVALID_CONTENT_PATH');
+    if (previousPath !== path) files.push({path: previousPath, content: null});
+  }
+  const result = await commitFiles({
+    files,
     baseHeadSha: body.baseHeadSha,
     message: body.message || `文章：通过控制台更新 ${path}`,
+  });
+  return json({success: true, data: result}, 201);
+}
+
+async function deleteFile(request) {
+  const body = await readBody(request);
+  const path = allowedContentPath(body.path);
+  if (!path) return fail('只允许删除 docs 或 blog 中的 Markdown 文件。', 'INVALID_CONTENT_PATH');
+  const snapshot = await repoSnapshot();
+  findBlob(snapshot, path);
+  const result = await commitFiles({
+    files: [{path, content: null}],
+    baseHeadSha: body.baseHeadSha || snapshot.headSha,
+    message: body.message || `文章：通过控制台删除 ${path}`,
   });
   return json({success: true, data: result}, 201);
 }
@@ -1023,6 +1045,7 @@ export default async (request) => {
     if (url.pathname === '/api/console/files' && request.method === 'GET') return await listFiles();
     if (url.pathname === '/api/console/file' && request.method === 'GET') return await getFile(url);
     if (url.pathname === '/api/console/file' && request.method === 'POST') return await saveFile(request);
+    if (url.pathname === '/api/console/file' && request.method === 'DELETE') return await deleteFile(request);
     return fail('控制台接口不存在。', 'NOT_FOUND', 404);
   } catch (caught) {
     console.error('[blog-console]', caught instanceof Error ? caught.message : String(caught));
