@@ -1,5 +1,5 @@
-// 仅代理开源图床 i.pixiv.re，可选以附件形式返回用于下载。
-const ALLOWED_HOST = 'i.pixiv.re';
+// 仅代理经验证可用的开源图床镜像，可选以附件形式返回用于下载。
+const ALLOWED_HOSTS = new Set(['i.pixiv.re', 'i.pixiv.nl']);
 
 export const config = {
   path: '/api/pixiv-thumb',
@@ -21,39 +21,60 @@ export default async (request) => {
   } catch {
     return new Response('Invalid image url', {status: 400});
   }
-  if (target.protocol !== 'https:' || target.hostname !== ALLOWED_HOST) {
+  if (target.protocol !== 'https:' || !ALLOWED_HOSTS.has(target.hostname)) {
     return new Response('Forbidden', {status: 403});
   }
 
-  let upstream;
-  try {
-    upstream = await fetch(target.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
-        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      },
-    });
-  } catch {
-    return new Response('Upstream request failed', {status: 502});
+  const filename = url.searchParams.get('download');
+  const mirrors = [target.hostname, ...[...ALLOWED_HOSTS].filter((host) => host !== target.hostname)];
+  let upstream = null;
+  let body = null;
+  let contentType = 'image/jpeg';
+
+  for (const host of mirrors) {
+    const mirrorUrl = new URL(target);
+    mirrorUrl.hostname = host;
+    try {
+      const response = await fetch(mirrorUrl.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        ...(filename ? {signal: AbortSignal.timeout(9000)} : {}),
+      });
+      if (!response.ok || !response.body) continue;
+      contentType = response.headers.get('content-type') || contentType;
+      if (filename) {
+        try {
+          body = await response.arrayBuffer();
+          upstream = response;
+          break;
+        } catch {
+          continue;
+        }
+      }
+      upstream = response;
+      body = response.body;
+      break;
+    } catch {
+      // Try the other approved image mirror before failing the request.
+    }
   }
 
-  if (!upstream.ok || !upstream.body) {
-    return new Response('Upstream error', {status: 502});
-  }
+  if (!upstream || !body) return new Response('Image mirrors unavailable', {status: 502});
 
   const headers = {
-    'content-type': upstream.headers.get('content-type') || 'image/jpeg',
+    'content-type': contentType,
     'cache-control': 'public, max-age=86400, immutable',
     'x-content-type-options': 'nosniff',
   };
-  const filename = url.searchParams.get('download');
   if (filename) {
     const safeName = filename.replace(/[\\/\r\n\";]/g, '_').slice(0, 180) || 'pixiv-artwork.jpg';
     headers['content-disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`;
     headers['cache-control'] = 'private, no-store';
   }
 
-  return new Response(upstream.body, {
+  return new Response(body, {
     status: 200,
     headers,
   });

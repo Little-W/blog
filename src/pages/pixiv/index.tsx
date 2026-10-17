@@ -4,6 +4,8 @@ import {PageMetadata} from '@docusaurus/theme-common';
 import Layout from '@theme/Layout';
 import BackToTopButton from '@theme/BackToTopButton';
 import {type PixivItem, type PixivRankingData, emptyRanking} from '@site/data/pixiv';
+import PixivImage from './PixivImage';
+import {IMAGE_MIRRORS, MAX_IMAGE_CONCURRENCY, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from './image-mirrors';
 import styles from './pixiv.module.css';
 
 const API_URL = '/api/pixiv-ranking';
@@ -48,12 +50,8 @@ function formatDate(date: string): string {
   return matched ? `${matched[1]}年${Number(matched[2])}月${Number(matched[3])}日` : date;
 }
 
-function publicImageUrl(url: string): string {
-  return url.replace(/^https:\/\/i\.pximg\.net\//, 'https://i.pixiv.re/');
-}
-
-function imageProxy(url: string, filename?: string): string {
-  const query = new URLSearchParams({u: publicImageUrl(url)});
+function imageProxy(url: string, filename: string | undefined, mirror: ImageMirror): string {
+  const query = new URLSearchParams({u: imageUrlOnMirror(url, mirror)});
   if (filename) query.set('download', filename);
   return `/api/pixiv-thumb?${query.toString()}`;
 }
@@ -92,6 +90,9 @@ export default function PixivRanking() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [mirror, setMirror] = useState<ImageMirror>(readMirrorPreference);
+  const [speedTesting, setSpeedTesting] = useState(true);
+  const [bannerLoaded, setBannerLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ArtworkDetail | null>(null);
@@ -101,7 +102,10 @@ export default function PixivRanking() {
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
   const loadMoreLock = useRef(false);
+  const speedProbeStarted = useRef(false);
+  const failedMirrors = useRef<Set<ImageMirror>>(new Set());
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetchRanking = useCallback(async (targetMode: string, offset = 0, append = false, noCache = false) => {
@@ -131,6 +135,7 @@ export default function PixivRanking() {
         throw new Error(payload.message || `榜单加载失败（${response.status}）`);
       }
       const page = payload.data as PixivRankingData;
+      if (!append && !page.illusts.some((item) => item.thumb)) setSpeedTesting(false);
       setData((current) => {
         if (!append) return page;
         const seen = new Set(current.illusts.map((item) => item.id));
@@ -139,7 +144,10 @@ export default function PixivRanking() {
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return;
       setError(caught instanceof Error ? caught.message : '榜单加载失败。');
-      if (!append) setData(emptyRanking);
+      if (!append) {
+        setData(emptyRanking);
+        setSpeedTesting(false);
+      }
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);
@@ -166,6 +174,43 @@ export default function PixivRanking() {
     observer.observe(node);
     return () => observer.disconnect();
   }, [data.nextOffset, error, fetchRanking, loading, loadingMore, mode]);
+
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || typeof ResizeObserver === 'undefined') return undefined;
+    let frame = 0;
+    const arrangeRows = () => {
+      const styles = getComputedStyle(grid);
+      const columns = Math.max(1, styles.gridTemplateColumns.split(' ').length);
+      const rowHeight = Number.parseFloat(styles.gridAutoRows) || 8;
+      const rowGap = Number.parseFloat(styles.rowGap) || 14;
+      const cards = [...grid.querySelectorAll<HTMLElement>(':scope > article')];
+      let rowStart = 1;
+
+      for (let index = 0; index < cards.length; index += columns) {
+        const row = cards.slice(index, index + columns);
+        const spans = row.map((card) => Math.max(1, Math.ceil((card.getBoundingClientRect().height + rowGap) / (rowHeight + rowGap))));
+        row.forEach((card, column) => {
+          card.style.gridColumnStart = String(column + 1);
+          card.style.gridRowStart = String(rowStart);
+          card.style.gridRowEnd = `span ${spans[column]}`;
+        });
+        rowStart += Math.max(...spans);
+      }
+    };
+    const scheduleArrange = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(arrangeRows);
+    };
+    const resizeObserver = new ResizeObserver(scheduleArrange);
+    grid.querySelectorAll<HTMLElement>(':scope > article').forEach((card) => resizeObserver.observe(card));
+    resizeObserver.observe(grid);
+    scheduleArrange();
+    return () => {
+      resizeObserver.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [data.illusts.length, mode]);
 
   useEffect(() => {
     if (selectedId === null) {
@@ -225,17 +270,54 @@ export default function PixivRanking() {
   const pageDisplay = artwork ? displayPage(artwork, pageIndex) : '';
   const filename = `${(artwork?.title || 'pixiv-artwork').replace(/[\\/:*?"<>|]/g, '_')}_p${pageIndex + 1}${imageExtension(pageOriginal)}`;
 
+  useEffect(() => {
+    const preferred = readMirrorPreference();
+    setMirror(preferred);
+  }, []);
+
+  useEffect(() => {
+    const probeImage = items.find((item) => item.thumb)?.thumb;
+    if (!probeImage || speedProbeStarted.current) return undefined;
+    speedProbeStarted.current = true;
+    let active = true;
+    setSpeedTesting(true);
+    void measureFastestMirror(probeImage).then((fastest) => {
+      if (!active) return;
+      if (fastest) {
+        setMirror(fastest);
+        saveMirrorPreference(fastest);
+      }
+      setSpeedTesting(false);
+    });
+    return () => { active = false; };
+  }, [items]);
+
+  useEffect(() => setBannerLoaded(false), [banner]);
+
+  const handleMirrorFailure = useCallback((failedMirror: ImageMirror) => {
+    failedMirrors.current.add(failedMirror);
+    setMirror((current) => {
+      if (current !== failedMirror) return current;
+      const fallback = IMAGE_MIRRORS.find((candidate) => !failedMirrors.current.has(candidate)) || current;
+      saveMirrorPreference(fallback);
+      return fallback;
+    });
+  }, []);
+
   return (
     <Layout title="P站美图榜" description="Pixiv 插画榜单">
       <PageMetadata title="P站美图榜" description="Pixiv 插画榜单" />
       <div className={styles.page}>
-        <header className={styles.hero} style={banner ? {backgroundImage: `url("${publicImageUrl(banner)}")`} : undefined}>
+        <header className={styles.hero} style={banner && bannerLoaded ? {backgroundImage: `url("${imageUrlOnMirror(banner, mirror)}")`} : undefined}>
           <button className={styles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
             {refreshing ? '刷新中…' : '刷新'}
           </button>
           <h1 className={styles.heroTitle}>Pixiv 美图榜</h1>
           <p className={styles.heroSub}>
             {loading ? '正在加载榜单…' : dateLabel ? `正在查看 ${dateLabel} 榜单` : '暂无榜单数据'}
+          </p>
+          <p className={styles.mirrorStatus} aria-live="polite">
+            {speedTesting ? '正在测速图床镜像…' : `图片线路：${mirror} · 最多 ${MAX_IMAGE_CONCURRENCY} 张同时加载`}
           </p>
           <nav className={styles.tabs} aria-label="榜单类型">
             {MODES.map((entry) => (
@@ -258,12 +340,15 @@ export default function PixivRanking() {
           <p className={styles.empty}>暂无数据。</p>
         ) : (
           <>
-            <div className={styles.waterfall}>
+            <div className={styles.waterfall} ref={gridRef}>
               {items.map((item: PixivItem) => (
                 <article key={item.id} className={styles.card}>
                   <button type="button" className={styles.cover} onClick={() => setSelectedId(item.id)} aria-label={`查看作品：${item.title}`}>
                     <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>
-                    {item.thumb ? <img src={publicImageUrl(item.thumb)} alt={item.title} loading="lazy" /> : <span className={styles.coverFallback}>无缩略图</span>}
+                    {item.thumb ? speedTesting
+                      ? <span className={styles.imagePlaceholder} aria-hidden="true" />
+                      : <PixivImage src={item.thumb} preferredMirror={mirror} priority={item.rank} onMirrorFailure={handleMirrorFailure} onLoad={item.rank === 1 ? () => setBannerLoaded(true) : undefined} alt={item.title} />
+                      : <span className={styles.coverFallback}>无缩略图</span>}
                   </button>
                   <div className={styles.info}>
                     <button type="button" className={styles.cardTitle} onClick={() => setSelectedId(item.id)}>{item.title || '无题'}</button>
@@ -291,7 +376,7 @@ export default function PixivRanking() {
                 <>
                   <div className={styles.detailLayout}>
                     <div className={styles.detailImagePanel}>
-                      {pageDisplay && <img className={styles.detailImage} src={publicImageUrl(pageDisplay)} alt={artwork.title} />}
+                      {pageDisplay && <PixivImage className={styles.detailImage} placeholderClassName={styles.detailImagePlaceholder} src={pageDisplay} preferredMirror={mirror} priority={0} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={artwork.title} />}
                       {pageCount > 1 && (
                         <div className={styles.pageControls}>
                           <button type="button" onClick={() => setPageIndex((page) => Math.max(0, page - 1))} disabled={pageIndex === 0}>上一张</button>
@@ -308,7 +393,7 @@ export default function PixivRanking() {
                         <span>收藏 {formatCount(artwork.total_bookmarks)}</span>
                         <span>{artwork.width || '—'} × {artwork.height || '—'}</span>
                       </div>
-                      <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename)}>下载原图</a>
+                      <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename, mirror)}>下载原图</a>
                       {artwork.tags?.length ? (
                         <div className={styles.detailTags}>
                           {artwork.tags.map((tag, index) => <span key={`${tag.name}-${index}`}>{tag.translated_name || tag.name}</span>)}
@@ -322,9 +407,9 @@ export default function PixivRanking() {
                     <h3>相似推荐</h3>
                     {detail.related.length ? (
                       <div className={styles.relatedGrid}>
-                        {detail.related.map((related) => (
+                        {detail.related.map((related, index) => (
                           <button type="button" className={styles.relatedCard} key={related.id} onClick={() => setSelectedId(related.id)}>
-                            <img src={publicImageUrl(related.thumb)} alt={related.title} loading="lazy" />
+                            <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
                             <span>{related.title}</span>
                             <small>By: {related.author}</small>
                           </button>
