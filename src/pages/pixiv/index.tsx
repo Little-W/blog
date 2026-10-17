@@ -5,8 +5,8 @@ import Layout from '@theme/Layout';
 import BackToTopButton from '@theme/BackToTopButton';
 import {type PixivItem, type PixivRankingData, emptyRanking} from '@site/data/pixiv';
 import {useAdminSession} from '@site/src/components/AdminSession';
-import PixivImage from './PixivImage';
-import {IMAGE_MIRRORS, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from './image-mirrors';
+import PixivImage from '@site/src/components/PixivImage';
+import {IMAGE_MIRRORS, imageUrlOnMirror, measureFastestMirror, readMirrorPreference, saveMirrorPreference, type ImageMirror} from '@site/src/utils/pixiv-image-mirrors';
 import styles from './pixiv.module.css';
 
 const API_URL = '/api/pixiv-ranking';
@@ -107,6 +107,7 @@ export default function PixivRanking() {
   const [bannerLoaded, setBannerLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [detailHistory, setDetailHistory] = useState<number[]>([]);
   const [detail, setDetail] = useState<ArtworkDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -163,7 +164,14 @@ export default function PixivRanking() {
       if (!response.ok || !payload.success) {
         throw new Error(payload.message || `榜单加载失败（${response.status}）`);
       }
-      const pageData = payload.data as PixivRankingData;
+      const responsePage = payload.data as PixivRankingData;
+      const rankBase = typeof pageParam === 'number' ? pageParam : 0;
+      const pageData = {
+        ...responsePage,
+        illusts: responsePage.illusts.map((item, index) => RANKING_MODES.has(targetMode)
+          ? {...item, rank: rankBase + index + 1}
+          : item),
+      };
       if (!append && !pageData.illusts.some((item) => item.thumb)) setSpeedTesting(false);
       setData((current) => {
         if (!append) return pageData;
@@ -337,7 +345,10 @@ export default function PixivRanking() {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedId(null);
+      if (event.key === 'Escape') {
+        setSelectedId(null);
+        setDetailHistory([]);
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     modalScrollRef.current?.scrollTo(0, 0);
@@ -444,6 +455,23 @@ export default function PixivRanking() {
         return next;
       });
     }
+  };
+
+  const openArtwork = (id: number, fromRelated = false) => {
+    setDetailHistory((history) => fromRelated && selectedId !== null ? [...history, selectedId] : []);
+    setSelectedId(id);
+  };
+
+  const goBackDetail = () => {
+    const previousId = detailHistory[detailHistory.length - 1];
+    if (previousId === undefined) return;
+    setDetailHistory((history) => history.slice(0, -1));
+    setSelectedId(previousId);
+  };
+
+  const closeDetail = () => {
+    setDetailHistory([]);
+    setSelectedId(null);
   };
 
   const items = data.illusts || [];
@@ -595,11 +623,11 @@ export default function PixivRanking() {
                 return (
                   <article key={item.id} className={styles.card}>
                   <div className={styles.coverWrap}>
-                    <button type="button" className={styles.cover} onClick={() => setSelectedId(item.id)} aria-label={`查看作品：${item.title}`}>
+                    <button type="button" className={styles.cover} onClick={() => openArtwork(item.id)} aria-label={`查看作品：${item.title}`}>
                       {isRankingMode && item.rank > 0 && <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>}
                       {item.thumb ? speedTesting
                         ? <span className={styles.imagePlaceholder} aria-hidden="true" />
-                        : <PixivImage src={item.thumb} preferredMirror={mirror} priority={item.rank || 500 + index} onMirrorFailure={handleMirrorFailure} onLoad={(isRankingMode ? item.rank === 1 : index === 0) ? () => setBannerLoaded(true) : undefined} alt={item.title} />
+                        : <PixivImage src={item.thumb} preferredMirror={mirror} priority={item.rank || 500 + index} placeholderClassName={styles.imagePlaceholder} onMirrorFailure={handleMirrorFailure} onLoad={(isRankingMode ? item.rank === 1 : index === 0) ? () => setBannerLoaded(true) : undefined} alt={item.title} />
                         : <span className={styles.coverFallback}>无缩略图</span>}
                     </button>
                     {adminAuthenticated && !adminSessionLoading && (
@@ -616,7 +644,7 @@ export default function PixivRanking() {
                     )}
                   </div>
                   <div className={styles.info}>
-                    <button type="button" className={styles.cardTitle} onClick={() => setSelectedId(item.id)}>{item.title || '无题'}</button>
+                    <button type="button" className={styles.cardTitle} onClick={() => openArtwork(item.id)}>{item.title || '无题'}</button>
                     <div className={styles.cardAuthor}>By: {item.author}</div>
                   </div>
                   </article>
@@ -632,9 +660,10 @@ export default function PixivRanking() {
       <BackToTopButton />
 
       {selectedId !== null && (
-        <div className={styles.modalBackdrop} onMouseDown={(event) => {if (event.target === event.currentTarget) setSelectedId(null);}}>
+        <div className={styles.modalBackdrop} onMouseDown={(event) => {if (event.target === event.currentTarget) closeDetail();}}>
           <section className={styles.modal} role="dialog" aria-modal="true" aria-label="作品详情">
-            <button type="button" className={styles.modalClose} onClick={() => setSelectedId(null)} aria-label="关闭详情">×</button>
+            {detailHistory.length > 0 && <button type="button" className={styles.modalBack} onClick={goBackDetail}>← 返回上一张</button>}
+            <button type="button" className={styles.modalClose} onClick={closeDetail} aria-label="关闭详情">×</button>
             <div className={styles.modalScroll} ref={modalScrollRef}>
               {detailLoading && <div className={styles.modalMessage}>正在加载作品详情…</div>}
               {detailError && <div className={styles.modalMessage}>{detailError}</div>}
@@ -734,8 +763,8 @@ export default function PixivRanking() {
                           return (
                             <article className={styles.relatedCard} key={related.id}>
                               <div className={styles.relatedCoverWrap}>
-                                <button type="button" className={clsx(styles.cover, styles.relatedCover)} onClick={() => setSelectedId(related.id)} aria-label={`查看作品：${related.title}`}>
-                                  <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
+                                <button type="button" className={clsx(styles.cover, styles.relatedCover)} onClick={() => openArtwork(related.id, true)} aria-label={`查看作品：${related.title}`}>
+                                  <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} placeholderClassName={styles.imagePlaceholder} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
                                 </button>
                                 {adminAuthenticated && !adminSessionLoading && (
                                   <button
@@ -751,7 +780,7 @@ export default function PixivRanking() {
                                 )}
                               </div>
                               <div className={styles.relatedInfo}>
-                                <button type="button" className={styles.relatedTitle} onClick={() => setSelectedId(related.id)}>{related.title}</button>
+                                <button type="button" className={styles.relatedTitle} onClick={() => openArtwork(related.id, true)}>{related.title}</button>
                                 <small>By: {related.author}</small>
                               </div>
                             </article>

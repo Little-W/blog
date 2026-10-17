@@ -1,13 +1,12 @@
 import React, {type ImgHTMLAttributes, useEffect, useMemo, useRef, useState} from 'react';
-import {acquireImageSlot, imageUrlOnMirror, mirrorsInPreferenceOrder, type ImageMirror} from './image-mirrors';
-import styles from './pixiv.module.css';
+import {acquireImageSlot, imageUrlOnMirror, mirrorsInPreferenceOrder, type ImageMirror} from '../utils/pixiv-image-mirrors';
 
 type PixivImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onError'> & {
   src: string;
   preferredMirror: ImageMirror;
   priority: number;
   enabled?: boolean;
-  placeholderClassName?: string;
+  placeholderClassName: string;
   onMirrorFailure?: (mirror: ImageMirror) => void;
   onError?: ImgHTMLAttributes<HTMLImageElement>['onError'];
 };
@@ -89,7 +88,7 @@ export default function PixivImage({src, preferredMirror, priority, enabled = tr
 
   const activeSrc = activeAttempt === attempt ? imageUrlOnMirror(src, mirrors[attempt] || preferredMirror) : '';
   if (!activeSrc) {
-    return <span ref={(node) => {imageRef.current = node;}} className={placeholderClassName || styles.imagePlaceholder} aria-hidden="true" />;
+  return <span ref={(node) => {imageRef.current = node;}} className={placeholderClassName} aria-hidden="true" />;
   }
 
   return (
