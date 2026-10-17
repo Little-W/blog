@@ -1,6 +1,13 @@
 import {randomInt} from 'node:crypto';
 
+import {
+  MUSIC_PREFIX,
+  MUSIC_REVISION_KEY,
+  readContent,
+} from '../lib/content-store.mjs';
+
 const DATASET_CACHE_TTL_MS = 5 * 60 * 1000;
+const BLOB_CACHE_TTL_MS = 60 * 1000;
 const MAX_IDS = 5000;
 const MAX_QUERY_LENGTH = 120;
 const MAX_REQUEST_BYTES = 96 * 1024;
@@ -9,13 +16,30 @@ const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_RANDOM_TRACKS = 24;
 const datasetCache = new Map();
 
-function dataRevision() {
+function datasetKey(name) {
+  return `${MUSIC_PREFIX}${name}.0.jsonl`;
+}
+
+function deployRevision() {
   return String(
     process.env.COMMIT_REF ||
     process.env.DEPLOY_ID ||
     process.env.BUILD_ID ||
     'local',
   ).slice(0, 160);
+}
+
+let revisionCache = {value: null, expiresAt: 0};
+
+async function dataRevision() {
+  // 数据表写入 Blob 时会同步更新版本记录，前端据此判断是否刷新缓存。
+  if (revisionCache.expiresAt > Date.now()) return revisionCache.value;
+  const stored = await readContent(MUSIC_REVISION_KEY, {type: 'json'}).catch(() => null);
+  const revision = stored && typeof stored.revision === 'string' && stored.revision.trim()
+    ? stored.revision.trim()
+    : deployRevision();
+  revisionCache = {value: revision, expiresAt: Date.now() + 5000};
+  return revision;
 }
 
 export const config = {
@@ -50,8 +74,16 @@ function parseJsonl(text) {
 async function loadDataset(request, name) {
   const cached = datasetCache.get(name);
   if (cached && cached.expiresAt > Date.now()) return cached.records;
+  // 优先读取 Netlify Blob（后台修改即时生效、无需重新部署），
+  // 未写入 Blob 时回退到构建产物中的静态数据表。
+  const stored = await readContent(datasetKey(name)).catch(() => null);
+  if (typeof stored === 'string') {
+    const records = parseJsonl(stored);
+    datasetCache.set(name, {records, expiresAt: Date.now() + BLOB_CACHE_TTL_MS});
+    return records;
+  }
   const source = new URL(`/data/${name}.0.jsonl`, request.url);
-  source.searchParams.set('revision', dataRevision());
+  source.searchParams.set('revision', deployRevision());
   const response = await fetch(source, {
     headers: {accept: 'application/x-ndjson,text/plain;q=0.9'},
     signal: AbortSignal.timeout(12_000),
@@ -143,15 +175,15 @@ async function getTags(request) {
           count: Array.isArray(tag.music_order) ? tag.music_order.length : null,
         }))
         .sort((left, right) => left.tag_order - right.tag_order || left.tag_id - right.tag_id),
-      revision: dataRevision(),
+      revision: await dataRevision(),
     },
   });
 }
 
-function getRevision() {
+async function getRevision() {
   return json({
     success: true,
-    data: {revision: dataRevision()},
+    data: {revision: await dataRevision()},
   });
 }
 
@@ -235,7 +267,7 @@ async function queryTracks(request) {
       playlistIds,
       totalLibrary: records.length,
       quality: datasetName === 'music_sq' ? 'sq' : 'hq',
-      revision: dataRevision(),
+      revision: await dataRevision(),
       ...(searchMeta || {}),
     },
   });
