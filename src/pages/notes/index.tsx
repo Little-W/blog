@@ -29,6 +29,16 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString('zh-CN', {year: 'numeric', month: '2-digit', day: '2-digit'});
 }
 
+function resolveRequestedPath(articles: ArticleSummary[], requested: string): string {
+  const path = requested.replace(/^\/+|\/+$/g, '');
+  if (!path) return '';
+  const candidates = [path];
+  if (!/\.(?:md|mdx)$/i.test(path)) {
+    candidates.push(`${path}.md`, `${path}.mdx`, `${path}/index.md`, `${path}/index.mdx`);
+  }
+  return candidates.find((candidate) => articles.some((article) => article.path === candidate)) || '';
+}
+
 export default function NotesPage() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [selected, setSelected] = useState('');
@@ -44,10 +54,8 @@ export default function NotesPage() {
     try {
       const data = await fetchJson<{articles: ArticleSummary[]}>('/api/content/list');
       setArticles(data.articles);
-      const requested = new URLSearchParams(window.location.search).get('path');
-      const target = requested && data.articles.some((item) => item.path === requested)
-        ? requested
-        : data.articles[0]?.path || '';
+      const requested = new URLSearchParams(window.location.search).get('path') || '';
+      const target = resolveRequestedPath(data.articles, requested) || data.articles[0]?.path || '';
       setSelected((current) => current || target);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '文章列表暂时无法读取。');

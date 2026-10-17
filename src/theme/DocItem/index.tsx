@@ -5,6 +5,7 @@ import DocItemMetadata from '@theme/DocItem/Metadata';
 import DocItemLayout from '@theme/DocItem/Layout';
 import type {Props} from '@theme/DocItem';
 import {AdminEditButton} from '@site/src/components/AdminSession';
+import RuntimeArticleContent from '@site/src/components/RuntimeArticleContent';
 
 export default function DocItem(props: Props): JSX.Element {
   const docHtmlClassName = `docs-doc-id-${props.content.metadata.unversionedId}`;
@@ -15,7 +16,12 @@ export default function DocItem(props: Props): JSX.Element {
         <DocItemMetadata />
         <DocItemLayout>
           <AdminEditButton source={props.content.metadata.source} />
-          <MDXComponent />
+          <RuntimeArticleContent
+            sourcePath={props.content.metadata.source}
+            fallbackTitle={props.content.metadata.title}
+            fallback={<MDXComponent />}
+            showTitle
+          />
         </DocItemLayout>
       </HtmlClassNameProvider>
     </DocProvider>

@@ -46,6 +46,7 @@ type Artwork = {
 
 type RelatedArtwork = {id: number; title: string; author: string; thumb: string; isBookmarked?: boolean};
 type ArtworkDetail = {illust: Artwork; related: RelatedArtwork[]};
+type PreviewSeed = {id: number; title: string; author: string; thumb: string; tags: string[]; isBookmarked?: boolean};
 
 function rankClass(rank: number): string {
   if (rank === 1) return styles.rank1;
@@ -107,7 +108,8 @@ export default function PixivRanking() {
   const [bannerLoaded, setBannerLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detailHistory, setDetailHistory] = useState<number[]>([]);
+  const [previewSeed, setPreviewSeed] = useState<PreviewSeed | null>(null);
+  const [detailHistory, setDetailHistory] = useState<PreviewSeed[]>([]);
   const [detail, setDetail] = useState<ArtworkDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -347,6 +349,7 @@ export default function PixivRanking() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelectedId(null);
+        setPreviewSeed(null);
         setDetailHistory([]);
       }
     };
@@ -372,7 +375,7 @@ export default function PixivRanking() {
   useEffect(() => {
     setPreviewImage(null);
     setCanvasSize({width: 0, height: 0});
-  }, [detail?.illust?.id, pageIndex]);
+  }, [selectedId, detail?.illust?.id, pageIndex]);
 
   useEffect(() => {
     const image = previewImage;
@@ -457,20 +460,23 @@ export default function PixivRanking() {
     }
   };
 
-  const openArtwork = (id: number, fromRelated = false) => {
-    setDetailHistory((history) => fromRelated && selectedId !== null ? [...history, selectedId] : []);
-    setSelectedId(id);
+  const openArtwork = (seed: PreviewSeed, fromRelated = false) => {
+    setDetailHistory((history) => fromRelated && previewSeed ? [...history, previewSeed] : []);
+    setPreviewSeed(seed);
+    setSelectedId(seed.id);
   };
 
   const goBackDetail = () => {
-    const previousId = detailHistory[detailHistory.length - 1];
-    if (previousId === undefined) return;
+    const previousSeed = detailHistory[detailHistory.length - 1];
+    if (!previousSeed) return;
     setDetailHistory((history) => history.slice(0, -1));
-    setSelectedId(previousId);
+    setPreviewSeed(previousSeed);
+    setSelectedId(previousSeed.id);
   };
 
   const closeDetail = () => {
     setDetailHistory([]);
+    setPreviewSeed(null);
     setSelectedId(null);
   };
 
@@ -479,12 +485,22 @@ export default function PixivRanking() {
   const nextPage = PERSONAL_MODES.has(mode) ? data.nextCursor : data.nextOffset;
   const banner = items.find((item) => item.thumb)?.thumb;
   const dateLabel = data.date ? formatDate(data.date) : '';
-  const artwork = detail?.illust;
-  const pageCount = Math.max(1, artwork?.page_count || artwork?.meta_pages?.length || 1);
-  const pageOriginal = artwork ? originalPage(artwork, pageIndex) : '';
-  const pageDisplay = artwork ? displayPage(artwork, pageIndex) : '';
+  const currentDetail = detail?.illust.id === selectedId ? detail.illust : undefined;
+  const currentSeed = previewSeed?.id === selectedId ? previewSeed : null;
   const selectedItem = selectedId === null ? undefined : items.find((item) => item.id === selectedId);
+  const artwork: Artwork | undefined = currentDetail || (currentSeed ? {
+    id: currentSeed.id,
+    title: currentSeed.title,
+    user: {name: currentSeed.author},
+    tags: currentSeed.tags.map((name) => ({name})),
+    image_urls: {large: currentSeed.thumb},
+    is_bookmarked: currentSeed.isBookmarked,
+  } : undefined);
+  const pageCount = Math.max(1, currentDetail?.page_count || currentDetail?.meta_pages?.length || 1);
+  const pageOriginal = currentDetail ? originalPage(currentDetail, pageIndex) : '';
+  const pageDisplay = currentDetail ? displayPage(currentDetail, pageIndex) : currentSeed?.thumb || '';
   const detailBookmarked = artwork ? bookmarkOverrides[artwork.id] ?? Boolean(artwork.is_bookmarked ?? selectedItem?.isBookmarked) : false;
+  const relatedItems = currentDetail ? detail?.related || [] : [];
   const isBookmarked = (id: number, fallback?: boolean) => bookmarkOverrides[id] ?? Boolean(fallback);
   const filename = `${(artwork?.title || 'pixiv-artwork').replace(/[\\/:*?"<>|]/g, '_')}_p${pageIndex + 1}${imageExtension(pageOriginal)}`;
 
@@ -623,7 +639,7 @@ export default function PixivRanking() {
                 return (
                   <article key={item.id} className={styles.card}>
                   <div className={styles.coverWrap}>
-                    <button type="button" className={styles.cover} onClick={() => openArtwork(item.id)} aria-label={`查看作品：${item.title}`}>
+                    <button type="button" className={styles.cover} onClick={() => openArtwork({id: item.id, title: item.title, author: item.author, thumb: item.thumb, tags: item.tags, isBookmarked: bookmarked})} aria-label={`查看作品：${item.title}`}>
                       {isRankingMode && item.rank > 0 && <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>}
                       {item.thumb ? speedTesting
                         ? <span className={styles.imagePlaceholder} aria-hidden="true" />
@@ -644,7 +660,7 @@ export default function PixivRanking() {
                     )}
                   </div>
                   <div className={styles.info}>
-                    <button type="button" className={styles.cardTitle} onClick={() => openArtwork(item.id)}>{item.title || '无题'}</button>
+                    <button type="button" className={styles.cardTitle} onClick={() => openArtwork({id: item.id, title: item.title, author: item.author, thumb: item.thumb, tags: item.tags, isBookmarked: bookmarked})}>{item.title || '无题'}</button>
                     <div className={styles.cardAuthor}>By: {item.author}</div>
                   </div>
                   </article>
@@ -731,7 +747,7 @@ export default function PixivRanking() {
                         <span>{artwork.width || '—'} × {artwork.height || '—'}</span>
                       </div>
                       <div className={styles.detailActions}>
-                        <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename, mirror)}>下载原图</a>
+                        {currentDetail && pageOriginal && <a className={styles.downloadButton} href={imageProxy(pageOriginal, filename, mirror)}>下载原图</a>}
                         {adminAuthenticated && !adminSessionLoading && (
                           <button
                             type="button"
@@ -756,14 +772,14 @@ export default function PixivRanking() {
 
                   <section className={styles.relatedSection}>
                     <h3>相似推荐</h3>
-                    {detail.related.length ? (
+                    {relatedItems.length ? (
                       <div className={styles.relatedGrid}>
-                        {detail.related.map((related, index) => {
+                        {relatedItems.map((related, index) => {
                           const bookmarked = isBookmarked(related.id, related.isBookmarked);
                           return (
                             <article className={styles.relatedCard} key={related.id}>
                               <div className={styles.relatedCoverWrap}>
-                                <button type="button" className={clsx(styles.cover, styles.relatedCover)} onClick={() => openArtwork(related.id, true)} aria-label={`查看作品：${related.title}`}>
+                                <button type="button" className={clsx(styles.cover, styles.relatedCover)} onClick={() => openArtwork({id: related.id, title: related.title, author: related.author, thumb: related.thumb, tags: [], isBookmarked: bookmarked}, true)} aria-label={`查看作品：${related.title}`}>
                                   <PixivImage src={related.thumb} preferredMirror={mirror} priority={10000 + index} placeholderClassName={styles.imagePlaceholder} enabled={!speedTesting} onMirrorFailure={handleMirrorFailure} alt={related.title} />
                                 </button>
                                 {adminAuthenticated && !adminSessionLoading && (
@@ -780,7 +796,7 @@ export default function PixivRanking() {
                                 )}
                               </div>
                               <div className={styles.relatedInfo}>
-                                <button type="button" className={styles.relatedTitle} onClick={() => openArtwork(related.id, true)}>{related.title}</button>
+                                <button type="button" className={styles.relatedTitle} onClick={() => openArtwork({id: related.id, title: related.title, author: related.author, thumb: related.thumb, tags: [], isBookmarked: bookmarked}, true)}>{related.title}</button>
                                 <small>By: {related.author}</small>
                               </div>
                             </article>

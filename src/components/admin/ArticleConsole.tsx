@@ -150,7 +150,15 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
       setError('请选择 .md 或 .mdx 文件。');
       return;
     }
-    setFiles((current) => [...current, ...incoming]);
+    setFiles((current) => {
+      const seen = new Set(current.map((file) => `${relativeName(file)}:${file.size}:${file.lastModified}`));
+      return [...current, ...incoming.filter((file) => {
+        const key = `${relativeName(file)}:${file.size}:${file.lastModified}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })];
+    });
     setError('');
   };
 
@@ -222,16 +230,20 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
           <Icon icon="lucide:file-archive" />
           选择压缩包
         </button>
-        <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".md,.mdx,text/markdown" multiple onChange={(event) => addFiles(event.target.files)} />
+        <button type="button" className={styles.primaryButton} onClick={() => void submit()} disabled={busy || (!files.length && !archive)}>
+          <Icon icon="lucide:upload" />
+          上传到 {destination || '—'}
+        </button>
+        <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".md,.mdx,text/markdown" multiple onChange={(event) => {addFiles(event.target.files); event.currentTarget.value = '';}} />
         <input
           ref={dirInputRef}
           className={styles.hiddenInput}
           type="file"
           multiple
-          onChange={(event) => addFiles(event.target.files)}
+          onChange={(event) => {addFiles(event.target.files); event.currentTarget.value = '';}}
           {...({webkitdirectory: 'true'} as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
         />
-        <input ref={archiveInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip" onChange={(event) => setArchive(event.target.files?.[0] || null)} />
+        <input ref={archiveInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip" onChange={(event) => {setArchive(event.target.files?.[0] || null); event.currentTarget.value = '';}} />
       </div>
       {archive ? (
         <div className={styles.uploadSummary}>
@@ -258,10 +270,7 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
       {error ? <div className={styles.errorBanner}><Icon icon="lucide:circle-alert" />{error}</div> : null}
       <div className={styles.uploadFooter}>
         <span>{files.length} 个文件{archive ? ` + 压缩包` : ''}</span>
-        <button type="button" className={styles.primaryButton} onClick={() => void submit()} disabled={busy || (!files.length && !archive)}>
-          <Icon icon="lucide:upload" />
-          上传到 {destination || '—'}
-        </button>
+        <span>目标分区：{destination || '—'}</span>
       </div>
     </div>
   );
@@ -303,6 +312,7 @@ const TOOLBAR: Array<{icon: string; label: string; before: string; after?: strin
 
 export default function ArticleConsole({initialPath, repository}: {initialPath: string; repository: string | null}) {
   const [files, setFiles] = useState<FileEntry[]>([]);
+  const [selectedForDeletion, setSelectedForDeletion] = useState<Set<string>>(new Set());
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [sections, setSections] = useState<string[]>([]);
   const [selectedPath, setSelectedPath] = useState(initialPath);
@@ -360,6 +370,8 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     const entries = data.files.map((path) => ({path, name: basename(path), section: dirname(path)}));
     const derived = [...new Set(entries.map((entry) => entry.section))].sort((left, right) => left.localeCompare(right, 'zh-CN'));
     setFiles(entries);
+    const available = new Set(entries.map((entry) => entry.path));
+    setSelectedForDeletion((current) => new Set([...current].filter((path) => available.has(path))));
     setArticles(data.articles || []);
     setSections(data.sections?.length ? data.sections : derived);
     return entries;
@@ -793,6 +805,63 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     return [...map.entries()].sort((left, right) => left[0].localeCompare(right[0], 'zh-CN'));
   }, [visibleFiles]);
 
+  const allVisibleSelected = visibleFiles.length > 0 && visibleFiles.every((entry) => selectedForDeletion.has(entry.path));
+
+  const toggleFileSelection = (path: string) => {
+    setSelectedForDeletion((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedForDeletion((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleFiles.forEach((entry) => next.delete(entry.path));
+      else visibleFiles.forEach((entry) => next.add(entry.path));
+      return next;
+    });
+  };
+
+  const bulkDeleteArticles = async () => {
+    const paths = [...selectedForDeletion];
+    if (!paths.length || busy) return;
+    const includesCurrent = Boolean(loadedPath && paths.includes(loadedPath));
+    const unsavedCurrent = includesCurrent && dirty;
+    const message = unsavedCurrent
+      ? `确定删除选中的 ${paths.length} 篇文章吗？当前文章有未保存的修改，也会一并放弃。此操作会同步提交到仓库。`
+      : `确定删除选中的 ${paths.length} 篇文章吗？此操作会同步提交到仓库。`;
+    if (!window.confirm(message)) return;
+
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await consoleApi<{paths: string[]; deletedFrom: string; gitSync?: GitSyncResult}>('/api/console/files', {
+        method: 'DELETE',
+        body: JSON.stringify({paths, baseHeadSha: headSha || null, message: `文章：批量删除 ${paths.length} 个文件`}),
+      });
+      setSelectedForDeletion(new Set());
+      const entries = await loadFiles();
+      if (includesCurrent) {
+        setContent('');
+        setBaseline('');
+        setLoadedPath('');
+        setHeadSha('');
+        const nextPath = entries[0]?.path || '';
+        setSelectedPath(nextPath);
+        if (nextPath) await loadFile(nextPath);
+      }
+      setNotice(`已删除 ${result.paths.length} 篇文章${describeGitSync(result.gitSync)}。`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '批量删除失败。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className={styles.articleGrid}>
       <aside className={styles.fileSidebar}>
@@ -808,6 +877,16 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
           <Icon icon="lucide:search" />
           <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="搜索文章文件" />
         </label>
+        <div className={styles.bulkDeleteToolbar}>
+          <label className={styles.selectVisibleLabel}>
+            <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} disabled={busy || visibleFiles.length === 0} />
+            <span>{allVisibleSelected ? '取消全选' : '全选当前结果'}</span>
+          </label>
+          <button type="button" className={styles.bulkDeleteButton} onClick={() => void bulkDeleteArticles()} disabled={busy || selectedForDeletion.size === 0}>
+            <Icon icon="lucide:trash-2" />
+            删除 {selectedForDeletion.size ? `(${selectedForDeletion.size})` : '选中'}
+          </button>
+        </div>
         <div className={styles.fileList}>
           {groupedFiles.map(([section, entries]) => {
             const isCollapsed = filter.trim() ? false : Boolean(collapsed[section]);
@@ -822,16 +901,25 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
                   <small>{entries.length}</small>
                 </button>
                 {!isCollapsed
-                  ? entries.map((entry) => (
-                      <button
-                        type="button"
-                        key={entry.path}
-                        className={entry.path === selectedPath ? styles.fileActive : styles.fileButton}
-                        onClick={() => chooseFile(entry.path)}>
-                        <Icon icon="lucide:file-text" />
-                        <span>{entry.name}<small>{entry.section}</small></span>
-                      </button>
-                    ))
+                   ? entries.map((entry) => (
+                       <div key={entry.path} className={styles.fileEntryRow}>
+                         <input
+                           className={styles.fileSelectCheckbox}
+                           type="checkbox"
+                           checked={selectedForDeletion.has(entry.path)}
+                           onChange={() => toggleFileSelection(entry.path)}
+                           disabled={busy}
+                           aria-label={`选择 ${entry.path} 以批量删除`}
+                         />
+                         <button
+                           type="button"
+                           className={entry.path === selectedPath ? styles.fileActive : styles.fileButton}
+                           onClick={() => chooseFile(entry.path)}>
+                           <Icon icon="lucide:file-text" />
+                           <span>{entry.name}<small>{entry.section}</small></span>
+                         </button>
+                       </div>
+                     ))
                   : null}
               </div>
             );

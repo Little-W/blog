@@ -1,4 +1,4 @@
-import React, {type ReactNode} from 'react';
+import React, {type ReactNode, useEffect, useState} from 'react';
 import clsx from 'clsx';
 import {HtmlClassNameProvider, ThemeClassNames} from '@docusaurus/theme-common';
 import {BlogPostProvider, useBlogPost} from '@docusaurus/theme-common/internal';
@@ -12,6 +12,7 @@ import type {Props} from '@theme/BlogPostPage';
 import type {BlogSidebar} from '@docusaurus/plugin-content-blog';
 import Comment from '@site/src/components/Comment';
 import {AdminEditButton} from '@site/src/components/AdminSession';
+import RuntimeArticleContent, {RuntimeArticleTitleContext} from '@site/src/components/RuntimeArticleContent';
 
 function BlogPostPageContent({
   sidebar,
@@ -21,6 +22,8 @@ function BlogPostPageContent({
   children: ReactNode;
 }): JSX.Element {
   const {metadata, toc} = useBlogPost();
+  const [runtimeTitle, setRuntimeTitle] = useState(metadata.title);
+  useEffect(() => setRuntimeTitle(metadata.title), [metadata.source, metadata.title]);
   const {nextItem, prevItem, frontMatter} = metadata;
   const {
     hide_table_of_contents: hideTableOfContents,
@@ -28,28 +31,35 @@ function BlogPostPageContent({
     toc_max_heading_level: tocMaxHeadingLevel,
   } = frontMatter;
   return (
-    <BlogLayout
-      // sidebar={sidebar}
-      toc={
-        !hideTableOfContents && toc.length > 0 ? (
-          <TOC
-            toc={toc}
-            minHeadingLevel={tocMinHeadingLevel}
-            maxHeadingLevel={tocMaxHeadingLevel}
+    <RuntimeArticleTitleContext.Provider value={runtimeTitle}>
+      <BlogLayout
+        // sidebar={sidebar}
+        toc={
+          !hideTableOfContents && toc.length > 0 ? (
+            <TOC
+              toc={toc}
+              minHeadingLevel={tocMinHeadingLevel}
+              maxHeadingLevel={tocMaxHeadingLevel}
+            />
+          ) : undefined
+        }>
+        <BlogPostItem>
+          <AdminEditButton source={metadata.source} />
+          <RuntimeArticleContent
+            sourcePath={metadata.source}
+            fallbackTitle={metadata.title}
+            fallback={children}
+            onTitleChange={setRuntimeTitle}
           />
-        ) : undefined
-      }>
-      <BlogPostItem>
-        <AdminEditButton source={metadata.source} />
-        {children}
-      </BlogPostItem>
+        </BlogPostItem>
 
-      {(nextItem || prevItem) && (
-        <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />
-      )}
-      <Comment />
-      <BackToTopButton />
-    </BlogLayout>
+        {(nextItem || prevItem) && (
+          <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />
+        )}
+        <Comment />
+        <BackToTopButton />
+      </BlogLayout>
+    </RuntimeArticleTitleContext.Provider>
   );
 }
 
