@@ -17,6 +17,7 @@ node_modules/
 .DS_Store
 .vscode/
 .local-blobs/
+.pixiv-token.json
 .env
 .env.*
 !.env.example
