@@ -116,7 +116,7 @@ export default async (request) => {
     return json({
       success: false,
       code: 'MISSING_PIXIV_CREDENTIALS',
-      message: '未配置 PIXIV_REFRESH_TOKEN 环境变量，请先运行 node scripts/pixiv-login.mjs 导出后配置到 Netlify。',
+      message: '未配置 PIXIV_REFRESH_TOKEN 环境变量，请先运行 python3 scripts/pixiv-login.py 导出后配置到 Netlify。',
       data: {illusts: [], date: '', mode},
     }, 200, 'no-store');
   }
