@@ -10,6 +10,18 @@ const FUNCTIONS_DIR = path.join(ROOT, 'netlify', 'functions');
 const DEV_PORT = Number(process.env.DEV_PORT || 8888);
 const DOCUSAURUS_PORT = Number(process.env.DOCUSAURUS_PORT || 3000);
 
+// Node 的 fetch 默认不走 HTTP(S)_PROXY，而 NODE_USE_ENV_PROXY 只能在进程启动时生效，故经代理时自动重启一次。
+const PROXY_ENV =
+  process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+if (PROXY_ENV && process.env.NODE_USE_ENV_PROXY !== '1') {
+  const child = spawn(process.execPath, process.argv.slice(1), {
+    stdio: 'inherit',
+    env: {...process.env, NODE_USE_ENV_PROXY: '1'},
+  });
+  child.on('exit', (code, signal) => process.exit(signal ? 1 : code ?? 0));
+  await new Promise(() => {});
+}
+
 function loadEnvFile() {
   const file = path.join(ROOT, '.env');
   if (!existsSync(file)) return;
