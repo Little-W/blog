@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
 import {PageMetadata} from '@docusaurus/theme-common';
@@ -9,17 +9,47 @@ import styles from './pixiv.module.css';
 
 const API_URL = '/api/pixiv-ranking';
 
+const MODES = [
+  {key: 'day', label: '日榜'},
+  {key: 'week', label: '周榜'},
+  {key: 'month', label: '月榜'},
+  {key: 'week_rookie', label: '新人榜'},
+  {key: 'week_original', label: '原创榜'},
+];
+
+function rankClass(rank: number): string {
+  if (rank === 1) return styles.rank1;
+  if (rank === 2) return styles.rank2;
+  if (rank === 3) return styles.rank3;
+  return styles.rankOther;
+}
+
+function formatDate(date: string): string {
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  return matched ? `${matched[1]}年${Number(matched[2])}月${Number(matched[3])}日` : date;
+}
+
+function thumbSrc(url: string): string {
+  return `/api/pixiv-thumb?u=${encodeURIComponent(url)}`;
+}
+
 export default function PixivRanking() {
+  const [mode, setMode] = useState('day');
   const [data, setData] = useState<PixivRankingData>(emptyRanking);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const fetchRanking = useCallback(async (opts: {noCache?: boolean}) => {
-    setLoading(true);
+  const fetchRanking = useCallback(async (targetMode: string, opts: {noCache?: boolean} = {}) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setError(null);
+    if (!opts.noCache) setLoading(true);
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(`${API_URL}?mode=${encodeURIComponent(targetMode)}`, {
+        signal: controller.signal,
         cache: opts.noCache ? 'no-store' : 'default',
         headers: opts.noCache ? {'cache-control': 'no-cache'} : {},
       });
@@ -29,107 +59,97 @@ export default function PixivRanking() {
       }
       setData(payload.data || emptyRanking);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : '榜单加载失败。';
-      setError(message);
-      // 服务端未配置凭据或临时故障时，展示空占位而不中断站点。
+      if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      setError(caught instanceof Error ? caught.message : '榜单加载失败。');
       setData(emptyRanking);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
+  useEffect(() => {
+    void fetchRanking(mode);
+  }, [mode, fetchRanking]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    void fetchRanking({noCache: true});
-  }, [fetchRanking]);
+    void fetchRanking(mode, {noCache: true});
+  }, [fetchRanking, mode]);
 
-  useEffect(() => {
-    void fetchRanking({noCache: false});
-    // 页面打开后若数据陈旧，轻量尝试刷新一次（由服务端 30 分钟缓存保护，不会频繁打扰 Pixiv）。
-    const t = setTimeout(() => void fetchRanking({noCache: false}), 2000);
-    return () => clearTimeout(t);
-  }, [fetchRanking]);
-
-  const updatedAt = data.date || '未知';
   const items: PixivItem[] = data.illusts ?? [];
+  const banner = items.find((item) => item.thumb)?.thumb;
+  const dateLabel = data.date ? formatDate(data.date) : '';
 
   return (
-    <Layout title="P站美图榜" description="Pixiv 插画实时榜单（原创页面）">
-      <PageMetadata title="P站美图榜" description="Pixiv 插画榜单 · 原创页面，数据来自站点自有接口" />
-      <div className={clsx(styles.container, 'margin-vert--lg')}>
-        <header className={styles.header}>
-          <h1>P站美图榜</h1>
-          <p className={styles.subtitle}>
-            Pixiv 插画榜单 · 仅供个人学习演示 · 请遵守 Pixiv 服务条款
+    <Layout title="P站美图榜" description="Pixiv 插画榜单（原创页面）">
+      <PageMetadata title="P站美图榜" description="Pixiv 插画榜单 · 数据来自站点自有接口" />
+      <div className={styles.page}>
+        <header className={styles.hero} style={banner ? {backgroundImage: `url("${thumbSrc(banner)}")`} : undefined}>
+          <button className={styles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? '刷新中…' : '刷新'}
+          </button>
+          <h1 className={styles.heroTitle}>Pixiv 美图榜</h1>
+          <p className={styles.heroSub}>
+            {loading ? '正在加载榜单…' : dateLabel ? `正在查看 ${dateLabel} 榜单` : '暂无榜单数据'}
           </p>
-          <div className={styles.actions}>
-            <span className={clsx(styles.badge, refreshing && styles.refreshing)}>
-              {refreshing ? '刷新中…' : `榜单日期：${updatedAt}`}
-            </span>
-            <button className={styles.refreshBtn} onClick={handleRefresh} disabled={refreshing || loading}>
-              {refreshing ? '…' : '刷新'}
-            </button>
-            {error && (
-              <span className={styles.tip}>提示：{error}</span>
-            )}
-          </div>
+          <nav className={styles.tabs}>
+            {MODES.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                className={clsx(styles.tab, mode === entry.key && styles.tabActive)}
+                onClick={() => setMode(entry.key)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </nav>
         </header>
 
-        <section className={styles.list}>
-          {items.length === 0 ? (
-            <p className={styles.empty}>
-              暂无数据。生产环境请在 Netlify 后台设置 <code>PIXIV_CLIENT_ID</code> 与
-              <code>PIXIV_REFRESH_TOKEN</code>，并部署 <code>/api/pixiv-ranking</code> 函数。
-            </p>
-          ) : (
-            <ol className={styles.ranking}>
-              {items.map((item) => (
-                <li key={item.authorId + item.title} className={styles.item}>
-                  <span className={styles.rank}>{item.rank}</span>
-                  <div className={styles.body}>
-                    {item.thumb ? (
-                      <img
-                        src={`/api/pixiv-thumb?u=${encodeURIComponent(item.thumb)}`}
-                        alt={item.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        className={styles.thumb}
-                      />
-                    ) : (
-                      <div className={clsx(styles.thumb, styles.thumbPlaceholder)}>无缩略图</div>
-                    )}
-                    <div className={styles.meta}>
-                      <Link href={item.url} target="_blank" rel="noopener noreferrer" className={styles.title}>
-                        {item.title}
-                      </Link>
-                      <div className={styles.author}>
-                        <span>作者：</span>
-                        <Link href={`https://www.pixiv.net/users/${item.authorId}`} target="_blank" rel="noopener noreferrer">
-                          {item.author}
-                        </Link>
-                      </div>
-                      <div className={styles.tags}>
-                        {item.tags.map((tag) => (
-                          <span key={tag} className={styles.tag}>#{tag}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+        {error && <p className={styles.tip}>提示：{error}</p>}
 
-        <aside className={styles.note}>
-          <strong>说明：</strong>
-          <ul>
-            <li>本页为原创页面，未从第三方站点抓取任何内容。</li>
-            <li>Pixiv 对跨域请求有限制，榜单由站点自有服务端（Netlify 函数）代理并缓存 30 分钟。</li>
-            <li>使用 Pixiv 官方 API 前请先阅读并遵守其服务条款与机器人协议。</li>
-          </ul>
-        </aside>
+        {items.length === 0 ? (
+          <p className={styles.empty}>{loading ? '正在加载榜单…' : '暂无数据。'}</p>
+        ) : (
+          <div className={styles.waterfall}>
+            {items.map((item) => (
+              <article key={`${item.rank}-${item.url}`} className={styles.card}>
+                <Link href={item.url} target="_blank" rel="noopener noreferrer" className={styles.cover}>
+                  <span className={clsx(styles.rankBadge, rankClass(item.rank))}>#{item.rank}</span>
+                  {item.thumb ? (
+                    <img
+                      src={thumbSrc(item.thumb)}
+                      alt={item.title}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className={styles.coverFallback}>无缩略图</span>
+                  )}
+                </Link>
+                <div className={styles.info}>
+                  <Link href={item.url} target="_blank" rel="noopener noreferrer" className={styles.cardTitle}>
+                    {item.title || '无题'}
+                  </Link>
+                  <div className={styles.cardAuthor}>
+                    <span>By: </span>
+                    <Link
+                      href={`https://www.pixiv.net/users/${item.authorId}`}
+                      target="_blank"
+                      rel="noopener noreferrer">
+                      {item.author}
+                    </Link>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
       <BackToTopButton />
     </Layout>
