@@ -72,11 +72,18 @@ export default async (request) => {
 
   try {
     const accessToken = await getPixivAccessToken();
+    const detail = await pixivApi(`/v1/illust/detail?illust_id=${encodeURIComponent(id)}`, accessToken);
+    const wasBookmarked = Boolean(detail.illust?.is_bookmarked);
+    const shouldBeBookmarked = action === 'add';
+    if (wasBookmarked === shouldBeBookmarked) {
+      return json({success: true, data: {id: Number(id), isBookmarked: wasBookmarked}});
+    }
+
     const params = new URLSearchParams({illust_id: id});
     const path = action === 'add'
       ? '/v2/illust/bookmark/add'
       : '/v1/illust/bookmark/delete';
-    if (action === 'add') params.set('restrict', '1'); // 收藏仅对当前账户可见。
+    if (action === 'add') params.set('restrict', 'private'); // 收藏仅对当前账户可见。
     await pixivApi(path, accessToken, {method: 'POST', body: params});
     return json({success: true, data: {id: Number(id), isBookmarked: action === 'add'}});
   } catch (error) {
