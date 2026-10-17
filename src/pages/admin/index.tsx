@@ -6,7 +6,7 @@ import {Icon} from '@iconify/react';
 import {useAdminSession} from '@site/src/components/AdminSession';
 
 import styles from './styles.module.css';
-import {consoleApi} from '@site/src/components/admin/consoleApi';
+import {consoleApi, describeGitSync, type GitSyncResult} from '@site/src/components/admin/consoleApi';
 import ArticleConsole from '@site/src/components/admin/ArticleConsole';
 
 type DatasetInfo = {name: string; label: string; path: string};
@@ -20,8 +20,9 @@ type DatasetPayload = {
   totalCount: number;
   page: number;
   pageSize: number;
-  headSha: string;
-  blobSha: string;
+  headSha: string | null;
+  blobSha: string | null;
+  backend?: string;
 };
 type MusicTag = {
   id: number;
@@ -586,7 +587,7 @@ function DataConsole({repository}: {repository: string | null}) {
     setBusy(true);
     setError('');
     try {
-      const result = await consoleApi<{commitSha: string; commitUrl: string; count: number; syncedCount?: number; unmatchedCount?: number}>('/api/console/dataset', {
+      const result = await consoleApi<{revision: string; count: number; syncedCount?: number; unmatchedCount?: number; gitSync?: GitSyncResult}>('/api/console/dataset', {
         method: 'POST',
         body: JSON.stringify({
           name: dataset.name,
@@ -608,7 +609,7 @@ function DataConsole({repository}: {repository: string | null}) {
       const syncNotice = supportsTagFilter && syncMusicLists
         ? `；已同步另一音质的 ${result.syncedCount || 0} 条标签设置${result.unmatchedCount ? `，另有 ${result.unmatchedCount} 条曲目未找到对应项` : ''}`
         : '';
-      setNotice(`已创建提交 ${result.commitSha.slice(0, 8)}${syncNotice}。GitHub Actions 将继续构建和部署。`);
+      setNotice(`已写入 Netlify Blob${describeGitSync(result.gitSync)}${syncNotice}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '提交数据表失败。');
     } finally {
@@ -633,7 +634,7 @@ function DataConsole({repository}: {repository: string | null}) {
     if (importMode === 'replace' && !window.confirm(`将使用 ${imported.length} 条记录覆盖整个数据表，是否继续？`)) return;
     setBusy(true);
     try {
-      const result = await consoleApi<{commitSha: string; count: number}>('/api/console/dataset', {
+      const result = await consoleApi<{revision: string; count: number; gitSync?: GitSyncResult}>('/api/console/dataset', {
         method: 'POST',
         body: JSON.stringify({
           name: dataset.name,
@@ -646,7 +647,7 @@ function DataConsole({repository}: {repository: string | null}) {
       setImportText('');
       await clearMusicBrowserCaches();
       await loadDataset(dataset.name, true);
-      setNotice(`已写入 ${result.count} 条记录，提交编号为 ${result.commitSha.slice(0, 8)}。`);
+      setNotice(`已写入 ${result.count} 条记录${describeGitSync(result.gitSync)}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '导入失败。');
     } finally {
@@ -728,7 +729,7 @@ function DataConsole({repository}: {repository: string | null}) {
     setMusicOrderBusy(true);
     setError('');
     try {
-      const result = await consoleApi<{commitSha: string; count: number}>('/api/console/music-order', {
+      const result = await consoleApi<{revision: string; gitSync?: GitSyncResult}>('/api/console/music-order', {
         method: 'POST',
         body: JSON.stringify({
           tagId: requestedTag,
@@ -743,7 +744,7 @@ function DataConsole({repository}: {repository: string | null}) {
       setMusicOrderHeadSha('');
       await clearMusicBrowserCaches();
       await loadDataset(requestedDataset, true);
-      setNotice(`歌单顺序已保存，提交编号为 ${result.commitSha.slice(0, 8)}。`);
+      setNotice(`歌单顺序已保存到 Netlify Blob${describeGitSync(result.gitSync)}。`);
     } catch (caught) {
       if (requestId === musicOrderRequestId.current) {
         setError(caught instanceof Error ? caught.message : '保存歌单顺序失败。');
@@ -794,6 +795,15 @@ function DataConsole({repository}: {repository: string | null}) {
               <Icon icon="lucide:plus" />
               新增表项
             </button>
+            <a
+              className={styles.secondaryButton}
+              href={dataset ? `/api/console/download?type=dataset&name=${encodeURIComponent(dataset.name)}` : undefined}
+              download
+              aria-disabled={!dataset}
+              onClick={(event) => { if (!dataset) event.preventDefault(); }}>
+              <Icon icon="lucide:download" />
+              导出数据表
+            </a>
             <button type="button" className={styles.primaryButton} onClick={() => void commitRecords()} disabled={!dirty || busy}>
               <Icon icon="lucide:git-commit-horizontal" />
               提交数据表

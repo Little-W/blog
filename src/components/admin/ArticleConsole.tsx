@@ -1,11 +1,12 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Icon} from '@iconify/react';
 
-import {consoleApi} from './consoleApi';
-import MarkdownPreview, {splitFrontMatter, getFrontMatterValue, type FrontMatterEntry} from './MarkdownPreview';
+import {consoleApi, consoleUpload, describeGitSync, type GitSyncResult} from './consoleApi';
+import MarkdownPreview, {splitFrontMatter, getFrontMatterValue, frontMatterLineOffset, type FrontMatterEntry} from './MarkdownPreview';
 import styles from '@site/src/pages/admin/styles.module.css';
 
 type FileEntry = {path: string; name: string; section: string};
+type ArticleSummary = {path: string; title: string; tags: string[]; section: string};
 type Draft = {
   section: string;
   slug: string;
@@ -46,6 +47,226 @@ function joinPath(section: string, name: string): string {
   return `${section.replace(/\/+$/, '')}/${name}`;
 }
 
+function normalizeSection(value: string): string {
+  const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+  if (!trimmed) return '';
+  if (/^(?:docs|blog)(?:\/|$)/.test(trimmed)) return trimmed;
+  return `docs/${trimmed}`;
+}
+
+function parseTagList(value: string): string[] {
+  const inner = String(value ?? '').trim().replace(/^\[/, '').replace(/\]$/, '');
+  if (!inner.trim()) return [];
+  return inner
+    .split(',')
+    .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
+    .filter(Boolean);
+}
+
+function formatTagList(tags: string[]): string {
+  return tags.length ? `[${tags.join(', ')}]` : '';
+}
+
+function TagEditor({
+  value,
+  suggestions,
+  listId,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  suggestions: string[];
+  listId: string;
+  placeholder?: string;
+  onChange: (next: string) => void;
+}) {
+  const tags = useMemo(() => parseTagList(value), [value]);
+  const [input, setInput] = useState('');
+  const commit = (raw: string) => {
+    const tag = raw.trim().replace(/^["']|["']$/g, '');
+    if (!tag) return;
+    onChange(formatTagList(tags.includes(tag) ? tags : [...tags, tag]));
+    setInput('');
+  };
+  const remove = (tag: string) => onChange(formatTagList(tags.filter((item) => item !== tag)));
+  const available = suggestions.filter((suggestion) => !tags.includes(suggestion));
+  return (
+    <div className={styles.tagEditor}>
+      {tags.map((tag) => (
+        <span key={tag} className={styles.tagChip}>
+          {tag}
+          <button type="button" aria-label={`移除标签 ${tag}`} onClick={() => remove(tag)}>
+            <Icon icon="lucide:x" />
+          </button>
+        </span>
+      ))}
+      <input
+        list={listId}
+        value={input}
+        placeholder={tags.length ? '添加标签' : (placeholder || '输入标签后回车')}
+        onChange={(event) => {
+          const next = event.target.value;
+          if (next.includes(',')) commit(next);
+          else setInput(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit(input);
+          } else if (event.key === 'Backspace' && !input && tags.length) {
+            remove(tags[tags.length - 1]);
+          }
+        }}
+        onBlur={() => commit(input)}
+      />
+      <datalist id={listId}>
+        {available.map((suggestion) => <option key={suggestion} value={suggestion} />)}
+      </datalist>
+    </div>
+  );
+}
+
+type UploadResult = {created: string[]; updated: string[]; skipped: string[]; backend: string; gitSync?: GitSyncResult};
+
+function relativeName(file: File): string {
+  const withPath = file as File & {webkitRelativePath?: string};
+  return withPath.webkitRelativePath || file.name;
+}
+
+function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; defaultTarget: string; onFinish: (result: UploadResult) => void}) {
+  const [target, setTarget] = useState(defaultTarget);
+  const [files, setFiles] = useState<File[]>([]);
+  const [archive, setArchive] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dirInputRef = useRef<HTMLInputElement>(null);
+  const archiveInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const incoming = Array.from<File>(list).filter((file) => /\.(?:md|mdx)$/i.test(file.name));
+    if (!incoming.length) {
+      setError('请选择 .md 或 .mdx 文件。');
+      return;
+    }
+    setFiles((current) => [...current, ...incoming]);
+    setError('');
+  };
+
+  const resetInputs = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (dirInputRef.current) dirInputRef.current.value = '';
+    if (archiveInputRef.current) archiveInputRef.current.value = '';
+  };
+
+  const submit = async () => {
+    const destination = normalizeSection(target);
+    if (!destination) {
+      setError('请填写目标分区路径，例如 docs/notes/web。');
+      return;
+    }
+    if (!files.length && !archive) {
+      setError('请选择 Markdown 文件或一个压缩包。');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('target', destination);
+      for (const file of files) form.append('files', file, relativeName(file));
+      if (archive) form.append('archive', archive);
+      const result = await consoleUpload<UploadResult>('/api/console/upload', form);
+      setFiles([]);
+      setArchive(null);
+      resetInputs();
+      onFinish(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '上传失败。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const destination = normalizeSection(target);
+  return (
+    <div className={styles.uploadPanel}>
+      <div className={styles.panelHeading}>
+        <h3>批量上传</h3>
+        <p>上传多个 Markdown 文件或一个 zip 压缩包，自动解压到目标分区；与 Obsidian 一样，新的文件夹会成为新的分区。</p>
+      </div>
+      <div className={styles.field}>
+        <span>目标分区路径</span>
+        <input
+          list="upload-sections"
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+          placeholder="docs/notes/web"
+        />
+        <datalist id="upload-sections">
+          {sections.map((section) => <option key={section} value={section} />)}
+        </datalist>
+        <small className={styles.fieldHint}>压缩包内的文件夹结构会保留；不存在的新分区会自动创建。</small>
+      </div>
+      <div className={styles.uploadButtons}>
+        <button type="button" className={styles.secondaryButton} onClick={() => fileInputRef.current?.click()} disabled={busy}>
+          <Icon icon="lucide:file-plus-2" />
+          选择 Markdown
+        </button>
+        <button type="button" className={styles.secondaryButton} onClick={() => dirInputRef.current?.click()} disabled={busy}>
+          <Icon icon="lucide:folder-tree" />
+          选择文件夹
+        </button>
+        <button type="button" className={styles.secondaryButton} onClick={() => archiveInputRef.current?.click()} disabled={busy}>
+          <Icon icon="lucide:file-archive" />
+          选择压缩包
+        </button>
+        <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".md,.mdx,text/markdown" multiple onChange={(event) => addFiles(event.target.files)} />
+        <input
+          ref={dirInputRef}
+          className={styles.hiddenInput}
+          type="file"
+          multiple
+          onChange={(event) => addFiles(event.target.files)}
+          {...({webkitdirectory: 'true'} as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
+        />
+        <input ref={archiveInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip" onChange={(event) => setArchive(event.target.files?.[0] || null)} />
+      </div>
+      {archive ? (
+        <div className={styles.uploadSummary}>
+          <Icon icon="lucide:file-archive" />
+          <span>{archive.name}</span>
+          <button type="button" aria-label="移除压缩包" onClick={() => { setArchive(null); if (archiveInputRef.current) archiveInputRef.current.value = ''; }}>
+            <Icon icon="lucide:x" />
+          </button>
+        </div>
+      ) : null}
+      {files.length ? (
+        <div className={styles.uploadList}>
+          {files.map((file, index) => (
+            <div key={`${relativeName(file)}-${index}`} className={styles.uploadItem}>
+              <Icon icon="lucide:file-text" />
+              <span>{relativeName(file)}</span>
+              <button type="button" aria-label="移除文件" onClick={() => setFiles((current) => current.filter((_, position) => position !== index))}>
+                <Icon icon="lucide:x" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {error ? <div className={styles.errorBanner}><Icon icon="lucide:circle-alert" />{error}</div> : null}
+      <div className={styles.uploadFooter}>
+        <span>{files.length} 个文件{archive ? ` + 压缩包` : ''}</span>
+        <button type="button" className={styles.primaryButton} onClick={() => void submit()} disabled={busy || (!files.length && !archive)}>
+          <Icon icon="lucide:upload" />
+          上传到 {destination || '—'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function serializeFrontMatter(entries: FrontMatterEntry[]): string {
   if (!entries.length) return '';
   return `---\n${entries.map((entry) => `${entry.key}: ${entry.value}`).join('\n')}\n---\n\n`;
@@ -82,6 +303,7 @@ const TOOLBAR: Array<{icon: string; label: string; before: string; after?: strin
 
 export default function ArticleConsole({initialPath, repository}: {initialPath: string; repository: string | null}) {
   const [files, setFiles] = useState<FileEntry[]>([]);
+  const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [sections, setSections] = useState<string[]>([]);
   const [selectedPath, setSelectedPath] = useState(initialPath);
   const [loadedPath, setLoadedPath] = useState('');
@@ -96,6 +318,8 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [showNew, setShowNew] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [showSections, setShowSections] = useState(false);
   const [draft, setDraft] = useState<Draft>({
     section: DEFAULT_SECTION,
     slug: '',
@@ -107,20 +331,36 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const scrollLock = useRef<'editor' | 'preview' | null>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
+  const sectionPickerRef = useRef<HTMLDivElement>(null);
+  const sectionInputRef = useRef<HTMLInputElement>(null);
+  const lineOffsetsRef = useRef<number[]>([]);
+  const previewAnchorsRef = useRef<{line: number; top: number}[]>([]);
+  const programmatic = useRef<{editor: number; preview: number}>({editor: 0, preview: 0});
 
   const dirty = content !== baseline;
   const frontMatter = useMemo(() => splitFrontMatter(content), [content]);
   const metaTitle = getFrontMatterValue(frontMatter.entries, 'title');
   const metaTags = getFrontMatterValue(frontMatter.entries, 'tags');
   const words = useMemo(() => countWords(frontMatter.body), [frontMatter.body]);
+  const mirrorLines = useMemo(() => content.split('\n'), [content]);
+  const frontMatterOffset = useMemo(() => frontMatterLineOffset(content), [content]);
+  const knownTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const article of articles) {
+      for (const tag of article.tags || []) if (tag) set.add(tag);
+    }
+    for (const tag of parseTagList(metaTags)) set.add(tag);
+    return [...set].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  }, [articles, metaTags]);
   const isNew = Boolean(loadedPath) === false && content.trim() !== '';
 
   const loadFiles = async () => {
-    const data = await consoleApi<{files: string[]; sections?: string[]; headSha: string}>('/api/console/files');
+    const data = await consoleApi<{files: string[]; sections?: string[]; articles?: ArticleSummary[]; headSha: string}>('/api/console/files');
     const entries = data.files.map((path) => ({path, name: basename(path), section: dirname(path)}));
     const derived = [...new Set(entries.map((entry) => entry.section))].sort((left, right) => left.localeCompare(right, 'zh-CN'));
     setFiles(entries);
+    setArticles(data.articles || []);
     setSections(data.sections?.length ? data.sections : derived);
     return entries;
   };
@@ -167,6 +407,19 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [dirty]);
 
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const editor = textareaRef.current;
+      if (editor) {
+        editor.selectionStart = 0;
+        editor.selectionEnd = 0;
+        editor.scrollTop = 0;
+      }
+      if (previewRef.current) previewRef.current.scrollTop = 0;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loadedPath]);
+
   const chooseFile = (path: string) => {
     if (path === selectedPath && loadedPath === path) return;
     if (dirty && !window.confirm('当前文章有未提交的修改，确定放弃吗？')) return;
@@ -183,20 +436,20 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     setBusy(true);
     setError('');
     try {
-      const payload: {path: string; content: string; baseHeadSha: string; message: string; previousPath?: string} = {
+      const payload: {path: string; content: string; baseHeadSha: string | null; message: string; previousPath?: string} = {
         path: selectedPath,
         content,
-        baseHeadSha: headSha,
+        baseHeadSha: headSha || null,
         message: message || `文章：通过控制台更新 ${selectedPath}`,
       };
       if (loadedPath && loadedPath !== selectedPath) payload.previousPath = loadedPath;
-      const result = await consoleApi<{commitSha: string}>('/api/console/file', {
+      const result = await consoleApi<{path: string; savedTo: string; gitSync?: GitSyncResult}>('/api/console/file', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
       await loadFiles();
       await loadFile(selectedPath);
-      setNotice(`文章已写入仓库，提交编号为 ${result.commitSha.slice(0, 8)}。`);
+      setNotice(`文章已保存到 ${result.savedTo === 'local' ? '本地 Blob 模拟' : 'Netlify Blob'}${describeGitSync(result.gitSync)}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '文章提交失败。');
     } finally {
@@ -210,16 +463,16 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     setBusy(true);
     setError('');
     try {
-      const result = await consoleApi<{commitSha: string}>('/api/console/file', {
+      const result = await consoleApi<{path: string; deletedFrom: string; gitSync?: GitSyncResult}>('/api/console/file', {
         method: 'DELETE',
-        body: JSON.stringify({path: loadedPath, baseHeadSha: headSha, message: `文章：通过控制台删除 ${loadedPath}`}),
+        body: JSON.stringify({path: loadedPath, baseHeadSha: headSha || null, message: `文章：通过控制台删除 ${loadedPath}`}),
       });
       setContent('');
       setBaseline('');
       setLoadedPath('');
       const entries = await loadFiles();
       if (entries[0]) await loadFile(entries[0].path);
-      setNotice(`文章已删除，提交编号为 ${result.commitSha.slice(0, 8)}。`);
+      setNotice(`文章已删除${describeGitSync(result.gitSync)}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '删除失败。');
     } finally {
@@ -230,7 +483,7 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
   const updateMeta = (key: 'title' | 'tags', value: string) => {
     const entries = frontMatter.entries.filter((entry) => entry.key.toLowerCase() !== key);
     if (key === 'title') entries.unshift({key, value});
-    else entries.push({key, value});
+    else if (value.trim()) entries.push({key, value});
     setContent(serializeFrontMatter(entries) + frontMatter.body);
   };
 
@@ -285,33 +538,203 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     }
   };
 
-  const onEditorScroll = () => {
-    if (scrollLock.current === 'preview') return;
-    scrollLock.current = 'editor';
-    const editor = textareaRef.current;
+  const refreshLineOffsets = () => {
+    const mirror = mirrorRef.current;
+    if (!mirror) return;
+    lineOffsetsRef.current = Array.from(mirror.children, (child) => (child as HTMLElement).offsetTop);
+  };
+
+  const refreshPreviewAnchors = () => {
     const preview = previewRef.current;
-    if (editor && preview) {
-      const ratio = editor.scrollTop / Math.max(1, editor.scrollHeight - editor.clientHeight);
-      preview.scrollTop = ratio * Math.max(0, preview.scrollHeight - preview.clientHeight);
+    if (!preview) return;
+    const nodes = preview.querySelectorAll<HTMLElement>('[data-line]');
+    const base = preview.getBoundingClientRect().top - preview.scrollTop;
+    const map = new Map<number, number>();
+    nodes.forEach((node) => {
+      const line = Number(node.dataset.line);
+      if (!Number.isFinite(line)) return;
+      const top = node.getBoundingClientRect().top - base;
+      const existing = map.get(line);
+      if (existing === undefined || top < existing) map.set(line, top);
+    });
+    previewAnchorsRef.current = [...map.entries()]
+      .map(([line, top]) => ({line, top}))
+      .sort((left, right) => left.line - right.line);
+  };
+
+  const syncMirrorStyles = () => {
+    const editor = textareaRef.current;
+    const mirror = mirrorRef.current;
+    if (!editor || !mirror) return;
+    const computed = window.getComputedStyle(editor);
+    mirror.style.width = `${editor.clientWidth}px`;
+    mirror.style.fontFamily = computed.fontFamily;
+    mirror.style.fontSize = computed.fontSize;
+    mirror.style.fontWeight = computed.fontWeight;
+    mirror.style.fontStyle = computed.fontStyle;
+    mirror.style.lineHeight = computed.lineHeight;
+    mirror.style.letterSpacing = computed.letterSpacing;
+    mirror.style.tabSize = computed.tabSize;
+    mirror.style.padding = computed.padding;
+  };
+
+  const previewScrollForLine = (line: number): number => {
+    const anchors = previewAnchorsRef.current;
+    if (!anchors.length) return 0;
+    if (line <= anchors[0].line) return Math.max(0, anchors[0].top);
+    let previous = anchors[0];
+    for (const anchor of anchors) {
+      if (anchor.line <= line) {
+        previous = anchor;
+        continue;
+      }
+      const span = Math.max(1, anchor.line - previous.line);
+      const ratio = Math.min(1, Math.max(0, (line - previous.line) / span));
+      return Math.max(0, previous.top + ratio * (anchor.top - previous.top));
     }
-    requestAnimationFrame(() => { scrollLock.current = null; });
+    return Math.max(0, previous.top);
+  };
+
+  const lineForPreviewOffset = (offset: number): number => {
+    const anchors = previewAnchorsRef.current;
+    if (anchors.length < 2) return anchors.length ? anchors[0].line : 1;
+    let low = 0;
+    let high = anchors.length - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (anchors[mid].top <= offset) low = mid;
+      else high = mid - 1;
+    }
+    const start = anchors[low];
+    const next = anchors[low + 1];
+    if (!next || next.top === start.top) return start.line;
+    const ratio = Math.min(1, Math.max(0, (offset - start.top) / (next.top - start.top)));
+    return start.line + ratio * (next.line - start.line);
+  };
+
+  const offsetForLine = (line: number): number => {
+    const offsets = lineOffsetsRef.current;
+    if (!offsets.length) return 0;
+    const index = Math.min(offsets.length, Math.max(1, Math.round(line))) - 1;
+    return offsets[index];
+  };
+
+  const lineForEditorOffset = (offset: number): number => {
+    const offsets = lineOffsetsRef.current;
+    if (offsets.length < 2) return 1;
+    let low = 0;
+    let high = offsets.length - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (offsets[mid] <= offset) low = mid;
+      else high = mid - 1;
+    }
+    const start = offsets[low];
+    const next = low + 1 < offsets.length ? offsets[low + 1] : start + 1;
+    if (next === start) return low + 1;
+    const ratio = Math.min(1, Math.max(0, (offset - start) / (next - start)));
+    return low + 1 + ratio;
+  };
+
+  const setEditorScroll = (value: number) => {
+    const editor = textareaRef.current;
+    if (!editor) return;
+    programmatic.current.editor = performance.now() + 220;
+    editor.scrollTop = value;
+  };
+
+  const setPreviewScroll = (value: number) => {
+    const preview = previewRef.current;
+    if (!preview) return;
+    programmatic.current.preview = performance.now() + 220;
+    preview.scrollTop = value;
+  };
+
+  const onEditorScroll = () => {
+    const editor = textareaRef.current;
+    if (!editor) return;
+    if (performance.now() < programmatic.current.editor) return;
+    if (!previewRef.current) return;
+    setPreviewScroll(previewScrollForLine(lineForEditorOffset(editor.scrollTop)));
   };
 
   const onPreviewScroll = () => {
-    if (scrollLock.current === 'editor') return;
-    scrollLock.current = 'preview';
-    const editor = textareaRef.current;
     const preview = previewRef.current;
-    if (editor && preview) {
-      const ratio = preview.scrollTop / Math.max(1, preview.scrollHeight - preview.clientHeight);
-      editor.scrollTop = ratio * Math.max(0, editor.scrollHeight - editor.clientHeight);
-    }
-    requestAnimationFrame(() => { scrollLock.current = null; });
+    if (!preview) return;
+    if (performance.now() < programmatic.current.preview) return;
+    if (!textareaRef.current) return;
+    setEditorScroll(offsetForLine(lineForPreviewOffset(preview.scrollTop)));
   };
 
+  const cursorLine = (): number => {
+    const editor = textareaRef.current;
+    if (!editor) return 1;
+    const value = editor.value;
+    const limit = Math.min(editor.selectionStart, value.length);
+    let line = 1;
+    for (let index = 0; index < limit; index += 1) {
+      if (value.charCodeAt(index) === 10) line += 1;
+    }
+    return line;
+  };
+
+  const revealCursor = () => {
+    const editor = textareaRef.current;
+    const preview = previewRef.current;
+    if (!editor || !preview || document.activeElement !== editor) return;
+    const top = previewScrollForLine(cursorLine());
+    const margin = Math.min(preview.clientHeight * 0.2, 90);
+    if (top < preview.scrollTop + margin || top > preview.scrollTop + preview.clientHeight - margin) {
+      setPreviewScroll(Math.max(0, top - margin));
+    }
+  };
+
+  useEffect(() => {
+    syncMirrorStyles();
+    refreshLineOffsets();
+    refreshPreviewAnchors();
+    const timer = window.setTimeout(() => {
+      syncMirrorStyles();
+      refreshLineOffsets();
+      refreshPreviewAnchors();
+    }, 120);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, viewMode]);
+
+  useEffect(() => {
+    const editor = textareaRef.current;
+    if (!editor || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      syncMirrorStyles();
+      refreshLineOffsets();
+      refreshPreviewAnchors();
+    });
+    observer.observe(editor);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!showSections) return;
+    const close = (event: MouseEvent) => {
+      if (!sectionPickerRef.current?.contains(event.target as Node)) setShowSections(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSections(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [showSections]);
+
+  const normalizedSection = normalizeSection(draft.section);
   const draftPath = draft.useCustomPath
     ? draft.customPath.trim()
-    : joinPath(draft.section.trim(), `${slugify(draft.slug)}.md`);
+    : (normalizedSection ? joinPath(normalizedSection, `${slugify(draft.slug)}.md`) : '');
 
   const createArticle = () => {
     const path = draftPath.replace(/^@site\//, '');
@@ -340,6 +763,18 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     setShowNew(false);
     setViewMode('split');
     requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const finishUpload = async (result: UploadResult) => {
+    const parts: string[] = [];
+    if (result.created.length) parts.push(`新增 ${result.created.length} 篇`);
+    if (result.updated.length) parts.push(`更新 ${result.updated.length} 篇`);
+    if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 篇`);
+    const first = result.created[0] || result.updated[0];
+    await loadFiles();
+    if (first) await loadFile(first);
+    setNotice(`批量导入完成：${parts.length ? parts.join('，') : '没有写入文件'}${describeGitSync(result.gitSync)}。`);
+    setShowUpload(false);
   };
 
   const visibleFiles = useMemo(() => {
@@ -421,6 +856,24 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
               <button type="button" className={viewMode === 'split' ? styles.viewModeActive : styles.viewModeButton} onClick={() => setViewMode('split')} title="分栏"><Icon icon="lucide:columns-2" /></button>
               <button type="button" className={viewMode === 'preview' ? styles.viewModeActive : styles.viewModeButton} onClick={() => setViewMode('preview')} title="仅预览"><Icon icon="lucide:eye" /></button>
             </div>
+            {loadedPath && !dirty ? (
+              <a
+                className={styles.secondaryButton}
+                href={`/api/console/download?type=article&path=${encodeURIComponent(loadedPath)}`}
+                download
+                title="下载当前文章">
+                <Icon icon="lucide:download" />
+              </a>
+            ) : null}
+            <button
+              type="button"
+              className={showUpload ? styles.primaryButton : styles.secondaryButton}
+              onClick={() => setShowUpload((value) => !value)}
+              disabled={busy}
+              title="批量上传 Markdown 或压缩包">
+              <Icon icon="lucide:upload" />
+              上传
+            </button>
             {loadedPath ? (
               <button type="button" className={styles.dangerButton} onClick={() => void removeArticle()} disabled={busy} title="删除文章">
                 <Icon icon="lucide:trash-2" />
@@ -428,7 +881,7 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
             ) : null}
             <button type="button" className={styles.primaryButton} onClick={() => void save()} disabled={!dirty || busy}>
               <Icon icon="lucide:git-commit-horizontal" />
-              {isNew ? '创建文章' : '提交文章'}
+              {isNew ? '创建文章' : '保存文章'}
             </button>
           </div>
         </div>
@@ -437,31 +890,73 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
         {notice ? (
           <div className={styles.noticeBanner}>
             <Icon icon="lucide:circle-check" />
-            <span>{notice} GitHub Actions 将继续构建和部署。</span>
+            <span>{notice}</span>
             {repository ? <a href={`https://github.com/${repository}/actions`} target="_blank" rel="noreferrer">查看 Actions</a> : null}
           </div>
         ) : null}
 
         {showNew ? (
           <div className={styles.newArticlePanel}>
-            <div className={styles.editorHeading}>
+            <div className={styles.panelHeading}>
               <h3>新建文章</h3>
               <p>选择文章分区并填写文件名，路径会实时生成；标题与标签将写入文章前言。</p>
             </div>
             <div className={styles.newArticleGrid}>
-              <label className={styles.field}>
+              <div className={styles.field}>
                 <span>文章分区</span>
-                <input
-                  list="article-sections"
-                  value={draft.section}
-                  onChange={(event) => setDraft({...draft, section: event.target.value})}
-                  placeholder="docs/notes"
-                  disabled={draft.useCustomPath}
-                />
-                <datalist id="article-sections">
-                  {sections.map((section) => <option key={section} value={section} />)}
-                </datalist>
-              </label>
+                <div className={styles.sectionPicker} ref={sectionPickerRef}>
+                  <input
+                    ref={sectionInputRef}
+                    value={draft.section}
+                    onChange={(event) => setDraft({...draft, section: event.target.value})}
+                    placeholder="docs/notes 或新路径"
+                    disabled={draft.useCustomPath}
+                  />
+                  <button
+                    type="button"
+                    className={styles.sectionToggle}
+                    aria-label="浏览已有分区"
+                    aria-expanded={showSections}
+                    onClick={() => setShowSections((value) => !value)}
+                    disabled={draft.useCustomPath}>
+                    <Icon icon={showSections ? 'lucide:chevron-up' : 'lucide:chevron-down'} />
+                  </button>
+                  {showSections ? (
+                    <div className={styles.sectionMenu} role="listbox">
+                      <div className={styles.sectionMenuList}>
+                        {sections.map((section) => (
+                          <button
+                            type="button"
+                            key={section}
+                            role="option"
+                            aria-selected={draft.section === section}
+                            className={draft.section === section ? styles.sectionMenuItemActive : styles.sectionMenuItem}
+                            onClick={() => {
+                              setDraft({...draft, section, useCustomPath: false});
+                              setShowSections(false);
+                            }}>
+                            <Icon icon="lucide:folder" />
+                            <span>{section}</span>
+                          </button>
+                        ))}
+                        {!sections.length ? <div className={styles.sectionMenuEmpty}>还没有分区</div> : null}
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.sectionMenuNew}
+                        onClick={() => {
+                          setDraft({...draft, section: '', useCustomPath: false});
+                          setShowSections(false);
+                          requestAnimationFrame(() => sectionInputRef.current?.focus());
+                        }}>
+                        <Icon icon="lucide:folder-plus" />
+                        新建分区路径
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <small className={styles.fieldHint}>输入新的分区路径（如 docs/notes/web）即可创建新分区。</small>
+              </div>
               <label className={styles.field}>
                 <span>文件名</span>
                 <input
@@ -475,10 +970,16 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
                 <span>标题</span>
                 <input value={draft.title} onChange={(event) => setDraft({...draft, title: event.target.value})} placeholder="文章标题" />
               </label>
-              <label className={styles.field}>
-                <span>标签（逗号分隔）</span>
-                <input value={draft.tags} onChange={(event) => setDraft({...draft, tags: event.target.value})} placeholder="笔记, 前端" />
-              </label>
+              <div className={styles.field}>
+                <span>标签</span>
+                <TagEditor
+                  value={draft.tags}
+                  suggestions={knownTags}
+                  listId="article-new-tags"
+                  placeholder="输入标签后回车"
+                  onChange={(next) => setDraft({...draft, tags: next})}
+                />
+              </div>
             </div>
             <label className={styles.checkboxRow}>
               <input type="checkbox" checked={draft.useCustomPath} onChange={(event) => setDraft({...draft, useCustomPath: event.target.checked})} />
@@ -510,15 +1011,29 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
           </div>
         ) : null}
 
+        {showUpload ? (
+          <UploadPanel
+            sections={sections}
+            defaultTarget={normalizedSection || DEFAULT_SECTION}
+            onFinish={(result) => void finishUpload(result)}
+          />
+        ) : null}
+
         <div className={styles.metaPanel}>
           <label className={styles.field}>
             <span>标题</span>
             <input value={metaTitle} onChange={(event) => updateMeta('title', event.target.value)} placeholder="未设置" />
           </label>
-          <label className={styles.field}>
+          <div className={styles.field}>
             <span>标签</span>
-            <input value={metaTags} onChange={(event) => updateMeta('tags', event.target.value)} placeholder="[标签1, 标签2]" />
-          </label>
+            <TagEditor
+              value={metaTags}
+              suggestions={knownTags}
+              listId="article-meta-tags"
+              placeholder="输入标签后回车"
+              onChange={(next) => updateMeta('tags', next)}
+            />
+          </div>
           <label className={styles.field}>
             <span>文章路径</span>
             <input
@@ -547,17 +1062,25 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
                 onChange={(event) => setContent(event.target.value)}
                 onScroll={onEditorScroll}
                 onKeyDown={onEditorKeyDown}
+                onKeyUp={revealCursor}
+                onClick={revealCursor}
+                onSelect={revealCursor}
                 spellCheck={false}
                 aria-label="Markdown 源文件"
                 disabled={!selectedPath || busy}
                 placeholder="在此书写 Markdown…"
               />
+              <div className={styles.editorMirror} ref={mirrorRef} aria-hidden="true">
+                {mirrorLines.map((line, index) => (
+                  <div key={index}>{line === '' ? '\u200b' : line}</div>
+                ))}
+              </div>
             </div>
           ) : null}
           {viewMode !== 'edit' ? (
             <div className={styles.previewPane} ref={previewRef} onScroll={onPreviewScroll}>
               {content.trim() ? (
-                <MarkdownPreview source={frontMatter.body} className={styles.previewBody} />
+                <MarkdownPreview source={frontMatter.body} className={styles.previewBody} lineOffset={frontMatterOffset} />
               ) : (
                 <div className={styles.emptyState}>暂无内容可预览。</div>
               )}

@@ -3,6 +3,7 @@ import unified from 'unified';
 import remarkParse from 'remark-parse';
 import toHast from 'mdast-util-to-hast';
 
+import {highlightToHtml, languageFromClassName} from './codeHighlight';
 import styles from '@site/src/pages/admin/styles.module.css';
 
 type HastNode = {
@@ -11,7 +12,10 @@ type HastNode = {
   properties?: Record<string, unknown>;
   value?: string;
   children?: HastNode[];
+  position?: {start?: {line?: number}};
 };
+
+type RenderContext = {offset: number};
 
 const ALLOWED_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote',
@@ -19,6 +23,10 @@ const ALLOWED_TAGS = new Set([
   'thead', 'tbody', 'tr', 'th', 'td', 'input', 'span', 'sup', 'sub', 'kbd',
 ]);
 const VOID_TAGS = new Set(['br', 'hr', 'img', 'input']);
+const LINE_TAGS = new Set([
+  'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote',
+  'pre', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
+]);
 
 const TABLE_DELIMITER = /^\s*:?-{2,}:?\s*$/;
 
@@ -43,6 +51,15 @@ export function getFrontMatterValue(entries: FrontMatterEntry[], key: string): s
   return entry ? entry.value : '';
 }
 
+export function frontMatterLineOffset(source: string): number {
+  const lines = String(source ?? '').split('\n');
+  if (lines[0]?.trim() !== '---') return 0;
+  const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
+  if (end < 0) return 0;
+  const afterClose = end + 1;
+  return lines[afterClose] === '' ? afterClose + 1 : afterClose;
+}
+
 function safeUrl(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
@@ -61,21 +78,29 @@ function renderText(value: string, key: React.Key): React.ReactNode {
   );
 }
 
-function renderNode(node: HastNode, key: React.Key): React.ReactNode {
+function collectText(node: HastNode | undefined): string {
+  if (!node) return '';
+  if (node.type === 'text' || node.type === 'raw') return node.value || '';
+  return (node.children || []).map((child) => collectText(child)).join('');
+}
+
+function renderNode(node: HastNode, key: React.Key, context: RenderContext): React.ReactNode {
   if (node.type === 'text') return renderText(node.value || '', key);
   if (node.type === 'raw') return node.value || null;
   if (node.type === 'comment') return null;
   if (node.type === 'root') {
-    return <React.Fragment key={key}>{node.children?.map((child, index) => renderNode(child, index))}</React.Fragment>;
+    return <React.Fragment key={key}>{node.children?.map((child, index) => renderNode(child, index, context))}</React.Fragment>;
   }
   if (node.type !== 'element' || !node.tagName) return null;
   const tag = node.tagName;
-  const children = node.children?.map((child, index) => renderNode(child, index));
+  const children = node.children?.map((child, index) => renderNode(child, index, context));
   if (!ALLOWED_TAGS.has(tag)) {
     return <React.Fragment key={key}>{children}</React.Fragment>;
   }
   const properties = node.properties || {};
   const props: Record<string, unknown> = {key};
+  const startLine = node.position?.start?.line;
+  if (typeof startLine === 'number' && LINE_TAGS.has(tag)) props['data-line'] = context.offset + startLine;
   if (properties.className) {
     props.className = Array.isArray(properties.className) ? properties.className.join(' ') : String(properties.className);
   }
@@ -102,6 +127,16 @@ function renderNode(node: HastNode, key: React.Key): React.ReactNode {
     props.checked = Boolean(properties.checked);
     props.disabled = true;
   }
+  if (tag === 'pre') {
+    const codeNode = node.children?.find((child) => child.tagName === 'code');
+    const language = languageFromClassName(codeNode?.properties?.className);
+    const codeProps: Record<string, unknown> = {
+      key: 'code',
+      dangerouslySetInnerHTML: {__html: highlightToHtml(collectText(codeNode || node), language)},
+    };
+    if (language) codeProps.className = `language-${language}`;
+    return React.createElement('pre', props, React.createElement('code', codeProps));
+  }
   return React.createElement(tag, props, VOID_TAGS.has(tag) ? null : children);
 }
 
@@ -113,16 +148,17 @@ function splitTableRow(line: string): string[] {
 }
 
 type Segment =
-  | {type: 'markdown'; text: string}
-  | {type: 'table'; header: string[]; rows: string[][]};
+  | {type: 'markdown'; text: string; start: number}
+  | {type: 'table'; header: string[]; rows: string[][]; start: number};
 
 function parseSegments(source: string): Segment[] {
   const lines = source.split('\n');
   const segments: Segment[] = [];
   let buffer: string[] = [];
+  let bufferStart = 0;
   const flush = () => {
     if (buffer.length) {
-      segments.push({type: 'markdown', text: buffer.join('\n')});
+      segments.push({type: 'markdown', text: buffer.join('\n'), start: bufferStart});
       buffer = [];
     }
   };
@@ -144,49 +180,54 @@ function parseSegments(source: string): Segment[] {
         rows.push(splitTableRow(lines[cursor]));
         cursor += 1;
       }
-      segments.push({type: 'table', header, rows});
+      segments.push({type: 'table', header, rows, start: index});
       index = cursor - 1;
       continue;
     }
+    if (!buffer.length) bufferStart = index;
     buffer.push(line);
   }
   flush();
   return segments;
 }
 
-function renderInline(text: string): React.ReactNode {
+function renderInline(text: string, line: number): React.ReactNode {
   if (!text.trim()) return null;
   const tree = unified().use(remarkParse).parse(text) as HastNode;
   const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index));
+  return hast.children?.map((child, index) => renderNode(child, index, {offset: Math.max(0, line - 1)}));
 }
 
-function renderMarkdown(text: string): React.ReactNode {
+function renderMarkdown(text: string, offset: number): React.ReactNode {
   const tree = unified().use(remarkParse).parse(text) as HastNode;
   const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index));
+  return hast.children?.map((child, index) => renderNode(child, index, {offset}));
 }
 
-export function MarkdownPreview({source, className}: {source: string; className?: string}) {
+export function MarkdownPreview({source, className, lineOffset = 0}: {source: string; className?: string; lineOffset?: number}) {
   const segments = useMemo(() => parseSegments(source), [source]);
   return (
     <div className={`${styles.markdownPreview}${className ? ` ${className}` : ''}`}>
       {segments.map((segment, index) => {
         if (segment.type === 'table') {
+          const tableLine = lineOffset + segment.start + 1;
           return (
-            <table key={index} className={styles.previewTable}>
+            <table key={index} className={styles.previewTable} data-line={tableLine}>
               <thead>
-                <tr>{segment.header.map((cell, cellIndex) => <th key={cellIndex}>{renderInline(cell)}</th>)}</tr>
+                <tr data-line={tableLine}>{segment.header.map((cell, cellIndex) => <th key={cellIndex} data-line={tableLine}>{renderInline(cell, tableLine)}</th>)}</tr>
               </thead>
               <tbody>
-                {segment.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{renderInline(cell)}</td>)}</tr>
-                ))}
+                {segment.rows.map((row, rowIndex) => {
+                  const rowLine = tableLine + rowIndex + 1;
+                  return (
+                    <tr key={rowIndex} data-line={rowLine}>{row.map((cell, cellIndex) => <td key={cellIndex} data-line={rowLine}>{renderInline(cell, rowLine)}</td>)}</tr>
+                  );
+                })}
               </tbody>
             </table>
           );
         }
-        return <React.Fragment key={index}>{renderMarkdown(segment.text)}</React.Fragment>;
+        return <React.Fragment key={index}>{renderMarkdown(segment.text, lineOffset + segment.start)}</React.Fragment>;
       })}
     </div>
   );
