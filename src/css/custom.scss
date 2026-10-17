@@ -360,6 +360,32 @@ html[data-theme='dark'] .theme-code-block {
   font-weight: 400;
 }
 
+/* 提高导航栏文字对比度，尤其是浅色主题下的当前页面链接。 */
+.navbar {
+  .navbar__link,
+  .navbar__title {
+    color: #263746;
+    font-weight: 500;
+  }
+
+  .navbar__link:hover,
+  .navbar__link--active {
+    color: #00698c !important;
+  }
+}
+
+html[data-theme='dark'] .navbar {
+  .navbar__link,
+  .navbar__title {
+    color: #e6edf5;
+  }
+
+  .navbar__link:hover,
+  .navbar__link--active {
+    color: #7dd3fc !important;
+  }
+}
+
 .bloghome__scroll-down {
   justify-self: center;
   align-self: end;
