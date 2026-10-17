@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -35,6 +36,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOKEN_FILE = ROOT / ".pixiv-token.json"
+SESSION_FILE = ROOT / ".pixiv-login-session.json"
+SESSION_TTL_SECONDS = 15 * 60
 
 # Pixiv 官方 App 内置客户端凭据（公开常量），可用环境变量覆盖。
 CLIENT_ID = os.environ.get("PIXIV_CLIENT_ID", "MOBrBDS8blbauoSck0ZfDbtuzpyT")
@@ -138,20 +141,73 @@ def extract_code(text: str):
     return None
 
 
+def save_session(code_verifier: str, code_challenge: str, login_url: str) -> None:
+    SESSION_FILE.write_text(
+        json.dumps(
+            {
+                "codeVerifier": code_verifier,
+                "codeChallenge": code_challenge,
+                "loginUrl": login_url,
+                "createdAt": time.time(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        os.chmod(SESSION_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def load_session():
+    if not SESSION_FILE.exists():
+        return None
+    try:
+        data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if time.time() - float(data.get("createdAt", 0)) > SESSION_TTL_SECONDS:
+        return None
+    if not data.get("codeVerifier") or not data.get("loginUrl"):
+        return None
+    return data
+
+
+def clear_session() -> None:
+    try:
+        SESSION_FILE.unlink()
+    except OSError:
+        pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="导出 Pixiv refresh_token")
     parser.add_argument("--print-only", action="store_true", help="只打印登录网址")
     parser.add_argument("--code", default="", help="直接传入回调 code")
     args = parser.parse_args()
 
-    code_verifier, code_challenge = create_pkce()
-    login_url = build_login_url(code_challenge)
-
     print("\n=== Pixiv 登录（OAuth PKCE）===\n")
-    print("登录网址：\n", login_url, "\n")
+
+    code_verifier, code_challenge = None, None
+    session = load_session() if args.code else None
+    if session:
+        code_verifier = session["codeVerifier"]
+        login_url = session["loginUrl"]
+        print("已复用上次保存的登录会话（code 必须来自本次会话的登录网址）。\n")
+    else:
+        if args.code:
+            print("⚠️ 未找到有效的登录会话（可能已过期，或此前未运行过本脚本）。")
+            print("   将重新生成会话，你粘贴的 code 很可能不匹配；建议按下面的网址重新登录。\n")
+        code_verifier, code_challenge = create_pkce()
+        login_url = build_login_url(code_challenge)
+        save_session(code_verifier, code_challenge, login_url)
+        print("登录网址：\n", login_url, "\n")
 
     if args.print_only:
-        print("（--print-only：未进行换取，code_verifier 已丢弃，请重新运行完成登录）\n")
+        print("（--print-only：本次登录会话已保存，登录后用 --code=... 即可完成兑换，无需重新登录）\n")
         return 0
 
     print("正在尝试打开浏览器……如未打开请手动复制上面的网址。")
@@ -186,6 +242,7 @@ def main() -> int:
         os.chmod(TOKEN_FILE, 0o600)
     except OSError:
         pass
+    clear_session()
 
     print("\n✅ 登录成功！")
     if record["user"]:
@@ -205,5 +262,11 @@ if __name__ == "__main__":
         sys.exit(130)
     except Exception as error:  # noqa: BLE001
         print(f"\n❌ 登录失败：{error}")
-        print("提示：Pixiv 可能需要可直连的网络（或设置 HTTPS_PROXY 后再试）。\n")
+        if "invalid_grant" in str(error):
+            print("invalid_grant 通常是 code 与本次 code_verifier 不匹配（用了别的登录会话的 code）、")
+            print("或 code 已使用/过期。请重新运行 python3 scripts/pixiv-login.py，")
+            print("打开它打印的网址登录，并在同一次会话里立刻粘贴本次 code。")
+        else:
+            print("提示：Pixiv 可能需要可直连的网络（或设置 HTTPS_PROXY 后再试）。")
+        print()
         sys.exit(1)
