@@ -1,7 +1,7 @@
 import {readContent, writeContent} from '../lib/content-store.mjs';
 
-const RANKING_KEY = 'pixiv/ranking.json';
 const CACHE_TTL_MS = 1000 * 60 * 30; // 30 分钟缓存，避免频繁请求 Pixiv
+const RANKING_MODES = new Set(['day', 'week', 'month', 'week_rookie', 'week_original']);
 
 // Pixiv 官方 App 内置客户端凭据（公开常量），可用环境变量覆盖。
 const DEFAULT_CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
@@ -126,6 +126,11 @@ export default async (request) => {
   const refreshToken = process.env.PIXIV_REFRESH_TOKEN;
   const mode = url.searchParams.get('mode') || 'day';
 
+  if (!RANKING_MODES.has(mode)) {
+    return fail('不支持的榜单类型。', 'INVALID_MODE', 400);
+  }
+  const cacheKey = `pixiv/ranking/${mode}.json`;
+
   // 未配置 refresh_token 时返回明确提示，前端展示占位，不中断站点。
   if (!refreshToken) {
     return json({
@@ -138,7 +143,7 @@ export default async (request) => {
 
   try {
     // 先读 Blobs 缓存，未过期则直接返回。
-    const cached = await readContent(RANKING_KEY, {type: 'json'});
+    const cached = await readContent(cacheKey, {type: 'json'});
     if (cached && cached.data && cached.fetchedAt && now() - cached.fetchedAt < CACHE_TTL_MS) {
       return json({success: true, data: cached.data, source: 'cache'}, 200, 'public, max-age=60');
     }
@@ -146,7 +151,7 @@ export default async (request) => {
     const {accessToken} = await refreshAccessToken(clientId, clientSecret, refreshToken);
     const data = await fetchPixivRanking(accessToken, mode);
 
-    await writeContent(RANKING_KEY, JSON.stringify({
+    await writeContent(cacheKey, JSON.stringify({
       data,
       fetchedAt: now(),
     }));
