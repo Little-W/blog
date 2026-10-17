@@ -57,11 +57,14 @@ async function refreshAccessToken(clientId, clientSecret, refreshToken) {
   };
 }
 
-async function fetchPixivRanking(accessToken, mode = 'day', date = '') {
-  const targetDate = date || new Date().toISOString().slice(0, 10);
+function jstDate(daysAgo = 0) {
+  return new Date(Date.now() + 9 * 3600 * 1000 - daysAgo * 86400 * 1000).toISOString().slice(0, 10);
+}
+
+async function requestRanking(accessToken, mode, date) {
   const url = new URL('https://app-api.pixiv.net/v1/illust/ranking');
   url.searchParams.set('mode', mode);
-  url.searchParams.set('date', targetDate);
+  url.searchParams.set('date', date);
   url.searchParams.set('offset', '0');
 
   const res = await fetch(url.toString(), {
@@ -73,15 +76,16 @@ async function fetchPixivRanking(accessToken, mode = 'day', date = '') {
     },
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.illusts) {
+  if (!res.ok || !Array.isArray(body.illusts)) {
     throw new Error(`获取 Pixiv 榜单失败：${res.status} ${body.error || body.message || JSON.stringify(body)}`);
   }
   return {
-    date: targetDate,
+    date,
     mode,
-    illusts: (body.illusts || []).map((illust) => {
+    illusts: body.illusts.map((illust, index) => {
       const tags = (illust.tags || []).map((t) => t.name);
       return {
+        rank: index + 1,
         id: illust.id,
         title: illust.title,
         author: illust.user?.name ?? '未知',
@@ -93,6 +97,17 @@ async function fetchPixivRanking(accessToken, mode = 'day', date = '') {
     }),
     nextUrl: body.next_url || null,
   };
+}
+
+async function fetchPixivRanking(accessToken, mode = 'day', date = '') {
+  // 指定日期就只取该日；默认取 JST 昨天（当日榜单尚未结算），为空再往前退一天。
+  const candidates = date ? [date] : [jstDate(1), jstDate(2), jstDate(3)];
+  let result = null;
+  for (const day of candidates) {
+    result = await requestRanking(accessToken, mode, day);
+    if (result.illusts.length) break;
+  }
+  return result;
 }
 
 export const config = {
@@ -131,10 +146,10 @@ export default async (request) => {
     const {accessToken} = await refreshAccessToken(clientId, clientSecret, refreshToken);
     const data = await fetchPixivRanking(accessToken, mode);
 
-    await writeContent(RANKING_KEY, {
+    await writeContent(RANKING_KEY, JSON.stringify({
       data,
       fetchedAt: now(),
-    });
+    }));
 
     return json({success: true, data, source: 'live'}, 200, 'public, max-age=60');
   } catch (error) {

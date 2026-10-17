@@ -89,7 +89,13 @@ export default function PixivRanking() {
                   <span className={styles.rank}>{item.rank}</span>
                   <div className={styles.body}>
                     {item.thumb ? (
-                      <img src={item.thumb} alt={item.title} className={styles.thumb} />
+                      <img
+                        src={`/api/pixiv-thumb?u=${encodeURIComponent(item.thumb)}`}
+                        alt={item.title}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className={styles.thumb}
+                      />
                     ) : (
                       <div className={clsx(styles.thumb, styles.thumbPlaceholder)}>无缩略图</div>
                     )}
