@@ -60,6 +60,11 @@ function Hero() {
                   <Translate id="hompage.hero.link">网址导航</Translate>
                 </Link>
               ),		  
+              music: (
+                <Link to="/music">
+                  <Translate id="hompage.hero.music">音乐</Translate>
+                </Link>
+              ),
               notes: (
                 <Link to="/docs/notes/">
                   <Translate id="hompage.hero.notes">学习笔记</Translate>
@@ -67,7 +72,7 @@ function Hero() {
               ),
             }}
           >
-            {`你可以随处逛逛，查看{link}、音乐与{notes}。`}
+            {`你可以随处逛逛，查看{link}、{music}与{notes}。`}
           </Translate>
         </animated.p>
         <SocialLinks style={trails[2]} />
