@@ -1,5 +1,6 @@
 import {ARTICLE_PREFIX, contentMetadata, readContent} from '../lib/content-store.mjs';
 import {articleSummary, ensureArticleIndex, normalizeArticlePath} from '../lib/articles.mjs';
+import {seedContentFromRepository} from './console.mjs';
 
 export const config = {
   path: '/api/content/*',
@@ -22,6 +23,7 @@ function fail(message, code, status = 400) {
 }
 
 async function listArticles() {
+  await seedContentFromRepository().catch(() => {});
   const index = await ensureArticleIndex();
   const revision = index.articles.reduce(
     (latest, article) => (article.updatedAt && article.updatedAt > latest ? article.updatedAt : latest),
@@ -40,6 +42,7 @@ async function listArticles() {
 async function getArticle(url) {
   const path = normalizeArticlePath(url.searchParams.get('path'));
   if (!path) return fail('文章路径无效。', 'INVALID_CONTENT_PATH', 400);
+  await seedContentFromRepository().catch(() => {});
   const key = `${ARTICLE_PREFIX}${path}`;
   const content = await readContent(key);
   if (typeof content !== 'string') return fail('文章不存在。', 'NOT_FOUND', 404);

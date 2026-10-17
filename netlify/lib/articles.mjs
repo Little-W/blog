@@ -58,6 +58,37 @@ export function articleSummary(path, content, updatedAt = null) {
   };
 }
 
+export function ensureTitleFrontMatter(content, path) {
+  const text = String(content || '').replace(/^\uFEFF/, '');
+  const opening = /^---\r?\n/.exec(text);
+  let body = text;
+  if (opening) {
+    const rest = text.slice(opening[0].length);
+    const closing = /\r?\n---(?:\r?\n|$)/.exec(rest);
+    if (closing) body = rest.slice(closing.index + closing[0].length);
+  }
+  const heading = /^#{1,6}\s+(.+?)\s*$/m.exec(body)?.[1]?.trim();
+  const filename = String(path || '').split('/').pop().replace(/\.(?:md|mdx)$/i, '').replace(/[-_]+/g, ' ').trim();
+  const title = JSON.stringify(heading || filename || '无标题');
+
+  if (!opening) return `---\ntitle: ${title}\n---\n\n${text}`;
+  const newline = opening[0].endsWith('\r\n') ? '\r\n' : '\n';
+  const rest = text.slice(opening[0].length);
+  const closing = /\r?\n---(?:\r?\n|$)/.exec(rest);
+  if (!closing) return `---${newline}title: ${title}${newline}---${newline}${newline}${text}`;
+
+  const header = rest.slice(0, closing.index);
+  const existingTitle = /^[ \t]*title[ \t]*:[ \t]*(.*)$/im.exec(header);
+  if (existingTitle) {
+    const rawValue = existingTitle[1].trim();
+    const value = rawValue.replace(/^(['"])(.*)\1$/, '$2').trim();
+    if (value) return text;
+    const nextHeader = header.replace(/^([ \t]*title[ \t]*:[ \t]*).*$/im, `$1${title}`);
+    return `${opening[0]}${nextHeader}${rest.slice(closing.index)}`;
+  }
+  return `${opening[0]}title: ${title}${newline}${header}${rest.slice(closing.index)}`;
+}
+
 export async function readArticleIndex() {
   const stored = await readContent(ARTICLE_INDEX_KEY, {type: 'json'}).catch(() => null);
   if (stored && Array.isArray(stored.articles)) return stored;

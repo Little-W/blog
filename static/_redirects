@@ -1,0 +1,6 @@
+/docs/notes /notes/?path=docs/notes/index.md 200!
+/docs/notes/ /notes/?path=docs/notes/index.md 200!
+/docs/notes/* /notes/?path=docs/notes/:splat 200!
+/docs/etc /notes/?path=docs/etc/index.md 200!
+/docs/etc/ /notes/?path=docs/etc/index.md 200!
+/docs/etc/* /notes/?path=docs/etc/:splat 200!

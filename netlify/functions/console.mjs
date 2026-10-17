@@ -19,6 +19,7 @@ import {
   articleKey,
   articleSummary,
   ensureArticleIndex,
+  ensureTitleFrontMatter,
   normalizeArticlePath,
   removeArticleEntry,
   sortArticles,
@@ -218,7 +219,19 @@ function safeReturnTo(value) {
 
 function sameOrigin(request) {
   const origin = request.headers.get('origin');
-  return !origin || origin === publicOrigin(request);
+  if (!origin || origin === publicOrigin(request)) return true;
+  if (process.env.CONTEXT === 'production') return false;
+  try {
+    const originUrl = new URL(origin);
+    const expectedUrl = new URL(publicOrigin(request));
+    const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+    return originUrl.protocol === expectedUrl.protocol
+      && originUrl.port === expectedUrl.port
+      && loopbackHosts.has(originUrl.hostname)
+      && loopbackHosts.has(expectedUrl.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function githubHeaders(token) {
@@ -605,7 +618,7 @@ async function mirrorToGitHub(files, message) {
 const SEED_MARKER = `${ARTICLE_PREFIX}_seeded.json`;
 let seedPromise = null;
 
-async function seedContentFromRepository() {
+export async function seedContentFromRepository() {
   // 首次部署时把仓库中的文章与数据表一次性导入 Blob，之后读取即以 Blob 为准。
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
@@ -814,6 +827,26 @@ async function deleteFile(request) {
   return json({success: true, data: {path, deletedFrom: contentBackend(), gitSync}}, 201);
 }
 
+async function deleteFiles(request) {
+  const body = await readBody(request);
+  if (!Array.isArray(body.paths) || !body.paths.length || body.paths.length > MAX_UPLOAD_FILES) {
+    return fail(`请选择 1 到 ${MAX_UPLOAD_FILES} 篇文章。`, 'INVALID_DELETE_PATHS');
+  }
+  const paths = [...new Set(body.paths.map(allowedContentPath))];
+  if (paths.length !== body.paths.length || paths.some((path) => !path)) {
+    return fail('删除列表包含无效或重复的文章路径。', 'INVALID_DELETE_PATHS');
+  }
+
+  const index = await ensureArticleIndex().catch(() => null);
+  await Promise.all(paths.map((path) => deleteContent(articleKey(path))));
+  if (index) {
+    const deleted = new Set(paths);
+    await writeArticleIndex(sortArticles(index.articles.filter((article) => !deleted.has(article.path))));
+  }
+  const gitSync = await mirrorToGitHub(paths.map((path) => ({path, content: null})), body.message || `文章：批量删除 ${paths.length} 个文件`);
+  return json({success: true, data: {paths, deletedFrom: contentBackend(), gitSync}}, 201);
+}
+
 function sanitizeUploadName(value) {
   return String(value || '')
     .replace(/\\/g, '/')
@@ -862,7 +895,7 @@ async function uploadArticles(request) {
     if (!isMarkdownName(relative)) continue;
     const path = uploadArticlePath(target, relative);
     if (!path || pending.has(path)) continue;
-    pending.set(path, {path, content: await entry.text()});
+    pending.set(path, {path, content: ensureTitleFrontMatter(await entry.text(), path)});
   }
 
   const archive = form.get('archive');
@@ -880,7 +913,7 @@ async function uploadArticles(request) {
       if (!isMarkdownName(name)) continue;
       const path = uploadArticlePath(target, name);
       if (!path || pending.has(path)) continue;
-      pending.set(path, {path, content: entry.data.toString('utf8')});
+      pending.set(path, {path, content: ensureTitleFrontMatter(entry.data.toString('utf8'), path)});
     }
   }
 
@@ -1353,6 +1386,7 @@ export default async (request) => {
     if (url.pathname === '/api/console/music-order' && request.method === 'GET') return await getMusicOrder(url);
     if (url.pathname === '/api/console/music-order' && request.method === 'POST') return await saveMusicOrder(request);
     if (url.pathname === '/api/console/files' && request.method === 'GET') return await listFiles();
+    if (url.pathname === '/api/console/files' && request.method === 'DELETE') return await deleteFiles(request);
     if (url.pathname === '/api/console/file' && request.method === 'GET') return await getFile(url);
     if (url.pathname === '/api/console/file' && request.method === 'POST') return await saveFile(request);
     if (url.pathname === '/api/console/file' && request.method === 'DELETE') return await deleteFile(request);

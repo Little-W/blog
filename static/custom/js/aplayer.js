@@ -94,6 +94,7 @@ var origin = window.location.origin;
 var target = origin + "/music";
 var target2 = origin + "/music/";
 let page_loaded = false;
+let music_database_ready = false;
 let ap_list_ptr = new Array();
 // 当前浏览的歌单与实际播放队列分别保存，刷新页面时两者互不影响。
 let current_list = Number.isInteger(Number(music_player_settings.browseList)) ? Number(music_player_settings.browseList) : 2;
@@ -383,7 +384,7 @@ function init_with_database()
     // 先读取标签接口返回的部署版本，再查询歌单。这样每次新部署都会使用新的
     // Cache Storage 键，不会继续显示上一次发布前的曲目顺序。
     initialTracksPromise,
-    load_static_data('mv_bilibili'),
+    load_music_mv_records(),
   ]).then(function (sets) {
     music_tags = sets[0].sort(objectSort('tag_order'));
     var initialList = cache_music_records(quality, sets[1].records || []);
@@ -409,6 +410,7 @@ function init_with_database()
     }
     music_list_all[1] = [];
     hq_list_init_ok = sq_list_init_ok = default_list_init_ok = mv_ok = true;
+    music_database_ready = true;
     init_aplayer();
     // 登录状态由控制台的 HttpOnly Cookie 决定；仅确认仓库所有者后才渲染
     // 曲目行中的标签编辑入口。普通访客不会获得任何编辑控件。
@@ -444,6 +446,16 @@ function load_music_tags() {
     adopt_music_data_revision(MUSIC_DATA_CACHE_VERSION);
     music_revision_checked_at = Date.now();
     return load_static_data('music_tag');
+  });
+}
+
+function load_music_mv_records() {
+  return music_api_json('/api/music/mvs?check=' + Date.now(), {cache: 'no-store'}).then(function(data) {
+    adopt_music_data_revision(data.revision || MUSIC_DATA_CACHE_VERSION);
+    return Array.isArray(data.records) ? data.records : [];
+  }).catch(function(error) {
+    if (!allow_music_static_fallback()) throw error;
+    return load_static_data('mv_bilibili');
   });
 }
 
@@ -494,8 +506,14 @@ function ensure_music_data_consistency(force) {
       var cacheReady = tagsChangedAgain ? music_cache_invalidation_promise : Promise.resolve();
       return cacheReady.then(function() {
         music_tags = (Array.isArray(tagData.tags) ? tagData.tags : []).sort(objectSort('tag_order'));
-        if (page_loaded && typeof load_music_lists === 'function') load_music_lists(true);
-        return {changed: true, revision: music_data_revision};
+        return load_music_mv_records().then(function(mvRecords) {
+          mv_list = mvRecords.sort(objectSort('mv_id'));
+          if (page_loaded) {
+            if (typeof load_music_lists === 'function') load_music_lists(true);
+            if (typeof init_custom_list_mv === 'function') init_custom_list_mv();
+          }
+          return {changed: true, revision: music_data_revision};
+        });
       });
     });
   }).catch(function() {
@@ -2837,6 +2855,7 @@ function init_aplayer() {
 function init_page() {
   if (window.location.pathname.replace(/\/$/, '') === '/music') {
     if (!page_loaded) {
+      if (!music_database_ready) return;
       console.log("load page");
       //document.getElementById("ap_list2").className += " --activated";
       page_loaded = true;

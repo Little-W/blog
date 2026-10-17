@@ -4,7 +4,9 @@ import {
   MUSIC_PREFIX,
   MUSIC_REVISION_KEY,
   readContent,
+  writeContent,
 } from '../lib/content-store.mjs';
+import {seedContentFromRepository} from './console.mjs';
 
 const DATASET_CACHE_TTL_MS = 5 * 60 * 1000;
 const BLOB_CACHE_TTL_MS = 60 * 1000;
@@ -72,15 +74,26 @@ function parseJsonl(text) {
 }
 
 async function loadDataset(request, name) {
+  const revision = await dataRevision();
   const cached = datasetCache.get(name);
-  if (cached && cached.expiresAt > Date.now()) return cached.records;
-  // 优先读取 Netlify Blob（后台修改即时生效、无需重新部署），
-  // 未写入 Blob 时回退到构建产物中的静态数据表。
-  const stored = await readContent(datasetKey(name)).catch(() => null);
+  if (cached && cached.revision === revision && cached.expiresAt > Date.now()) return cached.records;
+  // Blob 是运行时数据源；仅本地离线开发会从静态种子回退。
+  let stored = await readContent(datasetKey(name)).catch(() => null);
+  if (typeof stored !== 'string' && (process.env.NETLIFY === 'true' || process.env.CONTEXT === 'production')) {
+    await seedContentFromRepository().catch(() => {});
+    stored = await readContent(datasetKey(name)).catch(() => null);
+  }
   if (typeof stored === 'string') {
     const records = parseJsonl(stored);
-    datasetCache.set(name, {records, expiresAt: Date.now() + BLOB_CACHE_TTL_MS});
+    datasetCache.set(name, {records, revision, expiresAt: Date.now() + BLOB_CACHE_TTL_MS});
     return records;
+  }
+  const host = new URL(request.url).hostname;
+  if (process.env.NETLIFY === 'true' || process.env.CONTEXT === 'production') {
+    throw new Error(`Blob 中尚未初始化音乐数据表 ${name}。`);
+  }
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) {
+    throw new Error(`Blob 中尚未初始化音乐数据表 ${name}。`);
   }
   const source = new URL(`/data/${name}.0.jsonl`, request.url);
   source.searchParams.set('revision', deployRevision());
@@ -89,8 +102,12 @@ async function loadDataset(request, name) {
     signal: AbortSignal.timeout(12_000),
   });
   if (!response.ok) throw new Error(`读取 ${name} 失败：${response.status}`);
-  const records = parseJsonl(await response.text());
-  datasetCache.set(name, {records, expiresAt: Date.now() + DATASET_CACHE_TTL_MS});
+  const text = await response.text();
+  const records = parseJsonl(text);
+  await writeContent(datasetKey(name), text).catch((error) => {
+    console.warn(`[music-api] 无法把初始 ${name} 导入 Blob：${error instanceof Error ? error.message : String(error)}`);
+  });
+  datasetCache.set(name, {records, revision, expiresAt: Date.now() + DATASET_CACHE_TTL_MS});
   return records;
 }
 
@@ -178,6 +195,11 @@ async function getTags(request) {
       revision: await dataRevision(),
     },
   });
+}
+
+async function getMvList(request) {
+  const records = await loadDataset(request, 'mv_bilibili');
+  return json({success: true, data: {records, revision: await dataRevision()}});
 }
 
 async function getRevision() {
@@ -278,6 +300,7 @@ export default async (request) => {
   try {
     if (url.pathname === '/api/music/revision' && request.method === 'GET') return getRevision();
     if (url.pathname === '/api/music/tags' && request.method === 'GET') return await getTags(request);
+    if (url.pathname === '/api/music/mvs' && request.method === 'GET') return await getMvList(request);
     if (url.pathname === '/api/music/tracks' && request.method === 'POST') return await queryTracks(request);
     return fail('音乐接口不存在。', 'NOT_FOUND', 404);
   } catch (error) {
