@@ -71,6 +71,11 @@ const config = {
               to: 'docs/tags',
         },
 		{
+          label: 'P站美图榜',
+          position: 'left',
+          to: 'pixiv',
+        },
+		{
           label: '网址导航',
           position: 'left',
           to: 'website',
