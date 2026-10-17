@@ -3,6 +3,10 @@ import {readContent, writeContent} from '../lib/content-store.mjs';
 const RANKING_KEY = 'pixiv/ranking.json';
 const CACHE_TTL_MS = 1000 * 60 * 30; // 30 分钟缓存，避免频繁请求 Pixiv
 
+// Pixiv 官方 App 内置客户端凭据（公开常量），可用环境变量覆盖。
+const DEFAULT_CLIENT_ID = 'MOBrBDS8blbauoSck0ZfDbtuzpyT';
+const DEFAULT_CLIENT_SECRET = 'lsACyCD94FhDUtGTXi3QzcFE2uU1hqtDaKeqrdwj';
+
 function json(payload, status = 200, cache = 'no-store') {
   return new Response(JSON.stringify(payload), {
     status,
@@ -22,24 +26,34 @@ function now() {
   return Date.now();
 }
 
-async function refreshAccessToken(clientId, refreshToken) {
+async function refreshAccessToken(clientId, clientSecret, refreshToken) {
   const res = await fetch('https://oauth.secure.pixiv.net/auth/token', {
     method: 'POST',
-    headers: {'content-type': 'application/x-www-form-urlencoded'},
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'App-OS': 'android',
+      'App-OS-Version': '15',
+      'App-Version': '6.180.0',
+      'User-Agent': 'PixivAndroidApp/6.180.0 (Android 15; Pixel 9)',
+    },
     body: new URLSearchParams({
       client_id: clientId,
+      client_secret: clientSecret,
+      get_secure_url: 'true',
+      include_policy: 'true',
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.access_token) {
+  const auth = body.response || body;
+  if (!res.ok || !auth.access_token) {
     throw new Error(`刷新 Pixiv token 失败：${res.status} ${body.error || body.message || JSON.stringify(body)}`);
   }
   return {
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token || refreshToken,
-    expiresIn: body.expires_in || 0,
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token || refreshToken,
+    expiresIn: auth.expires_in || 0,
   };
 }
 
@@ -92,16 +106,17 @@ export default async (request) => {
     return fail('接口不存在。', 'NOT_FOUND', 404);
   }
 
-  const clientId = process.env.PIXIV_CLIENT_ID;
+  const clientId = process.env.PIXIV_CLIENT_ID || DEFAULT_CLIENT_ID;
+  const clientSecret = process.env.PIXIV_CLIENT_SECRET || DEFAULT_CLIENT_SECRET;
   const refreshToken = process.env.PIXIV_REFRESH_TOKEN;
   const mode = url.searchParams.get('mode') || 'day';
 
-  // 缺少凭据时返回明确提示，前端展示占位，不中断站点。
-  if (!clientId || !refreshToken) {
+  // 未配置 refresh_token 时返回明确提示，前端展示占位，不中断站点。
+  if (!refreshToken) {
     return json({
       success: false,
       code: 'MISSING_PIXIV_CREDENTIALS',
-      message: '未配置 PIXIV_CLIENT_ID / PIXIV_REFRESH_TOKEN 环境变量，请在 Netlify 后台设置后再启用榜单。',
+      message: '未配置 PIXIV_REFRESH_TOKEN 环境变量，请先运行 node scripts/pixiv-login.mjs 导出后配置到 Netlify。',
       data: {illusts: [], date: '', mode},
     }, 200, 'no-store');
   }
@@ -113,7 +128,7 @@ export default async (request) => {
       return json({success: true, data: cached.data, source: 'cache'}, 200, 'public, max-age=60');
     }
 
-    const {accessToken} = await refreshAccessToken(clientId, refreshToken);
+    const {accessToken} = await refreshAccessToken(clientId, clientSecret, refreshToken);
     const data = await fetchPixivRanking(accessToken, mode);
 
     await writeContent(RANKING_KEY, {
