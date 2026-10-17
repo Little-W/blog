@@ -18,7 +18,6 @@ node_modules/
 .vscode/
 .local-blobs/
 .pixiv-token.json
-.pixiv-login-session.json
 .env
 .env.*
 !.env.example
