@@ -61,7 +61,7 @@ jobs:
         env:
           TARGET_REPO: ${{ github.workspace }}/.deploy/blog_static
         run: |
-          # blog_static 仍保留 netlify.toml、Functions、CNAME 和 .nojekyll；
+          # blog_static 仍保留 netlify.toml、Functions、共享库、CNAME 和 .nojekyll；
           # 其余站点文件由本次 build 完整替换，避免旧页面残留。
           rsync -a --delete \
             --exclude='.git/' \
@@ -74,7 +74,9 @@ jobs:
             --exclude='package-lock.json' \
             --exclude='.gitignore' \
             build/ "$TARGET_REPO/"
+          mkdir -p "$TARGET_REPO/netlify/lib"
           rsync -a --delete netlify/functions/ "$TARGET_REPO/netlify/functions/"
+          rsync -a --delete netlify/lib/ "$TARGET_REPO/netlify/lib/"
 
           cd "$TARGET_REPO"
           git config user.name 'github-actions[bot]'
