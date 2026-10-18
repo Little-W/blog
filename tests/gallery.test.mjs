@@ -5,8 +5,9 @@ test('gallery API validates Hugging Face paths and returns tagged image URLs', a
   const originalFetch = globalThis.fetch;
   const requested = [];
   globalThis.fetch = async (input) => {
-    requested.push(String(input));
-    if (requested.length === 1) return new Response('', {status: 404});
+    const url = new URL(String(input));
+    requested.push(url.href);
+    if (url.hostname !== 'hf-mirror.com') return new Response('', {status: 404});
     return new Response(JSON.stringify({
       version: 1,
       updatedAt: '2026-10-18T00:00:00Z',
@@ -66,7 +67,8 @@ test('gallery API validates Hugging Face paths and returns tagged image URLs', a
     const payload = await response.json();
     assert.equal(response.status, 200);
     assert.equal(payload.success, true);
-    assert.equal(requested.length, 2);
+    assert.equal(requested.length, 3);
+    assert.equal(new URL(requested[0]).hostname, 'raw.githubusercontent.com');
     assert.deepEqual(payload.data.albums[0].items[0].tags, ['原创', '夜景']);
     assert.equal(payload.data.albums[0].items[0].pixivUrl, 'https://www.pixiv.net/artworks/12345678');
     assert.equal(payload.data.albums[0].items.length, 1);
@@ -93,6 +95,37 @@ test('gallery API rejects paths that leave the image repository', async () => {
     const payload = await response.json();
     assert.equal(response.status, 200);
     assert.deepEqual(payload.data.albums[0].items, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('gallery API dynamically prefers the GitHub repository manifest', async () => {
+  const originalFetch = globalThis.fetch;
+  const requested = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    requested.push(url);
+    assert.equal(url.hostname, 'raw.githubusercontent.com');
+    assert.equal(url.pathname, '/Little-W/blog/main/data/gallery.json');
+    return new Response(JSON.stringify({
+      version: 1,
+      updatedAt: '2026-10-19T01:02:03Z',
+      albums: [{
+        id: 'curated',
+        title: '精选插画',
+        items: [{pixivId: '12345678', title: '作品', tags: ['原创'], image: 'albums/curated/12345678_p0.jpg'}],
+      }],
+    }), {status: 200, headers: {'content-type': 'application/json'}});
+  };
+  try {
+    const {default: handler} = await import('../netlify/functions/gallery.mjs?github-manifest-test');
+    const response = await handler(new Request('https://site.test/api/gallery'));
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.albums[0].items.length, 1);
+    assert.match(payload.data.albums[0].items[0].proxyImage, /v=2026-10-19T01%3A02%3A03Z/);
+    assert.equal(requested.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

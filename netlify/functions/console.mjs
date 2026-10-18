@@ -948,6 +948,15 @@ async function commitFiles({files, baseHeadSha, message}) {
   };
 }
 
+export async function syncGalleryManifestToGitHub(content) {
+  const snapshot = await repoSnapshot({fresh: true});
+  return commitFiles({
+    files: [{path: 'data/gallery.json', content}],
+    baseHeadSha: snapshot.headSha,
+    message: '图库：同步图集清单至 GitHub',
+  });
+}
+
 async function listFiles() {
   await seedContentFromRepository().catch(() => {});
   const index = await ensureArticleIndex().catch(() => null);
@@ -1655,7 +1664,9 @@ export default async (request) => {
     await requireSession(request, request.method !== 'GET');
     if (!sameOrigin(request)) return fail('请求来源无效。', 'INVALID_ORIGIN', 403);
 
-    if (url.pathname === '/api/console/gallery') return await handleGalleryConsole(request);
+    if (url.pathname === '/api/console/gallery') {
+      return await handleGalleryConsole(request, syncGalleryManifestToGitHub);
+    }
     if (url.pathname === '/api/console/datasets' && request.method === 'GET') {
       return json({success: true, data: {datasets: datasetList()}});
     }

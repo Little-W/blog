@@ -1,8 +1,10 @@
-import {commit} from '@huggingface/hub';
-
 const REPOSITORY = 'Yusen/2d_pic';
 const MANIFEST_PATH = 'gallery.json';
+const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER?.trim() || 'Little-W';
+const GITHUB_REPO = process.env.GITHUB_REPO_NAME?.trim() || 'blog';
+const GITHUB_BRANCH = (process.env.GITHUB_REPO_BRANCH?.trim() || 'main').split('/').map(encodeURIComponent).join('/');
 const MANIFEST_URLS = [
+  `https://raw.githubusercontent.com/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/${GITHUB_BRANCH}/data/gallery.json`,
   `https://huggingface.co/datasets/${REPOSITORY}/resolve/main/${MANIFEST_PATH}`,
   `https://hf-mirror.com/datasets/${REPOSITORY}/resolve/main/${MANIFEST_PATH}`,
 ];
@@ -52,7 +54,8 @@ async function readManifest() {
   let lastError;
   for (const url of MANIFEST_URLS) {
     try {
-      const response = await fetch(url, {headers: {accept: 'application/json'}, signal: AbortSignal.timeout(12_000)});
+      const source = url.startsWith('https://raw.githubusercontent.com/') ? `${url}?v=${Date.now()}` : url;
+      const response = await fetch(source, {headers: {accept: 'application/json', 'cache-control': 'no-cache'}, signal: AbortSignal.timeout(12_000)});
       if (!response.ok) throw new Error(`图集清单读取失败（${response.status}）。`);
       const value = await response.json();
       if (!value || !Array.isArray(value.albums)) throw new Error('图集清单格式无效。');
@@ -128,9 +131,12 @@ function parseAssetId(name) {
   return id;
 }
 
-async function saveManifest(request) {
+async function saveManifest(request, syncToRepository) {
   const token = writeToken();
   if (!token) return errorResponse('管理台编辑图集需要配置 Hugging Face 写入密钥 HF_PIC_TOKEN。', 503, 'MISSING_HF_PIC_TOKEN');
+  if (!process.env.GITHUB_REPO_TOKEN?.trim()) return errorResponse('管理台同步 GitHub 仓库需要配置 GITHUB_REPO_TOKEN。', 503, 'MISSING_GITHUB_REPO_TOKEN');
+  if (typeof syncToRepository !== 'function') return errorResponse('GitHub 图集同步服务不可用。', 503, 'GALLERY_REPOSITORY_SYNC_UNAVAILABLE');
+  const {commit} = await import('@huggingface/hub');
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_FORM_BYTES) return errorResponse('单次请求不能超过 26 MiB。', 413, 'GALLERY_UPLOAD_TOO_LARGE');
   const form = await request.formData();
@@ -147,7 +153,8 @@ async function saveManifest(request) {
   const originals = new Map(originalFiles.map((file) => [parseAssetId(file.name), file]));
   const thumbnails = new Map(thumbnailFiles.map((file) => [parseAssetId(file.name), file]));
   let totalBytes = 0;
-  const operations = [];
+  const assetOperations = [];
+  const deleteOperations = [];
   const touched = new Set();
 
   for (const album of submitted?.albums || []) {
@@ -167,8 +174,8 @@ async function saveManifest(request) {
       if (totalBytes > MAX_UPLOAD_TOTAL_BYTES) throw new Error('单次图片上传总量不能超过 24 MiB。');
       item.image = `albums/${album.id}/${assetId}_p0.${extension}`;
       item.thumbnail = `albums/${album.id}/thumbs/${assetId}_p0.webp`;
-      operations.push({operation: 'addOrUpdate', path: item.image, content: original});
-      operations.push({operation: 'addOrUpdate', path: item.thumbnail, content: thumbnail});
+      assetOperations.push({operation: 'addOrUpdate', path: item.image, content: original});
+      assetOperations.push({operation: 'addOrUpdate', path: item.thumbnail, content: thumbnail});
     }
   }
   if (touched.size !== originals.size || touched.size !== thumbnails.size) throw new Error('上传文件与待添加作品不匹配，请重新选择图片。');
@@ -176,28 +183,44 @@ async function saveManifest(request) {
   const nextManifest = validateManifest(submitted);
   const nextAssets = currentAssets(nextManifest);
   for (const path of oldAssets) {
-    if (!nextAssets.has(path)) operations.push({operation: 'delete', path});
+    if (!nextAssets.has(path)) deleteOperations.push({operation: 'delete', path});
   }
-  operations.push({
+  const manifestText = `${JSON.stringify(nextManifest, null, 2)}\n`;
+  const manifestOperation = {
     operation: 'addOrUpdate',
     path: MANIFEST_PATH,
-    content: new Blob([`${JSON.stringify(nextManifest, null, 2)}\n`], {type: 'application/json'}),
-  });
+    content: new Blob([manifestText], {type: 'application/json'}),
+  };
+  const repo = {type: 'dataset', name: REPOSITORY};
+  if (assetOperations.length) {
+    await commit({repo, accessToken: token, title: 'Gallery: upload image assets', operations: assetOperations});
+  }
+  let gitSync;
+  try {
+    gitSync = await syncToRepository(manifestText);
+  } catch (error) {
+    const details = String(error?.message || '未知错误');
+    return errorResponse(`图片文件已上传到 HF，但 GitHub 配置同步失败：${details}`, 502, 'GALLERY_REPOSITORY_SYNC_FAILED');
+  }
   const result = await commit({
-    repo: {type: 'dataset', name: REPOSITORY},
+    repo,
     accessToken: token,
     title: 'Gallery: edit curated illustrations',
-    operations,
+    operations: [...deleteOperations, manifestOperation],
   });
-  return json({success: true, data: {revision: result?.commit?.oid || '', count: nextManifest.albums.reduce((count, album) => count + album.items.length, 0)}});
+  return json({success: true, data: {
+    revision: result?.commit?.oid || '',
+    gitCommitSha: gitSync?.commitSha || '',
+    count: nextManifest.albums.reduce((count, album) => count + album.items.length, 0),
+  }});
 }
 
-export async function handleGalleryConsole(request) {
+export async function handleGalleryConsole(request, syncToRepository) {
   const url = new URL(request.url);
   if (url.pathname !== '/api/console/gallery') return errorResponse('接口不存在。', 404, 'NOT_FOUND');
   if (!['GET', 'POST'].includes(request.method)) return errorResponse('不支持的请求方法。', 405, 'METHOD_NOT_ALLOWED');
   try {
-    if (request.method === 'POST') return await saveManifest(request);
+    if (request.method === 'POST') return await saveManifest(request, syncToRepository);
     const manifest = await readManifest();
     return json({success: true, data: manifest});
   } catch (error) {

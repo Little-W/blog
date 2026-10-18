@@ -2,7 +2,11 @@ const REPOSITORY = 'Yusen/2d_pic';
 const IMAGE_HOSTS = ['huggingface.co', 'hf-mirror.com'];
 const MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024;
 const MAX_BUFFERED_IMAGE_BYTES = 18 * 1024 * 1024;
+const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER?.trim() || 'Little-W';
+const GITHUB_REPO = process.env.GITHUB_REPO_NAME?.trim() || 'blog';
+const GITHUB_BRANCH = (process.env.GITHUB_REPO_BRANCH?.trim() || 'main').split('/').map(encodeURIComponent).join('/');
 const MANIFEST_URLS = [
+  `https://raw.githubusercontent.com/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/${GITHUB_BRANCH}/data/gallery.json`,
   `https://huggingface.co/datasets/${REPOSITORY}/resolve/main/gallery.json`,
   `https://hf-mirror.com/datasets/${REPOSITORY}/resolve/main/gallery.json`,
 ];
@@ -224,8 +228,9 @@ export default async (request) => {
   let lastStatus = 502;
   for (const manifestUrl of MANIFEST_URLS) {
     try {
-      const response = await fetch(manifestUrl, {
-        headers: {accept: 'application/json', 'user-agent': 'Yusen-Image-Gallery'},
+      const sourceUrl = manifestUrl.startsWith('https://raw.githubusercontent.com/') ? `${manifestUrl}?v=${Date.now()}` : manifestUrl;
+      const response = await fetch(sourceUrl, {
+        headers: {accept: 'application/json', 'cache-control': 'no-cache', 'user-agent': 'Yusen-Image-Gallery'},
         signal: AbortSignal.timeout(12_000),
       });
       if (response.status === 404) {

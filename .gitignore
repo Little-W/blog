@@ -17,6 +17,7 @@ node_modules/
 .DS_Store
 .vscode/
 .local-blobs/
+.netlify/
 .pixiv-token.json
 .pixiv-chrome-profile/
 .env

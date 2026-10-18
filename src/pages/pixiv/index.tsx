@@ -178,7 +178,7 @@ export default function PixivRanking() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({x: 0, y: 0});
   const [dragging, setDragging] = useState(false);
-  const [previewImage, setPreviewImage] = useState<HTMLImageElement | null>(null);
+  const [previewImage, setPreviewImage] = useState<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({width: 0, height: 0});
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
@@ -191,6 +191,7 @@ export default function PixivRanking() {
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
   const viewerViewportRef = useRef<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewImageSourceRef = useRef('');
   const pointerDragRef = useRef<{pointerId: number; startX: number; startY: number; panX: number; panY: number} | null>(null);
 
   const fetchRanking = useCallback(async (targetMode: string, pageParam: number | string = 0, append = false, noCache = false) => {
@@ -428,23 +429,24 @@ export default function PixivRanking() {
   useEffect(() => {
     setPreviewImage(null);
     setCanvasSize({width: 0, height: 0});
-  }, [selectedId, detail?.illust?.id, pageIndex]);
+    previewImageSourceRef.current = '';
+  }, [selectedId, pageIndex]);
 
   useEffect(() => {
     const image = previewImage;
     const viewport = viewerViewportRef.current;
     const canvas = previewCanvasRef.current;
-    if (!image || !viewport || !canvas || image.naturalWidth === 0 || image.naturalHeight === 0) return undefined;
+    if (!image || !viewport || !canvas || image.width === 0 || image.height === 0) return undefined;
 
     const drawPreview = () => {
       const pixelScale = Math.min(
         1,
-        4096 / image.naturalWidth,
-        4096 / image.naturalHeight,
-        Math.sqrt(12_000_000 / (image.naturalWidth * image.naturalHeight)),
+        4096 / image.width,
+        4096 / image.height,
+        Math.sqrt(12_000_000 / (image.width * image.height)),
       );
-      const pixelWidth = Math.max(1, Math.round(image.naturalWidth * pixelScale));
-      const pixelHeight = Math.max(1, Math.round(image.naturalHeight * pixelScale));
+      const pixelWidth = Math.max(1, Math.round(image.width * pixelScale));
+      const pixelHeight = Math.max(1, Math.round(image.height * pixelScale));
       const fit = Math.min(viewport.clientWidth / pixelWidth, viewport.clientHeight / pixelHeight);
       if (!Number.isFinite(fit) || fit <= 0) return;
       canvas.width = pixelWidth;
@@ -557,17 +559,40 @@ export default function PixivRanking() {
   const isBookmarked = (id: number, fallback?: boolean) => bookmarkOverrides[id] ?? Boolean(fallback);
   const filename = `${(artwork?.title || 'pixiv-artwork').replace(/[\\/:*?"<>|]/g, '_')}_p${pageIndex + 1}${imageExtension(pageOriginal)}`;
 
+  const snapshotPreviewImage = useCallback((image: HTMLImageElement, source = image.currentSrc || image.src) => {
+    if (!image.complete || !image.naturalWidth || !image.naturalHeight || !source || source === previewImageSourceRef.current) return;
+    const pixelScale = Math.min(
+      1,
+      4096 / image.naturalWidth,
+      4096 / image.naturalHeight,
+      Math.sqrt(12_000_000 / (image.naturalWidth * image.naturalHeight)),
+    );
+    const snapshot = document.createElement('canvas');
+    snapshot.width = Math.max(1, Math.round(image.naturalWidth * pixelScale));
+    snapshot.height = Math.max(1, Math.round(image.naturalHeight * pixelScale));
+    const context = snapshot.getContext('2d');
+    if (!context) return;
+    try {
+      context.drawImage(image, 0, 0, snapshot.width, snapshot.height);
+      previewImageSourceRef.current = source;
+      setPreviewImage(snapshot);
+    } catch {
+      // Keep the last successfully drawn preview visible while a new source loads.
+    }
+  }, []);
+
   useEffect(() => {
     const viewport = viewerViewportRef.current;
     if (!pageDisplay || speedTesting || previewImage || !viewport) return undefined;
     const captureLoadedImage = () => {
       const image = viewport.querySelector<HTMLImageElement>(`.${styles.detailSourceImage}`);
-      if (image?.complete && image.naturalWidth > 0) setPreviewImage(image);
+      const source = image?.currentSrc || image?.src || '';
+      if (image?.complete && image.naturalWidth > 0 && source) snapshotPreviewImage(image, source);
     };
     captureLoadedImage();
     const timer = window.setInterval(captureLoadedImage, 120);
     return () => window.clearInterval(timer);
-  }, [pageDisplay, previewImage, speedTesting]);
+  }, [pageDisplay, previewImage, snapshotPreviewImage, speedTesting]);
 
   useEffect(() => {
     const preferred = readMirrorPreference();
@@ -617,7 +642,9 @@ export default function PixivRanking() {
   }, []);
 
   const handlePreviewImageLoad: React.ReactEventHandler<HTMLImageElement> = (event) => {
-    setPreviewImage(event.currentTarget);
+    const image = event.currentTarget;
+    const source = image.currentSrc || image.src;
+    snapshotPreviewImage(image, source);
   };
 
   const handleViewerPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {

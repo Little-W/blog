@@ -289,9 +289,9 @@ export default function GalleryConsole(): JSX.Element {
         form.append('originals', asset.original, `${id}.${fileExtension(asset.original)}`);
         form.append('thumbnails', asset.thumbnail, `${id}.webp`);
       }
-      const result = await consoleUpload<{revision: string; count: number}>('/api/console/gallery', form);
+      const result = await consoleUpload<{revision: string; gitCommitSha: string; count: number}>('/api/console/gallery', form);
       await loadManifest();
-      setNotice(`已保存 ${result.count} 张作品并同步 Hugging Face${result.revision ? `（${result.revision.slice(0, 8)}）` : ''}。`);
+      setNotice(`已保存 ${result.count} 张作品并同步 GitHub 与 Hugging Face${result.gitCommitSha ? `（GitHub ${result.gitCommitSha.slice(0, 8)}）` : ''}。`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '图集保存失败。');
     } finally {
@@ -307,7 +307,7 @@ export default function GalleryConsole(): JSX.Element {
         <div>
           <span className={styles.eyebrow}>IMAGE GALLERY</span>
           <h2>图集编辑</h2>
-          <p>{album ? `${album.items.length} 张作品 · 保存后提交至 Hugging Face；写入需配置 Netlify HF_PIC_TOKEN` : '暂无可编辑图集'}</p>
+          <p>{album ? `${album.items.length} 张作品 · 后端动态读取并同步 GitHub/HF；写入需配置 GITHUB_REPO_TOKEN 与 HF_PIC_TOKEN` : '暂无可编辑图集'}</p>
         </div>
         <div className={styles.headerActions}>
           <button type="button" className={styles.secondaryButton} onClick={() => { if (window.confirm('重新读取会放弃所有未保存的修改，继续吗？')) void loadManifest(); }} disabled={saving}><Icon icon="lucide:refresh-cw" />重新读取</button>
