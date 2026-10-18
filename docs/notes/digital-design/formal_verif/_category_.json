@@ -1,0 +1,9 @@
+{
+  "label": "形式验证（VC Formal）",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "slug": "/notes/digital-design/formal-verification",
+    "description": "形式验证基础、SVA、VC Formal 专用应用、命令参考与验收实践。"
+  }
+}

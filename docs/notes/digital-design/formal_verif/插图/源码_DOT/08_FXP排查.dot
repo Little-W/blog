@@ -1,0 +1,17 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ fail [label="不允许的 X 到达观察点",fillcolor="#FCE5E3",color="#BE625A"];
+ trace [label="检查传播路径与时钟周期"];
+ orig [label="辨别 X 来源\n初始化 / 显式 X / 越界 / 黑盒"];
+ assume [label="审查复位与约束真实性"];
+ fix [label="修改 RTL 或有效位屏蔽\n重新回归",fillcolor="#E5F3E8",color="#42936A"];
+ fail -> trace -> orig -> assume -> fix;
+
+}

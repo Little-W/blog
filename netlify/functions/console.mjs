@@ -7,6 +7,7 @@ import {
 
 import {
   ARTICLE_PREFIX,
+  ASSET_PREFIX,
   MUSIC_PREFIX,
   MUSIC_REVISION_KEY,
   contentBackend,
@@ -34,12 +35,15 @@ const SESSION_COOKIE = 'blog_admin_session';
 const OAUTH_COOKIE = 'blog_admin_oauth';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const OAUTH_TTL_MS = 10 * 60 * 1000;
+const REPOSITORY_SNAPSHOT_TTL_MS = 15 * 1000;
 const MAX_REQUEST_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAX_DATA_BYTES = 4 * 1024 * 1024;
 const MAX_RECORDS = 20_000;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 400;
+const MAX_UPLOAD_ASSET_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_REQUEST_BYTES = 25 * 1024 * 1024;
 const DEFAULT_PUBLIC_ORIGIN = 'https://blog.yusen.best';
 
 const DATASETS = Object.freeze({
@@ -86,6 +90,10 @@ const DATASETS = Object.freeze({
     idField: 'mv_id',
   },
 });
+
+let repositorySnapshotCache = null;
+let repositorySnapshotExpiresAt = 0;
+let repositorySnapshotPromise = null;
 
 export const config = {
   path: '/api/console/*',
@@ -398,15 +406,30 @@ async function finishLogin(request, url) {
   return new Response(null, {status: 302, headers});
 }
 
-async function repoSnapshot() {
-  const {owner, repo, branch} = repositoryConfig();
-  const root = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const ref = await githubRequest(`${root}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`);
-  const headSha = ref.object?.sha;
-  const commit = await githubRequest(`${root}/git/commits/${headSha}`);
-  const tree = await githubRequest(`${root}/git/trees/${commit.tree.sha}?recursive=1`);
-  if (tree.truncated) throw new Error('仓库文件列表过大，GitHub 未返回全部内容。');
-  return {root, headSha, commit, entries: tree.tree || []};
+async function repoSnapshot({fresh = false} = {}) {
+  if (!fresh && repositorySnapshotCache && repositorySnapshotExpiresAt > Date.now()) {
+    return repositorySnapshotCache;
+  }
+  if (!fresh && repositorySnapshotPromise) return repositorySnapshotPromise;
+  const pending = (async () => {
+    const {owner, repo, branch} = repositoryConfig();
+    const root = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const ref = await githubRequest(`${root}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`);
+    const headSha = ref.object?.sha;
+    const commit = await githubRequest(`${root}/git/commits/${headSha}`);
+    const tree = await githubRequest(`${root}/git/trees/${commit.tree.sha}?recursive=1`);
+    if (tree.truncated) throw new Error('仓库文件列表过大，GitHub 未返回全部内容。');
+    return {root, headSha, commit, entries: tree.tree || []};
+  })();
+  if (!fresh) repositorySnapshotPromise = pending;
+  try {
+    const snapshot = await pending;
+    repositorySnapshotCache = snapshot;
+    repositorySnapshotExpiresAt = Date.now() + REPOSITORY_SNAPSHOT_TTL_MS;
+    return snapshot;
+  } finally {
+    if (repositorySnapshotPromise === pending) repositorySnapshotPromise = null;
+  }
 }
 
 function findBlob(snapshot, path) {
@@ -426,6 +449,7 @@ async function readBlob(snapshot, path) {
   if (blob.encoding !== 'base64') throw new Error(`无法解码 ${path}。`);
   return {
     content: Buffer.from(String(blob.content).replace(/\s/g, ''), 'base64').toString('utf8'),
+    bytes: new Uint8Array(Buffer.from(String(blob.content).replace(/\s/g, ''), 'base64')),
     blobSha: entry.sha,
   };
 }
@@ -565,7 +589,7 @@ function datasetBlobKey(dataset) {
 }
 
 async function wantSnapshot() {
-  // GitHub 仅作为镜像/备份；本地或未配置令牌时允许读取与写入落到 Blob。
+  // 本地离线模式可以只使用 Blob；有 GitHub 配置时优先读取仓库。
   try {
     return await repoSnapshot();
   } catch {
@@ -573,17 +597,31 @@ async function wantSnapshot() {
   }
 }
 
+async function canonicalRepositorySnapshot() {
+  if (process.env.GITHUB_REPO_TOKEN?.trim() || process.env.CONTEXT === 'production' || process.env.NETLIFY === 'true') {
+    return repoSnapshot();
+  }
+  return null;
+}
+
 async function readDatasetText(dataset) {
-  const stored = await readContent(datasetBlobKey(dataset)).catch(() => null);
-  if (typeof stored === 'string') return stored;
-  const snapshot = await wantSnapshot();
+  const snapshot = await canonicalRepositorySnapshot();
   if (snapshot) {
     try {
-      return (await readBlob(snapshot, dataset.path)).content;
-    } catch {
-      return null;
+      const content = (await readBlob(snapshot, dataset.path)).content;
+      const stored = await readContent(datasetBlobKey(dataset)).catch(() => null);
+      if (stored !== content) {
+        await writeContent(datasetBlobKey(dataset), content);
+        await bumpMusicRevision();
+      }
+      return content;
+    } catch (error) {
+      if (error?.status === 404 || error?.code === 'FILE_NOT_FOUND') return null;
+      throw error;
     }
   }
+  const stored = await readContent(datasetBlobKey(dataset)).catch(() => null);
+  if (typeof stored === 'string') return stored;
   return null;
 }
 
@@ -604,22 +642,17 @@ async function writeDatasets(entries) {
   return bumpMusicRevision();
 }
 
-async function mirrorToGitHub(files, message) {
-  // 数据已写入 Blob 后，再把结果镜像回 GitHub 仓库留档。镜像失败不阻断编辑。
-  try {
-    const snapshot = await repoSnapshot();
-    const result = await commitFiles({files, baseHeadSha: snapshot.headSha, message});
-    return {ok: true, commitSha: result.commitSha, commitUrl: result.commitUrl};
-  } catch (error) {
-    return {ok: false, message: error instanceof Error ? error.message : String(error)};
-  }
+async function commitToGitHub(files, message) {
+  const snapshot = await repoSnapshot({fresh: true});
+  const result = await commitFiles({files, baseHeadSha: snapshot.headSha, message});
+  return {ok: true, commitSha: result.commitSha, commitUrl: result.commitUrl};
 }
 
 const SEED_MARKER = `${ARTICLE_PREFIX}_seeded.json`;
 let seedPromise = null;
 
 export async function seedContentFromRepository() {
-  // 首次部署时把仓库中的文章与数据表一次性导入 Blob，之后读取即以 Blob 为准。
+  // 首次部署时把仓库中的 Markdown 与音乐表导入 Blob；图片按请求惰性同步。
   if (seedPromise) return seedPromise;
   seedPromise = (async () => {
     if (await readContent(SEED_MARKER).catch(() => null)) return false;
@@ -659,6 +692,27 @@ export async function seedContentFromRepository() {
   return seedPromise;
 }
 
+export async function ensureAssetFromRepository(path) {
+  if (!/^(?:docs|blog)\/.+$/i.test(path) || !imageType(path)) return null;
+  const key = `${ASSET_PREFIX}${path}`;
+  const cached = await readContent(key, {type: 'arrayBuffer'}).catch(() => null);
+  const snapshot = await canonicalRepositorySnapshot();
+  if (!snapshot) return cached instanceof ArrayBuffer && cached.byteLength ? new Uint8Array(cached) : null;
+  try {
+    const entry = findBlob(snapshot, path);
+    const meta = await contentMetadata(key).catch(() => null);
+    if (cached instanceof ArrayBuffer && cached.byteLength && meta?.metadata?.repositoryBlobSha === entry.sha) {
+      return new Uint8Array(cached);
+    }
+    const asset = await readBlob(snapshot, path);
+    await writeContent(key, asset.bytes, {metadata: {contentType: imageType(path), repositoryBlobSha: asset.blobSha}});
+    return asset.bytes;
+  } catch (error) {
+    if (error?.status === 404 || error?.code === 'FILE_NOT_FOUND') return null;
+    throw error;
+  }
+}
+
 async function readBody(request) {
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) {
@@ -690,10 +744,10 @@ async function commitFiles({files, baseHeadSha, message}) {
   const paths = new Set();
   files.forEach(({path, content}) => {
     if (typeof path !== 'string' || !path || paths.has(path)) throw requestError('文件路径无效或重复。');
-    if (content !== null && typeof content !== 'string') throw requestError(`文件 ${path} 的内容无效。`);
+    if (content !== null && typeof content !== 'string' && !(content instanceof Uint8Array)) throw requestError(`文件 ${path} 的内容无效。`);
     paths.add(path);
   });
-  const snapshot = await repoSnapshot();
+  const snapshot = await repoSnapshot({fresh: true});
   if (snapshot.headSha !== baseHeadSha) {
     const error = new Error('远程仓库已被更新，请重新加载后再保存。');
     error.status = 409;
@@ -702,9 +756,10 @@ async function commitFiles({files, baseHeadSha, message}) {
   }
   const blobs = await Promise.all(files.map(async ({path, content}) => {
     if (content === null) return {path, mode: '100644', type: 'blob', sha: null};
+    const binary = content instanceof Uint8Array;
     const blob = await githubRequest(`${snapshot.root}/git/blobs`, {
       method: 'POST',
-      body: {content, encoding: 'utf-8'},
+      body: {content: binary ? Buffer.from(content).toString('base64') : content, encoding: binary ? 'base64' : 'utf-8'},
     });
     return {path, mode: '100644', type: 'blob', sha: blob.sha};
   }));
@@ -727,6 +782,8 @@ async function commitFiles({files, baseHeadSha, message}) {
     `${snapshot.root}/git/refs/heads/${repositoryConfig().branch.split('/').map(encodeURIComponent).join('/')}`,
     {method: 'PATCH', body: {sha: commit.sha, force: false}},
   );
+  repositorySnapshotCache = null;
+  repositorySnapshotExpiresAt = 0;
   const {owner, repo} = repositoryConfig();
   return {
     commitSha: commit.sha,
@@ -736,26 +793,18 @@ async function commitFiles({files, baseHeadSha, message}) {
 
 async function listFiles() {
   await seedContentFromRepository().catch(() => {});
-  let articles = [];
   const index = await ensureArticleIndex().catch(() => null);
-  if (index) articles = index.articles;
-  let files;
-  if (articles.length) {
-    files = articles.map((article) => article.path);
-  } else {
-    const snapshot = await wantSnapshot();
-    files = snapshot
-      ? snapshot.entries
-        .filter((item) => item.type === 'blob')
-        .map((item) => item.path)
-        .filter((path) => allowedContentPath(path))
-        .sort((left, right) => left.localeCompare(right, 'zh-CN'))
-      : [];
-    articles = files.map((path) => articleSummary(path, ''));
-  }
+  const snapshot = await canonicalRepositorySnapshot();
+  const repositoryPaths = snapshot?.entries
+    .filter((item) => item.type === 'blob')
+    .map((item) => item.path)
+    .filter((path) => allowedContentPath(path))
+    .sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  const files = repositoryPaths || (index?.articles || []).map((article) => article.path);
+  const summaries = new Map((index?.articles || []).map((article) => [article.path, article]));
+  const articles = files.map((path) => summaries.get(path) || articleSummary(path, ''));
   const sections = [...new Set(files.map((path) => path.split('/').slice(0, -1).join('/')).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'zh-CN'));
-  const snapshot = await wantSnapshot();
   return json({
     success: true,
     data: {
@@ -771,10 +820,32 @@ async function listFiles() {
 async function getFile(url) {
   const path = allowedContentPath(url.searchParams.get('path'));
   if (!path) return fail('只允许编辑 docs 或 blog 中的 Markdown 文件。', 'INVALID_CONTENT_PATH');
+  const snapshot = await canonicalRepositorySnapshot();
+  if (snapshot) {
+    const file = await readBlob(snapshot, path);
+    const stored = await readContent(articleKey(path)).catch(() => null);
+    const meta = await contentMetadata(articleKey(path)).catch(() => null);
+    let updatedAt = meta?.metadata?.updatedAt || null;
+    if (stored !== file.content) {
+      updatedAt = new Date().toISOString();
+      await writeContent(articleKey(path), file.content, {metadata: {updatedAt, repositoryBlobSha: file.blobSha}});
+      await upsertArticleEntry(articleSummary(path, file.content, updatedAt));
+    }
+    return json({
+      success: true,
+      data: {
+        path,
+        content: file.content,
+        summary: articleSummary(path, file.content, updatedAt),
+        blobSha: file.blobSha,
+        backend: contentBackend(),
+        headSha: snapshot.headSha,
+      },
+    });
+  }
   const stored = await readContent(articleKey(path)).catch(() => null);
   if (typeof stored === 'string') {
     const meta = await contentMetadata(articleKey(path));
-    const snapshot = await wantSnapshot();
     return json({
       success: true,
       data: {
@@ -783,14 +854,11 @@ async function getFile(url) {
         summary: articleSummary(path, stored, meta?.metadata?.updatedAt || null),
         blobSha: meta?.etag || null,
         backend: contentBackend(),
-        headSha: snapshot ? snapshot.headSha : null,
+        headSha: null,
       },
     });
   }
-  const snapshot = await wantSnapshot();
-  if (!snapshot) return fail('文章不存在。', 'FILE_NOT_FOUND', 404);
-  const file = await readBlob(snapshot, path);
-  return json({success: true, data: {path, content: file.content, blobSha: file.blobSha, backend: contentBackend(), headSha: snapshot.headSha}});
+  return fail('文章不存在。', 'FILE_NOT_FOUND', 404);
 }
 
 async function saveFile(request) {
@@ -803,17 +871,16 @@ async function saveFile(request) {
   const previousPath = body.previousPath ? allowedContentPath(body.previousPath) : null;
   if (body.previousPath && !previousPath) return fail('原文件路径无效。', 'INVALID_CONTENT_PATH');
 
+  const files = [{path, content: body.content}];
+  if (previousPath && previousPath !== path) files.push({path: previousPath, content: null});
+  const gitSync = await commitToGitHub(files, body.message || `文章：通过控制台更新 ${path}`);
   const updatedAt = new Date().toISOString();
   await writeContent(articleKey(path), body.content, {metadata: {updatedAt}});
   await upsertArticleEntry(articleSummary(path, body.content, updatedAt));
   if (previousPath && previousPath !== path) {
-    await deleteContent(articleKey(previousPath)).catch(() => {});
-    await removeArticleEntry(previousPath).catch(() => {});
+    await deleteContent(articleKey(previousPath));
+    await removeArticleEntry(previousPath);
   }
-
-  const files = [{path, content: body.content}];
-  if (previousPath && previousPath !== path) files.push({path: previousPath, content: null});
-  const gitSync = await mirrorToGitHub(files, body.message || `文章：通过控制台更新 ${path}`);
   return json({success: true, data: {path, savedTo: contentBackend(), updatedAt, gitSync}}, 201);
 }
 
@@ -821,9 +888,9 @@ async function deleteFile(request) {
   const body = await readBody(request);
   const path = allowedContentPath(body.path);
   if (!path) return fail('只允许删除 docs 或 blog 中的 Markdown 文件。', 'INVALID_CONTENT_PATH');
+  const gitSync = await commitToGitHub([{path, content: null}], body.message || `文章：通过控制台删除 ${path}`);
   await deleteContent(articleKey(path));
-  await removeArticleEntry(path).catch(() => {});
-  const gitSync = await mirrorToGitHub([{path, content: null}], body.message || `文章：通过控制台删除 ${path}`);
+  await removeArticleEntry(path);
   return json({success: true, data: {path, deletedFrom: contentBackend(), gitSync}}, 201);
 }
 
@@ -837,13 +904,13 @@ async function deleteFiles(request) {
     return fail('删除列表包含无效或重复的文章路径。', 'INVALID_DELETE_PATHS');
   }
 
+  const gitSync = await commitToGitHub(paths.map((path) => ({path, content: null})), body.message || `文章：批量删除 ${paths.length} 个文件`);
   const index = await ensureArticleIndex().catch(() => null);
   await Promise.all(paths.map((path) => deleteContent(articleKey(path))));
   if (index) {
     const deleted = new Set(paths);
     await writeArticleIndex(sortArticles(index.articles.filter((article) => !deleted.has(article.path))));
   }
-  const gitSync = await mirrorToGitHub(paths.map((path) => ({path, content: null})), body.message || `文章：批量删除 ${paths.length} 个文件`);
   return json({success: true, data: {paths, deletedFrom: contentBackend(), gitSync}}, 201);
 }
 
@@ -859,10 +926,23 @@ function isMarkdownName(name) {
   return /\.(?:md|mdx)$/i.test(name);
 }
 
+function imageType(name) {
+  const match = /\.([a-z0-9]+)$/i.exec(name);
+  const types = {avif: 'image/avif', gif: 'image/gif', jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', svg: 'image/svg+xml', webp: 'image/webp', bmp: 'image/bmp'};
+  return match ? types[match[1].toLowerCase()] || null : null;
+}
+
 function uploadArticlePath(target, relative) {
   const cleanRelative = sanitizeUploadName(relative);
   if (!cleanRelative) return null;
   return normalizeArticlePath(`${target}/${cleanRelative}`);
+}
+
+function uploadAssetPath(target, relative) {
+  const cleanRelative = sanitizeUploadName(relative);
+  if (!cleanRelative) return null;
+  const path = `${target}/${cleanRelative}`;
+  return /^(?:docs|blog)\/.+$/i.test(path) && imageType(path) ? path : null;
 }
 
 async function mergeArticleIndex(summaries) {
@@ -874,8 +954,8 @@ async function mergeArticleIndex(summaries) {
 
 async function uploadArticles(request) {
   const contentLength = Number(request.headers.get('content-length') || 0);
-  if (contentLength > MAX_UPLOAD_BYTES) {
-    return fail(`上传内容超过 ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MiB。`, 'UPLOAD_TOO_LARGE', 413);
+  if (contentLength > MAX_UPLOAD_REQUEST_BYTES) {
+    return fail(`上传内容超过 ${Math.round(MAX_UPLOAD_REQUEST_BYTES / 1024 / 1024)} MiB。`, 'UPLOAD_TOO_LARGE', 413);
   }
   let form;
   try {
@@ -889,13 +969,19 @@ async function uploadArticles(request) {
   }
 
   const pending = new Map();
+  const pendingAssets = new Map();
   for (const entry of form.getAll('files')) {
     if (typeof entry === 'string') continue;
     const relative = sanitizeUploadName(entry.name);
-    if (!isMarkdownName(relative)) continue;
-    const path = uploadArticlePath(target, relative);
-    if (!path || pending.has(path)) continue;
-    pending.set(path, {path, content: ensureTitleFrontMatter(await entry.text(), path)});
+    if (isMarkdownName(relative)) {
+      const path = uploadArticlePath(target, relative);
+      if (!path || pending.has(path)) continue;
+      pending.set(path, {path, content: ensureTitleFrontMatter(await entry.text(), path)});
+    } else if (imageType(relative)) {
+      const path = uploadAssetPath(target, relative);
+      if (!path || pendingAssets.has(path)) continue;
+      pendingAssets.set(path, new Uint8Array(await entry.arrayBuffer()));
+    }
   }
 
   const archive = form.get('archive');
@@ -910,24 +996,32 @@ async function uploadArticles(request) {
     for (const entry of entries) {
       const name = sanitizeUploadName(entry.name);
       if (!name || name.startsWith('__MACOSX/') || name.split('/').some((segment) => segment.startsWith('.'))) continue;
-      if (!isMarkdownName(name)) continue;
-      const path = uploadArticlePath(target, name);
-      if (!path || pending.has(path)) continue;
-      pending.set(path, {path, content: ensureTitleFrontMatter(entry.data.toString('utf8'), path)});
+       if (isMarkdownName(name)) {
+         const path = uploadArticlePath(target, name);
+         if (!path || pending.has(path)) continue;
+         pending.set(path, {path, content: ensureTitleFrontMatter(entry.data.toString('utf8'), path)});
+        } else if (imageType(name)) {
+         const path = uploadAssetPath(target, name);
+         if (!path || pendingAssets.has(path)) continue;
+         pendingAssets.set(path, new Uint8Array(entry.data));
+       }
     }
   }
 
-  if (!pending.size) return fail('没有找到可导入的 Markdown 文件。', 'NO_MARKDOWN');
+  if (!pending.size && !pendingAssets.size) return fail('没有找到可导入的 Markdown 文件或图片。', 'NO_UPLOAD_FILES');
   if (pending.size > MAX_UPLOAD_FILES) return fail(`一次最多导入 ${MAX_UPLOAD_FILES} 个文件。`, 'TOO_MANY_FILES');
+  if (pendingAssets.size > MAX_UPLOAD_FILES) return fail(`一次最多上传 ${MAX_UPLOAD_FILES} 张图片。`, 'TOO_MANY_FILES');
 
   const existing = new Set(((await ensureArticleIndex().catch(() => null))?.articles || []).map((article) => article.path));
   const created = [];
   const updated = [];
   const skipped = [];
+  const skippedAssets = [];
   const summaries = [];
   const gitFiles = [];
   const updatedAt = new Date().toISOString();
   let totalBytes = 0;
+  let assetBytes = 0;
   for (const item of pending.values()) {
     const size = Buffer.byteLength(item.content);
     if (size > MAX_SOURCE_BYTES || totalBytes + size > MAX_UPLOAD_BYTES) {
@@ -935,16 +1029,32 @@ async function uploadArticles(request) {
       continue;
     }
     totalBytes += size;
-    await writeContent(articleKey(item.path), item.content, {metadata: {updatedAt}});
     summaries.push(articleSummary(item.path, item.content, updatedAt));
     gitFiles.push({path: item.path, content: item.content});
     (existing.has(item.path) ? updated : created).push(item.path);
   }
+  const uploadedAssets = [];
+  for (const [assetPath, bytes] of pendingAssets) {
+    if (assetBytes + bytes.byteLength > MAX_UPLOAD_ASSET_BYTES) {
+      skippedAssets.push(assetPath);
+      continue;
+    }
+    assetBytes += bytes.byteLength;
+    gitFiles.push({path: assetPath, content: bytes});
+    uploadedAssets.push({path: assetPath, url: `/api/content/asset?path=${encodeURIComponent(assetPath)}`});
+  }
+  if (!gitFiles.length) return fail('所选文件超过单次上传限制，没有内容写入仓库。', 'UPLOAD_TOO_LARGE', 413);
+  const gitSync = await commitToGitHub(gitFiles, `文章：批量导入 ${gitFiles.length} 个文件`);
+  for (const item of pending.values()) {
+    if (!summaries.some((summary) => summary.path === item.path)) continue;
+    await writeContent(articleKey(item.path), item.content, {metadata: {updatedAt}});
+  }
+  for (const asset of uploadedAssets) {
+    const path = asset.path;
+    await writeContent(`${ASSET_PREFIX}${path}`, pendingAssets.get(path), {metadata: {contentType: imageType(path), updatedAt}});
+  }
   if (summaries.length) await mergeArticleIndex(summaries);
-  const gitSync = gitFiles.length
-    ? await mirrorToGitHub(gitFiles, `文章：批量导入 ${gitFiles.length} 个文件`)
-    : {ok: false, message: '没有写入任何文件。'};
-  return json({success: true, data: {created, updated, skipped, backend: contentBackend(), gitSync}}, 201);
+  return json({success: true, data: {created, updated, skipped, skippedAssets, assets: uploadedAssets, backend: contentBackend(), gitSync}}, 201);
 }
 
 async function getDataset(url) {
@@ -1081,12 +1191,7 @@ async function saveDataset(request) {
     validateMusicTagReferences(tagRecords, records, synced.records);
     const companionContent = serializeJsonl(companion, synced.records);
     const tagContent = serializeJsonl(DATASETS.music_tag, tagRecords);
-    const revision = await writeDatasets([
-      {dataset, content},
-      {dataset: companion, content: companionContent},
-      {dataset: DATASETS.music_tag, content: tagContent},
-    ]);
-    const gitSync = await mirrorToGitHub(
+    const gitSync = await commitToGitHub(
       [
         {path: dataset.path, content},
         {path: companion.path, content: companionContent},
@@ -1094,16 +1199,21 @@ async function saveDataset(request) {
       ],
       body.message || `音乐：更新 ${dataset.label} 并同步 ${companion.label} 歌单与顺序`,
     );
+    const revision = await writeDatasets([
+      {dataset, content},
+      {dataset: companion, content: companionContent},
+      {dataset: DATASETS.music_tag, content: tagContent},
+    ]);
     return json({
       success: true,
       data: {revision, count: records.length, syncedCount: synced.changedCount, unmatchedCount: synced.unmatchedCount, gitSync},
     }, 201);
   }
-  const revision = await writeDatasets([{dataset, content}]);
-  const gitSync = await mirrorToGitHub(
+  const gitSync = await commitToGitHub(
     [{path: dataset.path, content}],
     body.message || `数据：通过控制台${body.operation === 'append' ? '新增' : '更新'} ${dataset.label}`,
   );
+  const revision = await writeDatasets([{dataset, content}]);
   return json({success: true, data: {revision, count: records.length, gitSync}}, 201);
 }
 
@@ -1223,12 +1333,7 @@ async function saveMusicTags(request) {
   const hqContent = serializeJsonl(DATASETS.music_hq, hq.records);
   const sqContent = serializeJsonl(DATASETS.music_sq, sq.records);
   const tagContent = serializeJsonl(DATASETS.music_tag, orderedTags);
-  const revision = await writeDatasets([
-    {dataset: DATASETS.music_hq, content: hqContent},
-    {dataset: DATASETS.music_sq, content: sqContent},
-    {dataset: DATASETS.music_tag, content: tagContent},
-  ]);
-  const gitSync = await mirrorToGitHub(
+  const gitSync = await commitToGitHub(
     [
       {path: DATASETS.music_hq.path, content: hqContent},
       {path: DATASETS.music_sq.path, content: sqContent},
@@ -1236,6 +1341,11 @@ async function saveMusicTags(request) {
     ],
     `音乐：更新 ${displayName || `曲目 ${mid}`} 的歌单标签`,
   );
+  const revision = await writeDatasets([
+    {dataset: DATASETS.music_hq, content: hqContent},
+    {dataset: DATASETS.music_sq, content: sqContent},
+    {dataset: DATASETS.music_tag, content: tagContent},
+  ]);
   return json({success: true, data: {revision, mid, tagIds, gitSync}}, 201);
 }
 
@@ -1302,11 +1412,11 @@ async function saveMusicOrder(request) {
   }
   const nextTags = tags.map((record) => Number(record.tag_id) === tagId ? {...record, music_order: mids} : record);
   const tagContent = serializeJsonl(DATASETS.music_tag, nextTags);
-  const revision = await writeDatasets([{dataset: DATASETS.music_tag, content: tagContent}]);
-  const gitSync = await mirrorToGitHub(
+  const gitSync = await commitToGitHub(
     [{path: DATASETS.music_tag.path, content: tagContent}],
     `音乐：调整歌单「${String(tag.tag_name || tagId)}」的曲目顺序`,
   );
+  const revision = await writeDatasets([{dataset: DATASETS.music_tag, content: tagContent}]);
   return json({success: true, data: {revision, tagId, mids, gitSync}}, 201);
 }
 

@@ -1,0 +1,17 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ spec [label="参考 RTL (Spec)"];
+ impl [label="实现 RTL (Impl)"];
+ align [label="输入约束 / 初态 / 对应关系",fillcolor="#FFF0DC",color="#C78F4A"];
+ compare [label="顺序等价检查\n状态和输出关系",fillcolor="#E4EDFE",color="#5C7CBC"];
+ result [label="Equivalent / 反例 / 未完成",fillcolor="#E6F3E9",color="#4E976A"];
+ spec -> compare; impl -> compare; align -> compare; compare -> result;
+
+}

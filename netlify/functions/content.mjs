@@ -1,6 +1,6 @@
 import {ARTICLE_PREFIX, contentMetadata, readContent} from '../lib/content-store.mjs';
 import {articleSummary, ensureArticleIndex, normalizeArticlePath} from '../lib/articles.mjs';
-import {seedContentFromRepository} from './console.mjs';
+import {ensureAssetFromRepository, seedContentFromRepository} from './console.mjs';
 
 export const config = {
   path: '/api/content/*',
@@ -59,11 +59,40 @@ async function getArticle(url) {
   });
 }
 
+const IMAGE_TYPES = Object.freeze({
+  '.avif': 'image/avif', '.gif': 'image/gif', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.bmp': 'image/bmp',
+});
+
+function normalizeAssetPath(value) {
+  const path = String(value || '').replace(/^@site\//, '').replace(/\\/g, '/');
+  if (path.includes('..') || path.startsWith('/') || /[\0\r\n]/.test(path)) return null;
+  if (!/^(?:docs|blog)\/.+$/i.test(path)) return null;
+  const extension = path.slice(path.lastIndexOf('.')).toLowerCase();
+  return IMAGE_TYPES[extension] ? {path, type: IMAGE_TYPES[extension]} : null;
+}
+
+async function getAsset(url) {
+  const asset = normalizeAssetPath(url.searchParams.get('path'));
+  if (!asset) return fail('图片路径无效。', 'INVALID_ASSET_PATH', 400);
+  const bytes = await ensureAssetFromRepository(asset.path);
+  if (!(bytes instanceof Uint8Array)) return fail('图片不存在。', 'NOT_FOUND', 404);
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'cache-control': 'public, max-age=300',
+      'content-type': asset.type,
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
 export default async (request) => {
   const url = new URL(request.url);
   try {
     if (url.pathname === '/api/content/list' && request.method === 'GET') return await listArticles();
     if (url.pathname === '/api/content/file' && request.method === 'GET') return await getArticle(url);
+    if (url.pathname === '/api/content/asset' && request.method === 'GET') return await getAsset(url);
     return fail('内容接口不存在。', 'NOT_FOUND', 404);
   } catch (error) {
     console.error('[content-api]', error instanceof Error ? error.message : String(error));

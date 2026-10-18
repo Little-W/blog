@@ -15,7 +15,7 @@ type HastNode = {
   position?: {start?: {line?: number}};
 };
 
-type RenderContext = {offset: number};
+type RenderContext = {offset: number; sourcePath?: string};
 
 const ALLOWED_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote',
@@ -68,6 +68,22 @@ function safeUrl(raw: string): string | null {
   return value;
 }
 
+function articleImageUrl(raw: string, sourcePath?: string): string | null {
+  const safe = safeUrl(raw);
+  if (!safe || !sourcePath || /^(?:https?:|data:|blob:|\/|#)/i.test(safe)) return safe;
+  const parts = [...sourcePath.split('/').slice(0, -1)];
+  for (const part of safe.replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (parts.length <= 1) return null;
+      parts.pop();
+    } else parts.push(part);
+  }
+  const path = parts.join('/');
+  if (!/^(?:docs|blog)\/.+$/i.test(path)) return null;
+  return `/api/content/asset?path=${encodeURIComponent(path)}`;
+}
+
 function renderText(value: string, key: React.Key): React.ReactNode {
   if (!value.includes('~~')) return value;
   const parts = value.split('~~');
@@ -116,7 +132,7 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
     }
   }
   if (tag === 'img' && properties.src) {
-    const src = safeUrl(String(properties.src));
+    const src = articleImageUrl(String(properties.src), context.sourcePath);
     if (src) props.src = src;
     props.loading = 'lazy';
     props.alt = String(properties.alt || '');
@@ -191,20 +207,20 @@ function parseSegments(source: string): Segment[] {
   return segments;
 }
 
-function renderInline(text: string, line: number): React.ReactNode {
+function renderInline(text: string, line: number, sourcePath?: string): React.ReactNode {
   if (!text.trim()) return null;
   const tree = unified().use(remarkParse).parse(text) as HastNode;
   const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index, {offset: Math.max(0, line - 1)}));
+  return hast.children?.map((child, index) => renderNode(child, index, {offset: Math.max(0, line - 1), sourcePath}));
 }
 
-function renderMarkdown(text: string, offset: number): React.ReactNode {
+function renderMarkdown(text: string, offset: number, sourcePath?: string): React.ReactNode {
   const tree = unified().use(remarkParse).parse(text) as HastNode;
   const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index, {offset}));
+  return hast.children?.map((child, index) => renderNode(child, index, {offset, sourcePath}));
 }
 
-export function MarkdownPreview({source, className, lineOffset = 0}: {source: string; className?: string; lineOffset?: number}) {
+export function MarkdownPreview({source, className, lineOffset = 0, sourcePath}: {source: string; className?: string; lineOffset?: number; sourcePath?: string}) {
   const segments = useMemo(() => parseSegments(source), [source]);
   return (
     <div className={`${styles.markdownPreview}${className ? ` ${className}` : ''}`}>
@@ -214,20 +230,20 @@ export function MarkdownPreview({source, className, lineOffset = 0}: {source: st
           return (
             <table key={index} className={styles.previewTable} data-line={tableLine}>
               <thead>
-                <tr data-line={tableLine}>{segment.header.map((cell, cellIndex) => <th key={cellIndex} data-line={tableLine}>{renderInline(cell, tableLine)}</th>)}</tr>
+                <tr data-line={tableLine}>{segment.header.map((cell, cellIndex) => <th key={cellIndex} data-line={tableLine}>{renderInline(cell, tableLine, sourcePath)}</th>)}</tr>
               </thead>
               <tbody>
                 {segment.rows.map((row, rowIndex) => {
                   const rowLine = tableLine + rowIndex + 1;
                   return (
-                    <tr key={rowIndex} data-line={rowLine}>{row.map((cell, cellIndex) => <td key={cellIndex} data-line={rowLine}>{renderInline(cell, rowLine)}</td>)}</tr>
+                    <tr key={rowIndex} data-line={rowLine}>{row.map((cell, cellIndex) => <td key={cellIndex} data-line={rowLine}>{renderInline(cell, rowLine, sourcePath)}</td>)}</tr>
                   );
                 })}
               </tbody>
             </table>
           );
         }
-        return <React.Fragment key={index}>{renderMarkdown(segment.text, lineOffset + segment.start)}</React.Fragment>;
+        return <React.Fragment key={index}>{renderMarkdown(segment.text, lineOffset + segment.start, sourcePath)}</React.Fragment>;
       })}
     </div>
   );

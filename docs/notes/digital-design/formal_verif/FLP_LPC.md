@@ -1,3 +1,8 @@
+---
+title: FLP/LPC：低功耗形式验证指南
+tags: [形式验证, 数字IC, VC Formal, FLP, LPC]
+---
+
 # FLP / LPC：低功耗连通性形式验证使用指南
 
 ## 1. 核心问题

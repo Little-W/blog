@@ -7,6 +7,7 @@ import {getStore} from '@netlify/blobs';
 // 本地开发缺少 Blob 上下文时自动回退到文件目录，便于离线模拟读写。
 export const CONTENT_STORE_NAME = 'site-content';
 export const ARTICLE_PREFIX = 'content/';
+export const ASSET_PREFIX = 'assets/';
 export const MUSIC_PREFIX = 'music/';
 export const ARTICLE_INDEX_KEY = `${ARTICLE_PREFIX}_index.json`;
 export const MUSIC_REVISION_KEY = `${MUSIC_PREFIX}_revision.json`;
@@ -35,9 +36,12 @@ class LocalFsStore {
     return path.join(this.dir, sanitizeKey(key));
   }
 
-  async get(key) {
+  async get(key, {type = 'text'} = {}) {
     try {
-      return await readFile(this.file(key), 'utf8');
+      const value = await readFile(this.file(key));
+      if (type === 'arrayBuffer') return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+      if (type === 'json') return JSON.parse(value.toString('utf8'));
+      return value.toString('utf8');
     } catch {
       return null;
     }
@@ -46,7 +50,7 @@ class LocalFsStore {
   async set(key, value) {
     const file = this.file(key);
     await mkdir(path.dirname(file), {recursive: true});
-    await writeFile(file, value);
+    await writeFile(file, value instanceof ArrayBuffer ? Buffer.from(value) : value);
     return this.getMetadata(key);
   }
 
@@ -109,9 +113,9 @@ export async function readContent(key, {type = 'text'} = {}) {
   const {kind, store} = backend();
   try {
     if (kind === 'blobs') return await store.get(key, {type, consistency: 'strong'});
-    const raw = await store.get(key);
+    const raw = await store.get(key, {type});
     if (raw == null) return null;
-    return type === 'json' ? JSON.parse(raw) : raw;
+    return raw;
   } catch (error) {
     if (isMissing(error)) return null;
     throw error;
@@ -120,11 +124,14 @@ export async function readContent(key, {type = 'text'} = {}) {
 
 export async function writeContent(key, value, {metadata} = {}) {
   const {kind, store} = backend();
+  const normalized = value instanceof Uint8Array
+    ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)
+    : value;
   if (kind === 'blobs') {
-    const result = await store.set(key, value, metadata ? {metadata} : undefined);
+    const result = await store.set(key, normalized, metadata ? {metadata} : undefined);
     return result?.etag || null;
   }
-  const result = await store.set(key, value);
+  const result = await store.set(key, normalized);
   return result?.etag || null;
 }
 

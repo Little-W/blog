@@ -7,7 +7,7 @@ sidebar_position: 1
 
 本组文章按设计对象分为三类。
 
-## [RTL 与形式验证](/docs/notes/digital-design/rtl-verification)
+## [RTL 与形式验证](formal_verif/形式验证.md)
 
 介绍 SystemVerilog Assertion 的时序表达，以及从环境约束、断言到覆盖率的功能形式验证方法。
 

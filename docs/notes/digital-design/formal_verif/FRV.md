@@ -1,6 +1,6 @@
 ---
-title: FRV：形式寄存器验证使用指南
-tags: [验证, 形式验证, 数字IC]
+title: FRV：形式寄存器验证指南
+tags: [形式验证, 数字IC, VC Formal, FRV, 寄存器验证]
 ---
 
 # FRV：形式寄存器验证使用指南

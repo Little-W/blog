@@ -1,3 +1,8 @@
+---
+title: AIP 与形式分解证明
+tags: [形式验证, 数字IC, VC Formal, AIP]
+---
+
 # Assertion IP 与分解证明
 
 ## 1. 两类复用方式
@@ -98,4 +103,3 @@ fv_proof_arch_report -format xml
 ```
 
 来源：User Guide，X-2025.06-SP1，第 810–812 页。
-

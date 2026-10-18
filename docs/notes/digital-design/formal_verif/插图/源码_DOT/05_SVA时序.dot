@@ -1,0 +1,17 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ node [shape=record, style="filled", margin=0.2];
+ t0 [label="{第 0 拍|req=1|触发}",fillcolor="#E6EEFC"];
+ t1 [label="{第 1 拍|ack 可为 1|响应窗口}"];
+ t2 [label="{第 2 拍|ack 可为 1|响应窗口}"];
+ t3 [label="{第 3 拍|ack 可为 1|最后期限}",fillcolor="#FFF0DF"];
+ t0 -> t1 -> t2 -> t3;
+
+}

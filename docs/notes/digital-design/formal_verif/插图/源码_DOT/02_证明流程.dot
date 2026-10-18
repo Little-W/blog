@@ -1,0 +1,20 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ rtl [label="RTL / 状态转移模型"];
+ env [label="环境假设 + 时钟复位"];
+ sva [label="SVA 断言与覆盖目标"];
+ solver [label="求解引擎\nSAT · 归纳 · PDR · 抽象",fillcolor="#E8EEFC",color="#5371B5"];
+ pass [label="Proven\n检查前提与空洞性",fillcolor="#E4F4EA",color="#4A8F63"];
+ fail [label="Falsified\n分析反例和合法性",fillcolor="#FBE8E6",color="#BF6556"];
+ unk [label="Inconclusive\n分析难点 / 调整策略",fillcolor="#FFF3DE",color="#C28F36"];
+ rtl -> solver; env -> solver; sva -> solver;
+ solver -> pass; solver -> fail; solver -> unk;
+
+}

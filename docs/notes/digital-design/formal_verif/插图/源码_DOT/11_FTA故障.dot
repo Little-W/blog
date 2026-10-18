@@ -1,0 +1,17 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ rtl [label="原设计 + 形式属性"];
+ fault [label="故障/RTL 修改注入",fillcolor="#FCE6E0",color="#BC685C"];
+ solve [label="形式检错分析",fillcolor="#E5EEFE",color="#537AB9"];
+ detected [label="被属性检出",fillcolor="#E4F3E8",color="#4D9168"];
+ missed [label="未检出 / 未完成\n补充规则或复核限制",fillcolor="#FFF1DC",color="#BE8D43"];
+ rtl -> solve; fault -> solve; solve -> detected; solve -> missed;
+
+}

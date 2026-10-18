@@ -1,0 +1,18 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ rtl [label="DUT RTL"];
+ sv [label="SVA / bind / AIP"];
+ formal [label="FPV 形式环境\n时钟、复位、假设",fillcolor="#DCEBFF",color="#577BBA"];
+ solve [label="check_fv"];
+ assert [label="assert：Proven / Falsified / Inconclusive",fillcolor="#F3EFFC"];
+ cover [label="cover：Covered / Uncoverable",fillcolor="#E6F5EB"];
+ rtl -> formal; sv -> formal; formal -> solve; solve -> assert; solve -> cover;
+
+}

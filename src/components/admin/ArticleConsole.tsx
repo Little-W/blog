@@ -126,7 +126,7 @@ function TagEditor({
   );
 }
 
-type UploadResult = {created: string[]; updated: string[]; skipped: string[]; backend: string; gitSync?: GitSyncResult};
+type UploadResult = {created: string[]; updated: string[]; skipped: string[]; skippedAssets?: string[]; assets?: {path: string; url: string}[]; backend: string; gitSync?: GitSyncResult};
 
 function relativeName(file: File): string {
   const withPath = file as File & {webkitRelativePath?: string};
@@ -140,14 +140,15 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
   const archiveInputRef = useRef<HTMLInputElement>(null);
 
-  const addFiles = (list: FileList | null) => {
+  const addFiles = (list: FileList | null, includeImages = false) => {
     if (!list) return;
-    const incoming = Array.from<File>(list).filter((file) => /\.(?:md|mdx)$/i.test(file.name));
+    const incoming = Array.from<File>(list).filter((file) => /\.(?:md|mdx)$/i.test(file.name) || (includeImages && /\.(?:avif|gif|jpe?g|png|svg|webp|bmp)$/i.test(file.name)));
     if (!incoming.length) {
-      setError('请选择 .md 或 .mdx 文件。');
+      setError(includeImages ? '请选择 Markdown 文件或常见图片文件。' : '请选择 .md 或 .mdx 文件。');
       return;
     }
     setFiles((current) => {
@@ -164,6 +165,7 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
 
   const resetInputs = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
     if (dirInputRef.current) dirInputRef.current.value = '';
     if (archiveInputRef.current) archiveInputRef.current.value = '';
   };
@@ -175,7 +177,7 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
       return;
     }
     if (!files.length && !archive) {
-      setError('请选择 Markdown 文件或一个压缩包。');
+      setError('请选择 Markdown、图片文件或一个压缩包。');
       return;
     }
     setBusy(true);
@@ -202,7 +204,7 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
     <div className={styles.uploadPanel}>
       <div className={styles.panelHeading}>
         <h3>批量上传</h3>
-        <p>上传多个 Markdown 文件或一个 zip 压缩包，自动解压到目标分区；与 Obsidian 一样，新的文件夹会成为新的分区。</p>
+        <p>文件夹和 zip 内的 Markdown 与图片会保留相对目录并一起上传；也可以单独选择图片。Markdown 保留原始相对链接，编辑预览和文章页面会从 Blob 读取对应素材。</p>
       </div>
       <div className={styles.field}>
         <span>目标分区路径</span>
@@ -224,7 +226,11 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
         </button>
         <button type="button" className={styles.secondaryButton} onClick={() => dirInputRef.current?.click()} disabled={busy}>
           <Icon icon="lucide:folder-tree" />
-          选择文件夹
+          选择文件夹（含图片）
+        </button>
+        <button type="button" className={styles.secondaryButton} onClick={() => imageInputRef.current?.click()} disabled={busy}>
+          <Icon icon="lucide:image-plus" />
+          选择图片
         </button>
         <button type="button" className={styles.secondaryButton} onClick={() => archiveInputRef.current?.click()} disabled={busy}>
           <Icon icon="lucide:file-archive" />
@@ -235,12 +241,13 @@ function UploadPanel({sections, defaultTarget, onFinish}: {sections: string[]; d
           上传到 {destination || '—'}
         </button>
         <input ref={fileInputRef} className={styles.hiddenInput} type="file" accept=".md,.mdx,text/markdown" multiple onChange={(event) => {addFiles(event.target.files); event.currentTarget.value = '';}} />
+        <input ref={imageInputRef} className={styles.hiddenInput} type="file" accept="image/avif,image/gif,image/jpeg,image/png,image/svg+xml,image/webp,image/bmp" multiple onChange={(event) => {addFiles(event.target.files, true); event.currentTarget.value = '';}} />
         <input
           ref={dirInputRef}
           className={styles.hiddenInput}
           type="file"
           multiple
-          onChange={(event) => {addFiles(event.target.files); event.currentTarget.value = '';}}
+          onChange={(event) => {addFiles(event.target.files, true); event.currentTarget.value = '';}}
           {...({webkitdirectory: 'true'} as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
         />
         <input ref={archiveInputRef} className={styles.hiddenInput} type="file" accept=".zip,application/zip" onChange={(event) => {setArchive(event.target.files?.[0] || null); event.currentTarget.value = '';}} />
@@ -782,10 +789,13 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
     if (result.created.length) parts.push(`新增 ${result.created.length} 篇`);
     if (result.updated.length) parts.push(`更新 ${result.updated.length} 篇`);
     if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 篇`);
+    if (result.assets?.length) parts.push(`上传 ${result.assets.length} 张图片`);
+    if (result.skippedAssets?.length) parts.push(`跳过 ${result.skippedAssets.length} 张超限图片`);
     const first = result.created[0] || result.updated[0];
     await loadFiles();
     if (first) await loadFile(first);
-    setNotice(`批量导入完成：${parts.length ? parts.join('，') : '没有写入文件'}${describeGitSync(result.gitSync)}。`);
+    const imageHint = result.assets?.length ? ` 图片路径：${result.assets.slice(0, 3).map((asset) => asset.path).join('、')}${result.assets.length > 3 ? '…' : ''}。` : '';
+    setNotice(`批量导入完成：${parts.length ? parts.join('，') : '没有写入文件'}${imageHint}${describeGitSync(result.gitSync)}。`);
     setShowUpload(false);
   };
 
@@ -1168,7 +1178,7 @@ export default function ArticleConsole({initialPath, repository}: {initialPath: 
           {viewMode !== 'edit' ? (
             <div className={styles.previewPane} ref={previewRef} onScroll={onPreviewScroll}>
               {content.trim() ? (
-                <MarkdownPreview source={frontMatter.body} className={styles.previewBody} lineOffset={frontMatterOffset} />
+                <MarkdownPreview source={frontMatter.body} className={styles.previewBody} lineOffset={frontMatterOffset} sourcePath={selectedPath} />
               ) : (
                 <div className={styles.emptyState}>暂无内容可预览。</div>
               )}

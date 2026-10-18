@@ -1,0 +1,16 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="transparent", pad=0.24, margin=0.05,
+         nodesep=0.42, ranksep=0.62, splines=polyline,
+         fontname="Noto Sans CJK SC", fontsize=16];
+  node [shape=box, style="rounded,filled", fillcolor="#F3F7FC", color="#446786",
+        fontname="Noto Sans CJK SC", fontsize=14, fontcolor="#18334B", penwidth=1.2,
+        margin="0.20,0.14"];
+  edge [color="#567C9C", arrowsize=0.75, penwidth=1.25,
+        fontname="Noto Sans CJK SC", fontsize=11, fontcolor="#39566E"];
+ simulation [label="RTL 仿真\n给定激励 → 一条执行轨迹", fillcolor="#E5F3E8", color="#41976C"];
+ formal [label="形式验证\n合法输入与初态 → 状态空间搜索", fillcolor="#E6EEFC", color="#4C73B8"];
+ spec [label="设计规格与接口约束",fillcolor="#FFF1E1",color="#CB9154"];
+ score [label="发现缺陷 / 证明规则 / 发现未覆盖条件",fillcolor="#F4EFFA", color="#8063AF"];
+ spec -> simulation; spec -> formal; simulation -> score; formal -> score;
+
+}

@@ -1,3 +1,8 @@
+---
+title: VC Formal 平台、环境与命令执行
+tags: [形式验证, 数字IC, VC Formal, 环境配置]
+---
+
 # VC Formal 平台、环境与命令执行
 
 ## 1. 平台定位与基本结构

@@ -1,3 +1,8 @@
+---
+title: SystemVerilog Assertions（SVA）语法与实践
+tags: [形式验证, 数字IC, VC Formal, SVA, SystemVerilog]
+---
+
 # SystemVerilog Assertions（SVA）完整中文教程
 
 ## 1. SVA 解决什么问题

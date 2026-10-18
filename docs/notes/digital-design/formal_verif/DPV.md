@@ -1,3 +1,8 @@
+---
+title: DPV：数据路径验证与 C/C++—RTL 事务等价
+tags: [形式验证, 数字IC, VC Formal, DPV]
+---
+
 # DPV：数据路径验证与 C/C++—RTL 事务等价使用指南
 
 ## 1. 解决的问题与 SEQ 的区别

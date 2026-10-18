@@ -1,3 +1,8 @@
+---
+title: FCA：形式覆盖率分析指南
+tags: [形式验证, 数字IC, VC Formal, FCA, 覆盖率]
+---
+
 # FCA：形式覆盖率分析使用指南
 
 ## 1. FCA 与 FPV 的区别

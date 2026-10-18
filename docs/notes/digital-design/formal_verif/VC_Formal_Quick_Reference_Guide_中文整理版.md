@@ -1,3 +1,8 @@
+---
+title: VC Formal Quick Reference Guide 中文整理版
+tags: [形式验证, 数字IC, VC Formal, 命令参考]
+---
+
 # VC Formal 命令分类与通用命令详解
 
 ## 1. 怎样阅读命令语法
@@ -1331,4 +1336,3 @@ vcf -f scripts/fpv_counter.tcl -batch 2>&1 | tee logs/fpv_counter.log
 ```
 
 **结果阅读。** 在初始状态正确的前提下，正确版预期满足这些断言，并存在到达 9 和回绕的覆盖轨迹。这不是本次 VC Formal 的实际运行结果。这些断言分别覆盖范围、保持、普通递增和回绕；复位值及运行中重新复位仍需结合初始化模型和专用复位检查，不能仅凭范围属性成立就认定全部功能正确。
-
