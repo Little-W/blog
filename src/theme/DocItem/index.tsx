@@ -9,7 +9,6 @@ import RuntimeArticleContent from '@site/src/components/RuntimeArticleContent';
 
 export default function DocItem(props: Props): JSX.Element {
   const docHtmlClassName = `docs-doc-id-${props.content.metadata.unversionedId}`;
-  const MDXComponent = props.content;
   return (
     <DocProvider content={props.content}>
       <HtmlClassNameProvider className={docHtmlClassName}>
@@ -19,7 +18,6 @@ export default function DocItem(props: Props): JSX.Element {
           <RuntimeArticleContent
             sourcePath={props.content.metadata.source}
             fallbackTitle={props.content.metadata.title}
-            fallback={<MDXComponent />}
             showTitle
           />
         </DocItemLayout>

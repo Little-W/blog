@@ -6,7 +6,7 @@ import {
   readContent,
   writeContent,
 } from '../lib/content-store.mjs';
-import {seedContentFromRepository} from './console.mjs';
+import {syncMusicDatasetFromRepository} from './console.mjs';
 
 const DATASET_CACHE_TTL_MS = 5 * 60 * 1000;
 const BLOB_CACHE_TTL_MS = 60 * 1000;
@@ -80,11 +80,20 @@ async function loadDataset(request, name) {
   // Blob 是运行时数据源；仅本地离线开发会从静态种子回退。
   let stored = await readContent(datasetKey(name)).catch(() => null);
   if (typeof stored !== 'string' && (process.env.NETLIFY === 'true' || process.env.CONTEXT === 'production')) {
-    await seedContentFromRepository().catch(() => {});
-    stored = await readContent(datasetKey(name)).catch(() => null);
+    stored = await syncMusicDatasetFromRepository(name);
+    if (typeof stored !== 'string') stored = await readContent(datasetKey(name)).catch(() => null);
   }
   if (typeof stored === 'string') {
-    const records = parseJsonl(stored);
+    let records;
+    try {
+      records = parseJsonl(stored);
+    } catch (error) {
+      if (process.env.NETLIFY !== 'true' && process.env.CONTEXT !== 'production') throw error;
+      const repositoryCopy = await syncMusicDatasetFromRepository(name);
+      if (typeof repositoryCopy !== 'string' || repositoryCopy === stored) throw error;
+      stored = repositoryCopy;
+      records = parseJsonl(stored);
+    }
     datasetCache.set(name, {records, revision, expiresAt: Date.now() + BLOB_CACHE_TTL_MS});
     return records;
   }

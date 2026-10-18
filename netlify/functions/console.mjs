@@ -6,6 +6,7 @@ import {
 } from 'node:crypto';
 
 import {
+  ARTICLE_INDEX_KEY,
   ARTICLE_PREFIX,
   ASSET_PREFIX,
   MUSIC_PREFIX,
@@ -13,6 +14,7 @@ import {
   contentBackend,
   contentMetadata,
   deleteContent,
+  listContent,
   readContent,
   writeContent,
 } from '../lib/content-store.mjs';
@@ -37,6 +39,7 @@ const OAUTH_COOKIE = 'blog_admin_oauth';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const OAUTH_TTL_MS = 10 * 60 * 1000;
 const REPOSITORY_SNAPSHOT_TTL_MS = 15 * 1000;
+const REPOSITORY_SYNC_KEY = 'system/repository-sync.json';
 const MAX_REQUEST_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 3 * 1024 * 1024;
 const MAX_DATA_BYTES = 4 * 1024 * 1024;
@@ -95,6 +98,7 @@ const DATASETS = Object.freeze({
 let repositorySnapshotCache = null;
 let repositorySnapshotExpiresAt = 0;
 let repositorySnapshotPromise = null;
+let repositorySyncPromise = null;
 
 export const config = {
   path: '/api/console/*',
@@ -400,8 +404,17 @@ async function finishLogin(request, url) {
     expiresAt: Date.now() + SESSION_TTL_MS,
   });
   const destination = safeReturnTo(oauthState.returnTo);
+  let syncFailed = false;
+  try {
+    await syncRepositoryContentToBlob({force: true});
+  } catch (error) {
+    syncFailed = true;
+    console.error('[blog-console-sync]', error instanceof Error ? error.message : String(error));
+  }
+  const redirectUrl = new URL(destination, publicOrigin(request));
+  if (syncFailed) redirectUrl.searchParams.set('adminSync', 'failed');
   const sessionCookie = cookie(request, SESSION_COOKIE, encodedSession, Math.floor(SESSION_TTL_MS / 1000));
-  const headers = new Headers(responseHeaders({location: destination}));
+  const headers = new Headers(responseHeaders({location: `${redirectUrl.pathname}${redirectUrl.search}${redirectUrl.hash}`}));
   headers.append('set-cookie', clearOauth);
   headers.append('set-cookie', sessionCookie);
   return new Response(null, {status: 302, headers});
@@ -453,6 +466,21 @@ async function readBlob(snapshot, path) {
     bytes: new Uint8Array(Buffer.from(String(blob.content).replace(/\s/g, ''), 'base64')),
     blobSha: entry.sha,
   };
+}
+
+async function mapConcurrent(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({length: Math.min(concurrency, items.length)}, async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function parseJsonl(text, fallbackHeader) {
@@ -605,6 +633,33 @@ async function canonicalRepositorySnapshot() {
   return null;
 }
 
+export async function syncMusicDatasetFromRepository(name) {
+  const dataset = DATASETS[name];
+  if (!dataset) return null;
+  const snapshot = await canonicalRepositorySnapshot();
+  if (!snapshot) return null;
+  const key = datasetBlobKey(dataset);
+  let content = null;
+  try {
+    content = (await readBlob(snapshot, dataset.path)).content;
+  } catch (error) {
+    if (error?.status !== 404 && error?.code !== 'FILE_NOT_FOUND') throw error;
+  }
+  const stored = await readContent(key).catch(() => null);
+  if (content === null) {
+    if (stored !== null) {
+      await deleteContent(key);
+      await bumpMusicRevision();
+    }
+    return null;
+  }
+  if (stored !== content) {
+    await writeContent(key, content);
+    await bumpMusicRevision();
+  }
+  return content;
+}
+
 async function readDatasetText(dataset) {
   const snapshot = await canonicalRepositorySnapshot();
   if (snapshot) {
@@ -691,6 +746,106 @@ export async function seedContentFromRepository() {
     seedPromise = null;
   });
   return seedPromise;
+}
+
+export async function syncRepositoryContentToBlob({force = false} = {}) {
+  if (repositorySyncPromise) return repositorySyncPromise;
+  repositorySyncPromise = (async () => {
+    let snapshot = await repoSnapshot({fresh: true});
+    const previousSync = await readContent(REPOSITORY_SYNC_KEY, {type: 'json'}).catch(() => null);
+    if (!force && previousSync?.headSha === snapshot.headSha) {
+      return {skipped: true, headSha: snapshot.headSha};
+    }
+
+    const articlePaths = snapshot.entries
+      .filter((entry) => entry.type === 'blob' && allowedContentPath(entry.path))
+      .map((entry) => entry.path);
+    const titleUpdates = (await mapConcurrent(articlePaths, 6, async (path) => {
+      const file = await readBlob(snapshot, path);
+      const content = ensureTitleFrontMatter(file.content, path);
+      return content === file.content ? null : {path, content};
+    })).filter(Boolean);
+
+    let titleCommit = null;
+    if (titleUpdates.length) {
+      titleCommit = await commitFiles({
+        files: titleUpdates,
+        baseHeadSha: snapshot.headSha,
+        message: `内容：为 ${titleUpdates.length} 篇文章补充 title 元数据`,
+      });
+      snapshot = await repoSnapshot({fresh: true});
+    }
+
+    const currentArticlePaths = snapshot.entries
+      .filter((entry) => entry.type === 'blob' && allowedContentPath(entry.path))
+      .map((entry) => entry.path);
+    const datasetEntries = Object.values(DATASETS);
+    const [summaries, datasets] = await Promise.all([
+      mapConcurrent(currentArticlePaths, 6, async (path) => {
+        const file = await readBlob(snapshot, path);
+        const key = articleKey(path);
+        const [stored, metadata] = await Promise.all([
+          readContent(key).catch(() => null),
+          contentMetadata(key).catch(() => null),
+        ]);
+        const updatedAt = stored === file.content
+          ? metadata?.metadata?.updatedAt || null
+          : new Date().toISOString();
+        if (stored !== file.content || metadata?.metadata?.repositoryBlobSha !== file.blobSha) {
+          await writeContent(key, file.content, {
+            metadata: {updatedAt: updatedAt || new Date().toISOString(), repositoryBlobSha: file.blobSha},
+          });
+        }
+        return articleSummary(path, file.content, updatedAt);
+      }),
+      mapConcurrent(datasetEntries, 4, async (dataset) => {
+        try {
+          return {dataset, content: (await readBlob(snapshot, dataset.path)).content};
+        } catch (error) {
+          if (error?.status === 404 || error?.code === 'FILE_NOT_FOUND') return {dataset, content: null};
+          throw error;
+        }
+      }),
+    ]);
+
+    const repositoryArticlePaths = new Set(currentArticlePaths);
+    for (const key of await listContent(ARTICLE_PREFIX)) {
+      if (!key.startsWith(ARTICLE_PREFIX) || key === ARTICLE_INDEX_KEY) continue;
+      const path = key.slice(ARTICLE_PREFIX.length);
+      if (allowedContentPath(path) && !repositoryArticlePaths.has(path)) await deleteContent(key);
+    }
+    await writeArticleIndex(sortArticles(summaries));
+
+    let musicChanged = false;
+    for (const {dataset, content} of datasets) {
+      const key = datasetBlobKey(dataset);
+      const stored = await readContent(key).catch(() => null);
+      if (content === null) {
+        if (stored !== null) {
+          await deleteContent(key);
+          musicChanged = true;
+        }
+      } else if (stored !== content) {
+        await writeContent(key, content);
+        musicChanged = true;
+      }
+    }
+    if (musicChanged) await bumpMusicRevision();
+
+    const result = {
+      skipped: false,
+      headSha: snapshot.headSha,
+      articleCount: currentArticlePaths.length,
+      datasetCount: datasets.filter(({content}) => content !== null).length,
+      titlesAdded: titleUpdates.length,
+      titleCommit,
+    };
+    await writeContent(REPOSITORY_SYNC_KEY, JSON.stringify({...result, syncedAt: new Date().toISOString()}));
+    return result;
+  })().finally(() => {
+    repositorySyncPromise = null;
+  });
+  return repositorySyncPromise;
 }
 
 export async function ensureAssetFromRepository(path) {
@@ -1471,10 +1626,19 @@ export default async (request) => {
     if (url.pathname === '/api/console/callback' && request.method === 'GET') return await finishLogin(request, url);
     if (url.pathname === '/api/console/auth' && request.method === 'GET') {
       const session = await sessionFromRequest(request, true);
+      let repositorySync = null;
+      if (session && session.userId !== 0) {
+        try {
+          repositorySync = await syncRepositoryContentToBlob();
+        } catch (error) {
+          repositorySync = {failed: true};
+          console.error('[blog-console-sync]', error instanceof Error ? error.message : String(error));
+        }
+      }
       return json({
         success: true,
         data: session
-          ? {authenticated: true, user: {login: session.login, avatarUrl: session.avatarUrl}, repository: session.repository}
+          ? {authenticated: true, user: {login: session.login, avatarUrl: session.avatarUrl}, repository: session.repository, ...(repositorySync ? {repositorySync} : {})}
           : {authenticated: false},
       });
     }

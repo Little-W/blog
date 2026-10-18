@@ -1,4 +1,4 @@
-import React, {createContext, type ReactNode, useEffect, useMemo, useState} from 'react';
+import React, {createContext, useEffect, useMemo, useState} from 'react';
 import MarkdownPreview, {getFrontMatterValue, splitFrontMatter} from '@site/src/components/admin/MarkdownPreview';
 
 import styles from './RuntimeArticleContent.module.css';
@@ -12,7 +12,6 @@ type ArticlePayload = {
 type Props = {
   sourcePath: string;
   fallbackTitle: string;
-  fallback: ReactNode;
   showTitle?: boolean;
   onTitleChange?: (title: string) => void;
 };
@@ -29,7 +28,7 @@ function titleHeading(source: string, title: string): string {
   return `# ${title}\n\n${source}`;
 }
 
-export default function RuntimeArticleContent({sourcePath, fallbackTitle, fallback, showTitle = false, onTitleChange}: Props) {
+export default function RuntimeArticleContent({sourcePath, fallbackTitle, showTitle = false, onTitleChange}: Props) {
   const [content, setContent] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -82,7 +81,12 @@ export default function RuntimeArticleContent({sourcePath, fallbackTitle, fallba
   if (missing) {
     return <div className={styles.articleMissing}>这篇文章已从内容库中删除或暂不可用。</div>;
   }
-  if (content === null || loadFailed) return <>{fallback}</>;
+  if (loadFailed) {
+    return <div className={styles.articleMissing} role="alert">文章内容暂时无法读取，请稍后刷新重试。</div>;
+  }
+  if (content === null) {
+    return <div className={styles.articleLoading} role="status" aria-label="正在加载文章内容" />;
+  }
 
   const body = showTitle ? titleHeading(frontMatter.body, title) : frontMatter.body;
   const markdownClass = showTitle

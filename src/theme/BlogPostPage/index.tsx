@@ -1,4 +1,4 @@
-import React, {type ReactNode, useEffect, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import clsx from 'clsx';
 import {HtmlClassNameProvider, ThemeClassNames} from '@docusaurus/theme-common';
 import {BlogPostProvider, useBlogPost} from '@docusaurus/theme-common/internal';
@@ -16,10 +16,8 @@ import RuntimeArticleContent, {RuntimeArticleTitleContext} from '@site/src/compo
 
 function BlogPostPageContent({
   sidebar,
-  children,
 }: {
   sidebar: BlogSidebar;
-  children: ReactNode;
 }): JSX.Element {
   const {metadata, toc} = useBlogPost();
   const [runtimeTitle, setRuntimeTitle] = useState(metadata.title);
@@ -48,7 +46,6 @@ function BlogPostPageContent({
           <RuntimeArticleContent
             sourcePath={metadata.source}
             fallbackTitle={metadata.title}
-            fallback={children}
             onTitleChange={setRuntimeTitle}
           />
         </BlogPostItem>
@@ -64,7 +61,6 @@ function BlogPostPageContent({
 }
 
 export default function BlogPostPage(props: Props): JSX.Element {
-  const BlogPostContent = props.content;
   return (
     <BlogPostProvider content={props.content} isBlogPostPage>
       <HtmlClassNameProvider
@@ -73,9 +69,7 @@ export default function BlogPostPage(props: Props): JSX.Element {
           ThemeClassNames.page.blogPostPage,
         )}>
         <BlogPostPageMetadata />
-        <BlogPostPageContent sidebar={props.sidebar}>
-          <BlogPostContent />
-        </BlogPostPageContent>
+        <BlogPostPageContent sidebar={props.sidebar} />
       </HtmlClassNameProvider>
     </BlogPostProvider>
   );

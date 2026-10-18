@@ -6,6 +6,10 @@
   margin-bottom: var(--ifm-heading-margin-bottom, 1rem);
 }
 
+.articleLoading {
+  min-height: 12rem;
+}
+
 .articleMissing {
   margin: 2rem 0;
   padding: 1.25rem 1.5rem;

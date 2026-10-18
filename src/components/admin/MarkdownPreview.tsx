@@ -1,4 +1,5 @@
 import React, {useMemo} from 'react';
+import Link from '@docusaurus/Link';
 import CodeBlock from '@theme/CodeBlock';
 import Heading from '@theme/Heading';
 import MDXUl from '@theme/MDXComponents/Ul';
@@ -10,8 +11,10 @@ import toHast from 'mdast-util-to-hast';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
-import {highlightToHtml, languageFromClassName} from './codeHighlight';
+import {highlightToHtml, languageFromClassName, registerCodeLanguages} from './codeHighlight';
 import styles from '@site/src/pages/admin/styles.module.css';
+
+registerCodeLanguages();
 
 type HastNode = {
   type: string;
@@ -288,6 +291,11 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
         props.target = '_blank';
         props.rel = 'noreferrer';
       }
+      if (/^\/(?:docs|blog)\//i.test(href)) {
+        const linkProps = {...props, to: href};
+        delete linkProps.href;
+        return React.createElement(Link, linkProps, children);
+      }
     }
   }
   if (tag === 'img' && properties.src) {
@@ -337,10 +345,38 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
 }
 
 function splitTableRow(line: string): string[] {
-  let value = line.trim();
-  if (value.startsWith('|')) value = value.slice(1);
-  if (value.endsWith('|')) value = value.slice(0, -1);
-  return value.split('|').map((cell) => cell.trim());
+  const value = line.trim();
+  const cells: string[] = [];
+  let cell = '';
+  let codeTicks = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '\\' && index + 1 < value.length) {
+      cell += char + value[index + 1];
+      index += 1;
+      continue;
+    }
+    if (char === '`') {
+      let end = index + 1;
+      while (value[end] === '`') end += 1;
+      const ticks = end - index;
+      if (!codeTicks) codeTicks = ticks;
+      else if (ticks === codeTicks) codeTicks = 0;
+      cell += value.slice(index, end);
+      index = end - 1;
+      continue;
+    }
+    if (char === '|' && !codeTicks) {
+      cells.push(cell.trim());
+      cell = '';
+      continue;
+    }
+    cell += char;
+  }
+  cells.push(cell.trim());
+  if (value.startsWith('|')) cells.shift();
+  if (value.endsWith('|') && !value.endsWith('\\|')) cells.pop();
+  return cells;
 }
 
 type Segment =
@@ -352,6 +388,8 @@ function parseSegments(source: string): Segment[] {
   const segments: Segment[] = [];
   let buffer: string[] = [];
   let bufferStart = 0;
+  let fenceChar = '';
+  let fenceLength = 0;
   const flush = () => {
     if (buffer.length) {
       segments.push({type: 'markdown', text: buffer.join('\n'), start: bufferStart});
@@ -361,19 +399,41 @@ function parseSegments(source: string): Segment[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const next = lines[index + 1];
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceChar) {
+      if (!buffer.length) bufferStart = index;
+      buffer.push(line);
+      if (fence && fence[1][0] === fenceChar && fence[1].length >= fenceLength) {
+        fenceChar = '';
+        fenceLength = 0;
+      }
+      continue;
+    }
+    if (fence) {
+      if (!buffer.length) bufferStart = index;
+      buffer.push(line);
+      fenceChar = fence[1][0];
+      fenceLength = fence[1].length;
+      continue;
+    }
     if (
+      !/^(?: {4,}|\t)/.test(line) &&
       line.includes('|') &&
       next !== undefined &&
       next.includes('|') &&
-      splitTableRow(next).every((cell) => TABLE_DELIMITER.test(cell)) &&
-      splitTableRow(next).length > 0
+      !/^(?: {4,}|\t)/.test(next) &&
+      splitTableRow(line).length > 0 &&
+      splitTableRow(line).length === splitTableRow(next).length &&
+      splitTableRow(next).every((cell) => TABLE_DELIMITER.test(cell))
     ) {
       flush();
       const header = splitTableRow(line);
       const rows: string[][] = [];
       let cursor = index + 2;
-      while (cursor < lines.length && lines[cursor].includes('|') && lines[cursor].trim() !== '') {
-        rows.push(splitTableRow(lines[cursor]));
+      while (cursor < lines.length && lines[cursor].includes('|') && lines[cursor].trim() !== '' && !/^(?: {4,}|\t)/.test(lines[cursor])) {
+        const row = splitTableRow(lines[cursor]);
+        if (row.length !== header.length) break;
+        rows.push(row);
         cursor += 1;
       }
       segments.push({type: 'table', header, rows, start: index});
