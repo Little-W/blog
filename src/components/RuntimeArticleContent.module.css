@@ -2,6 +2,10 @@
   min-width: 0;
 }
 
+.runtimeArticle:global(.theme-doc-markdown) > h1:first-child {
+  margin-bottom: var(--ifm-heading-margin-bottom, 1rem);
+}
+
 .articleMissing {
   margin: 2rem 0;
   padding: 1.25rem 1.5rem;

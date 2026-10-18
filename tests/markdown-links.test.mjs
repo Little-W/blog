@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {fixMarkdownLinks} from '../netlify/lib/markdown-links.mjs';
+import {fixMarkdownLinks, normalizeLatexDelimiters} from '../netlify/lib/markdown-links.mjs';
 
 test('rewrites relative Markdown links to extensionless Docusaurus routes', () => {
   const source = [
@@ -39,6 +39,33 @@ test('repairs reference-style and HTML links without touching non-Markdown asset
       '[guide]: /docs/notes/section/guide "Guide"',
       '<a href="/docs/notes/next">next</a>',
       '[pdf](./spec.pdf)',
+    ].join('\n'),
+  );
+});
+
+test('normalizes LaTeX delimiters for static rendering while preserving code spans and fences', () => {
+  const source = [
+    String.raw`inline \(x^2 + y^2\)`,
+    String.raw`\[`,
+    String.raw`\frac{a}{b} = c`,
+    String.raw`\]`,
+    'code: `\\(keep\\)`',
+    '```tex',
+    String.raw`\[keep\]`,
+    '```',
+  ].join('\n');
+
+  assert.equal(
+    normalizeLatexDelimiters(source),
+    [
+      String.raw`inline $x^2 + y^2$`,
+      '$$',
+      String.raw`\frac{a}{b} = c`,
+      '$$',
+      'code: `\\(keep\\)`',
+      '```tex',
+      String.raw`\[keep\]`,
+      '```',
     ].join('\n'),
   );
 });

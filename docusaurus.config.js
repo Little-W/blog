@@ -1,4 +1,6 @@
 const path = require('path')
+const remarkMath = require('remark-math')
+const rehypeKatex = require('rehype-katex')
 const beian = '<a href="https://icp.gov.moe/?keyword=20223914" target="_blank">萌ICP备20223914号</a>'
 
 
@@ -253,6 +255,8 @@ const config = {
         docs: {
           path: 'docs',
           sidebarPath: 'sidebars.js',
+          remarkPlugins: [remarkMath],
+          rehypePlugins: [rehypeKatex],
         },
         blog: false,
         theme: {

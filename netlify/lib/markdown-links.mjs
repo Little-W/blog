@@ -69,3 +69,50 @@ export function fixMarkdownLinks(source, sourcePath) {
     .replace(/(\bhref\s*=\s*["'])([^"']+)(["'])/gi,
       (_match, prefix, target, suffix) => `${prefix}${replaceLinkTarget(target, sourcePath)}${suffix}`);
 }
+
+function normalizeMathBlock(source) {
+  const codeSpans = [];
+  const protectedSource = source.replace(/(`+)[\s\S]*?\1/g, (code) => {
+    const marker = `\uE000UPLOAD_CODE_${codeSpans.length}\uE001`;
+    codeSpans.push(code);
+    return marker;
+  });
+  return protectedSource
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_match, formula) => `$$\n${formula.trim()}\n$$`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_match, formula) => `$${formula}$`)
+    .replace(/\uE000UPLOAD_CODE_(\d+)\uE001/g, (_match, index) => codeSpans[Number(index)]);
+}
+
+export function normalizeLatexDelimiters(source) {
+  const output = [];
+  let plain = [];
+  let fenceCharacter = '';
+  let fenceLength = 0;
+  const flush = () => {
+    if (plain.length) output.push(normalizeMathBlock(plain.join('\n')));
+    plain = [];
+  };
+
+  for (const line of String(source || '').split('\n')) {
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceCharacter) {
+      output.push(line);
+      if (fence && fence[1][0] === fenceCharacter && fence[1].length >= fenceLength) {
+        fenceCharacter = '';
+        fenceLength = 0;
+      }
+    } else if (fence) {
+      flush();
+      fenceCharacter = fence[1][0];
+      fenceLength = fence[1].length;
+      output.push(line);
+    } else if (/^(?: {4,}|\t)/.test(line)) {
+      flush();
+      output.push(line);
+    } else {
+      plain.push(line);
+    }
+  }
+  flush();
+  return output.join('\n');
+}

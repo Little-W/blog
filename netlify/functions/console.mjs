@@ -28,7 +28,7 @@ import {
   writeArticleIndex,
 } from '../lib/articles.mjs';
 import {readZipEntries} from '../lib/zip.mjs';
-import {fixMarkdownLinks} from '../lib/markdown-links.mjs';
+import {fixMarkdownLinks, normalizeLatexDelimiters} from '../lib/markdown-links.mjs';
 
 const GITHUB_API = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
@@ -978,7 +978,7 @@ async function uploadArticles(request) {
       const path = uploadArticlePath(target, relative);
       if (!path || pending.has(path)) continue;
       const content = ensureTitleFrontMatter(await entry.text(), path);
-      pending.set(path, {path, content: fixMarkdownLinks(content, path)});
+      pending.set(path, {path, content: fixMarkdownLinks(normalizeLatexDelimiters(content), path)});
     } else if (imageType(relative)) {
       const path = uploadAssetPath(target, relative);
       if (!path || pendingAssets.has(path)) continue;
@@ -1002,7 +1002,7 @@ async function uploadArticles(request) {
          const path = uploadArticlePath(target, name);
          if (!path || pending.has(path)) continue;
          const content = ensureTitleFrontMatter(entry.data.toString('utf8'), path);
-         pending.set(path, {path, content: fixMarkdownLinks(content, path)});
+         pending.set(path, {path, content: fixMarkdownLinks(normalizeLatexDelimiters(content), path)});
         } else if (imageType(name)) {
          const path = uploadAssetPath(target, name);
          if (!path || pendingAssets.has(path)) continue;

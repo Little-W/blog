@@ -1,7 +1,14 @@
 import React, {useMemo} from 'react';
+import CodeBlock from '@theme/CodeBlock';
+import Heading from '@theme/Heading';
+import MDXUl from '@theme/MDXComponents/Ul';
+import GithubSlugger from 'github-slugger';
 import unified from 'unified';
 import remarkParse from 'remark-parse';
+import remarkMath from 'remark-math';
 import toHast from 'mdast-util-to-hast';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 import {highlightToHtml, languageFromClassName} from './codeHighlight';
 import styles from '@site/src/pages/admin/styles.module.css';
@@ -15,7 +22,7 @@ type HastNode = {
   position?: {start?: {line?: number}};
 };
 
-type RenderContext = {offset: number; sourcePath?: string};
+type RenderContext = {offset: number; sourcePath?: string; siteStyles?: boolean; slugger?: GithubSlugger};
 
 const ALLOWED_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote',
@@ -165,6 +172,77 @@ function collectText(node: HastNode | undefined): string {
   return (node.children || []).map((child) => collectText(child)).join('');
 }
 
+function normalizeMathBlock(source: string): string {
+  const codeSpans: string[] = [];
+  const protectedSource = source.replace(/(`+)[\s\S]*?\1/g, (code) => {
+    const marker = `\uE000MATH_CODE_${codeSpans.length}\uE001`;
+    codeSpans.push(code);
+    return marker;
+  });
+  return protectedSource
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_match, formula: string) => `$$\n${formula.trim()}\n$$`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_match, formula: string) => `$${formula}$`)
+    .replace(/\uE000MATH_CODE_(\d+)\uE001/g, (_match, index: string) => codeSpans[Number(index)]);
+}
+
+function normalizeMathDelimiters(source: string): string {
+  const output: string[] = [];
+  let plain: string[] = [];
+  let fenceChar = '';
+  let fenceLength = 0;
+  const flush = () => {
+    if (plain.length) output.push(normalizeMathBlock(plain.join('\n')));
+    plain = [];
+  };
+
+  for (const line of String(source || '').split('\n')) {
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceChar) {
+      output.push(line);
+      if (fence && fence[1][0] === fenceChar && fence[1].length >= fenceLength) {
+        fenceChar = '';
+        fenceLength = 0;
+      }
+      continue;
+    }
+    if (fence) {
+      flush();
+      fenceChar = fence[1][0];
+      fenceLength = fence[1].length;
+      output.push(line);
+      continue;
+    }
+    if (/^(?: {4,}|\t)/.test(line)) {
+      flush();
+      output.push(line);
+      continue;
+    }
+    plain.push(line);
+  }
+  flush();
+  return output.join('\n');
+}
+
+function toHastWithMath(source: string): HastNode {
+  const tree = unified().use(remarkParse).use(remarkMath).parse(normalizeMathDelimiters(source));
+  return toHast(tree, {
+    handlers: {
+      math: (_h: unknown, node: {value?: string}) => ({
+        type: 'element',
+        tagName: 'div',
+        properties: {'data-latex': node.value || ''},
+        children: [],
+      }),
+      inlineMath: (_h: unknown, node: {value?: string}) => ({
+        type: 'element',
+        tagName: 'span',
+        properties: {'data-latex': node.value || ''},
+        children: [],
+      }),
+    },
+  }) as HastNode;
+}
+
 function renderNode(node: HastNode, key: React.Key, context: RenderContext): React.ReactNode {
   if (node.type === 'text') return renderText(node.value || '', key);
   if (node.type === 'raw') return node.value || null;
@@ -174,11 +252,25 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
   }
   if (node.type !== 'element' || !node.tagName) return null;
   const tag = node.tagName;
+  const properties = node.properties || {};
+  const latex = properties['data-latex'];
+  if (typeof latex === 'string') {
+    const displayMode = tag === 'div';
+    const html = katex.renderToString(latex, {
+      displayMode,
+      throwOnError: false,
+      strict: 'ignore',
+    });
+    return React.createElement(displayMode ? 'div' : 'span', {
+      key,
+      className: displayMode ? 'math math-display' : 'math math-inline',
+      dangerouslySetInnerHTML: {__html: html},
+    });
+  }
   const children = node.children?.map((child, index) => renderNode(child, index, context));
   if (!ALLOWED_TAGS.has(tag)) {
     return <React.Fragment key={key}>{children}</React.Fragment>;
   }
-  const properties = node.properties || {};
   const props: Record<string, unknown> = {key};
   const startLine = node.position?.start?.line;
   if (typeof startLine === 'number' && LINE_TAGS.has(tag)) props['data-line'] = context.offset + startLine;
@@ -213,12 +305,33 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
   if (tag === 'pre') {
     const codeNode = node.children?.find((child) => child.tagName === 'code');
     const language = languageFromClassName(codeNode?.properties?.className);
+    if (context.siteStyles) {
+      const codeClassName = codeNode?.properties?.className;
+      const codeClass = Array.isArray(codeClassName) ? codeClassName.join(' ') : String(codeClassName || '');
+      const codeProperties = codeNode?.properties || {};
+      return React.createElement(CodeBlock, {
+        className: codeClass || undefined,
+        language: language || undefined,
+        metastring: typeof codeProperties.metastring === 'string' ? codeProperties.metastring : undefined,
+        title: typeof codeProperties.title === 'string' ? codeProperties.title : undefined,
+      }, collectText(codeNode || node));
+    }
     const codeProps: Record<string, unknown> = {
       key: 'code',
       dangerouslySetInnerHTML: {__html: highlightToHtml(collectText(codeNode || node), language)},
     };
     if (language) codeProps.className = `language-${language}`;
     return React.createElement('pre', props, React.createElement('code', codeProps));
+  }
+  if (context.siteStyles && /^h[2-6]$/.test(tag)) {
+    const id = String(properties.id || context.slugger?.slug(collectText(node).trim()) || '');
+    return React.createElement(Heading as React.ComponentType<any>, {...props, as: tag, id}, children);
+  }
+  if (context.siteStyles && tag === 'h1') {
+    return React.createElement(Heading as React.ComponentType<any>, {...props, as: tag, id: undefined}, children);
+  }
+  if (context.siteStyles && tag === 'ul') {
+    return React.createElement(MDXUl as React.ComponentType<any>, props, children);
   }
   return React.createElement(tag, props, VOID_TAGS.has(tag) ? null : children);
 }
@@ -274,43 +387,43 @@ function parseSegments(source: string): Segment[] {
   return segments;
 }
 
-function renderInline(text: string, line: number, sourcePath?: string): React.ReactNode {
+function renderInline(text: string, line: number, context: RenderContext): React.ReactNode {
   if (!text.trim()) return null;
-  const tree = unified().use(remarkParse).parse(text) as HastNode;
-  const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index, {offset: Math.max(0, line - 1), sourcePath}));
+  const hast = toHastWithMath(text);
+  return hast.children?.map((child, index) => renderNode(child, index, {...context, offset: Math.max(0, line - 1)}));
 }
 
-function renderMarkdown(text: string, offset: number, sourcePath?: string): React.ReactNode {
-  const tree = unified().use(remarkParse).parse(text) as HastNode;
-  const hast = toHast(tree) as HastNode;
-  return hast.children?.map((child, index) => renderNode(child, index, {offset, sourcePath}));
+function renderMarkdown(text: string, offset: number, context: RenderContext): React.ReactNode {
+  const hast = toHastWithMath(text);
+  return hast.children?.map((child, index) => renderNode(child, index, {...context, offset}));
 }
 
 export function MarkdownPreview({source, className, lineOffset = 0, sourcePath, siteStyles = false}: {source: string; className?: string; lineOffset?: number; sourcePath?: string; siteStyles?: boolean}) {
   const segments = useMemo(() => parseSegments(source), [source]);
+  const slugger = siteStyles ? new GithubSlugger() : undefined;
+  const context: RenderContext = {offset: 0, sourcePath, siteStyles, slugger};
   return (
     <div className={`${siteStyles ? 'markdown' : styles.markdownPreview}${className ? ` ${className}` : ''}`}>
       {segments.map((segment, index) => {
         if (segment.type === 'table') {
           const tableLine = lineOffset + segment.start + 1;
           return (
-            <table key={index} className={styles.previewTable} data-line={tableLine}>
+            <table key={index} className={siteStyles ? undefined : styles.previewTable} data-line={tableLine}>
               <thead>
-                <tr data-line={tableLine}>{segment.header.map((cell, cellIndex) => <th key={cellIndex} data-line={tableLine}>{renderInline(cell, tableLine, sourcePath)}</th>)}</tr>
+                <tr data-line={tableLine}>{segment.header.map((cell, cellIndex) => <th key={cellIndex} data-line={tableLine}>{renderInline(cell, tableLine, context)}</th>)}</tr>
               </thead>
               <tbody>
                 {segment.rows.map((row, rowIndex) => {
                   const rowLine = tableLine + rowIndex + 1;
                   return (
-                    <tr key={rowIndex} data-line={rowLine}>{row.map((cell, cellIndex) => <td key={cellIndex} data-line={rowLine}>{renderInline(cell, rowLine, sourcePath)}</td>)}</tr>
+                    <tr key={rowIndex} data-line={rowLine}>{row.map((cell, cellIndex) => <td key={cellIndex} data-line={rowLine}>{renderInline(cell, rowLine, context)}</td>)}</tr>
                   );
                 })}
               </tbody>
             </table>
           );
         }
-        return <React.Fragment key={index}>{renderMarkdown(segment.text, lineOffset + segment.start, sourcePath)}</React.Fragment>;
+        return <React.Fragment key={index}>{renderMarkdown(segment.text, lineOffset + segment.start, context)}</React.Fragment>;
       })}
     </div>
   );

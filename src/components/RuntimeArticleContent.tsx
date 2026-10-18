@@ -85,5 +85,8 @@ export default function RuntimeArticleContent({sourcePath, fallbackTitle, fallba
   if (content === null || loadFailed) return <>{fallback}</>;
 
   const body = showTitle ? titleHeading(frontMatter.body, title) : frontMatter.body;
-  return <MarkdownPreview source={body} className={styles.runtimeArticle} sourcePath={normalizedPath} siteStyles />;
+  const markdownClass = showTitle
+    ? `${styles.runtimeArticle} theme-doc-markdown`
+    : styles.runtimeArticle;
+  return <MarkdownPreview source={body} className={markdownClass} sourcePath={normalizedPath} siteStyles />;
 }
