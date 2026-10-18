@@ -96,6 +96,63 @@ function imageExtension(url: string): string {
   return extension ? `.${extension.toLowerCase().replace('jpeg', 'jpg')}` : '.jpg';
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+function isRetryableRequestError(error: unknown): boolean {
+  if (isAbortError(error)) return false;
+  const status = Number((error as {status?: number} | null)?.status);
+  const message = error instanceof Error ? error.message : '';
+  if (status === 401 || status === 403 || status === 404) return false;
+  if (status === 429 || (status >= 500 && status < 600)) {
+    return !(status === 503 && message.includes('未配置 PIXIV_REFRESH_TOKEN'));
+  }
+  return !Number.isFinite(status) && error instanceof TypeError;
+}
+
+function waitForRetry(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('请求已取消。', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('请求已取消。', 'AbortError'));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delay);
+    signal.addEventListener('abort', onAbort, {once: true});
+  });
+}
+
+async function fetchPixivPayload(url: string, init: RequestInit) {
+  const signal = init.signal as AbortSignal;
+  const retryDelays = [500, 1200, 2500];
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
+    let payload: {success?: boolean; message?: string; data?: unknown};
+    try {
+      response = await fetch(url, init);
+      payload = await response.json().catch(() => ({}));
+    } catch (error) {
+      if (!isRetryableRequestError(error) || attempt >= retryDelays.length) throw error;
+      await waitForRetry(retryDelays[attempt], signal);
+      continue;
+    }
+    if (response.ok && payload.success) return payload;
+    const error = Object.assign(
+      new Error(payload.message || `图集列表加载失败（${response.status}）`),
+      {status: response.status},
+    );
+    if (!isRetryableRequestError(error) || attempt >= retryDelays.length) throw error;
+    await waitForRetry(retryDelays[attempt], signal);
+  }
+}
+
 export default function PixivRanking() {
   const {authenticated: adminAuthenticated, loading: adminSessionLoading} = useAdminSession();
   const [mode, setMode] = useState('day');
@@ -157,15 +214,11 @@ export default function PixivRanking() {
       const pageUrl = isPersonalized
         ? `${LIST_API_URL}?type=${encodeURIComponent(targetMode)}${typeof pageParam === 'string' && pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ''}`
         : `${API_URL}?mode=${encodeURIComponent(targetMode)}&offset=${typeof pageParam === 'number' ? pageParam : 0}`;
-      const response = await fetch(pageUrl, {
+      const payload = await fetchPixivPayload(pageUrl, {
         signal: controller.signal,
         cache: noCache ? 'no-store' : 'default',
         headers: noCache ? {'cache-control': 'no-cache'} : {},
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.message || `榜单加载失败（${response.status}）`);
-      }
       const responsePage = payload.data as PixivRankingData;
       const rankBase = typeof pageParam === 'number' ? pageParam : 0;
       const pageData = {
@@ -181,7 +234,7 @@ export default function PixivRanking() {
         return {...pageData, illusts: [...current.illusts, ...pageData.illusts.filter((item) => !seen.has(item.id))]};
       });
     } catch (caught) {
-      if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      if (isAbortError(caught)) return;
       setError(caught instanceof Error ? caught.message : '榜单加载失败。');
       if (!append) {
         setData(emptyRanking);
@@ -329,7 +382,7 @@ export default function PixivRanking() {
           }
         })();
       } catch (caught) {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+      if (isAbortError(caught)) return;
         setDetailError(caught instanceof Error ? caught.message : '作品详情加载失败。');
         setRelatedLoading(false);
       } finally {
@@ -603,7 +656,12 @@ export default function PixivRanking() {
     <Layout title="P站美图榜" description="Pixiv 插画榜单">
       <PageMetadata title="P站美图榜" description="Pixiv 插画榜单" />
       <div className={styles.page}>
-        <header className={styles.hero} style={banner && bannerLoaded ? {backgroundImage: `url("${imageUrlOnMirror(banner, mirror)}")`} : undefined}>
+        <header
+          className={styles.hero}
+          style={banner && bannerLoaded
+            ? {'--hero-image': `url("${imageUrlOnMirror(banner, mirror)}")`} as React.CSSProperties
+            : undefined}
+        >
           <button className={styles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
             {refreshing ? '刷新中…' : '刷新'}
           </button>

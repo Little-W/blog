@@ -116,6 +116,15 @@ var MUSIC_CONTEXT_RECENT_LIMIT = 30;
 var music_context_active_player = null;
 var music_context_last_record = {key: '', at: 0};
 var music_context_recent = load_music_context_recent();
+var music_player_page_mode = false;
+var MUSIC_MINI_COLLAPSE_STORAGE_KEY = 'yusen-music-mini-player-collapsed-v2';
+var music_mini_player_collapsed = true;
+try {
+  var savedMiniCollapse = localStorage.getItem(MUSIC_MINI_COLLAPSE_STORAGE_KEY);
+  if (savedMiniCollapse !== null) music_mini_player_collapsed = savedMiniCollapse === 'true';
+} catch (error) {}
+var music_mini_queue_open = false;
+var music_mini_queue_close_timer = 0;
 
 function load_music_context_recent() {
   var stored = [];
@@ -201,9 +210,7 @@ function register_music_context_player(player) {
 }
 
 function get_music_context_snapshot() {
-  var candidates = [window.ap0, window.ap1].filter(function(player, index, players) {
-    return player && player.list && players.indexOf(player) === index;
-  });
+  var candidates = [window.ap0].filter(function(player) { return player && player.list; });
   var player = candidates.find(function(candidate) { return candidate.audio && !candidate.audio.paused; }) ||
     (candidates.indexOf(music_context_active_player) !== -1 ? music_context_active_player : candidates[0]);
   var track = music_context_track(player);
@@ -222,13 +229,323 @@ function get_music_context_snapshot() {
   };
 }
 
+function ensure_persistent_music_player() {
+  var host = window.__yusenMusicPlayerHost || document.getElementById('music-player-persistent');
+  if (host) return host;
+  host = document.createElement('div');
+  host.id = 'music-player-persistent';
+  host.className = 'music-player-shell';
+  host.innerHTML = '<div class="music-player-shell__glow" aria-hidden="true"></div>' +
+    '<div id="aplayer0"><div id="aplayer0-button"><button id="ap_load" class="sytle-ap-button">正在准备播放器</button></div></div>' +
+    '<div id="aplayer_ctr" aria-label="播放控制"></div>';
+  host.setAttribute('data-page-mounted', 'false');
+  document.body.appendChild(host);
+  window.__yusenMusicPlayerHost = host;
+  return host;
+}
+
+function set_music_player_page_mode(active) {
+  music_player_page_mode = Boolean(active);
+  var host = ensure_persistent_music_player();
+  var pageMount = document.getElementById('music-player-page-mount');
+  var mountInPage = music_player_page_mode && Boolean(pageMount);
+  var target = mountInPage ? pageMount : document.body;
+  if (host.parentNode !== target) target.appendChild(host);
+  host.setAttribute('data-page-mounted', mountInPage ? 'true' : 'false');
+  var home = document.getElementById('music-player-home');
+  if (home) home.setAttribute('data-page-active', mountInPage ? 'true' : 'false');
+  sync_music_mini_player();
+  if (mountInPage && window.ap0) window.setTimeout(function() {
+    if (typeof window.ap0.__yusenCenterLyrics === 'function') window.ap0.__yusenCenterLyrics(true);
+  }, 0);
+}
+
+function handle_music_page_mode(active) {
+  set_music_player_page_mode(active);
+  if (active) {
+    window.setTimeout(function() {
+      if (window.location.pathname.replace(/\/$/, '') === '/music') init_page();
+    }, 0);
+  } else {
+    page_loaded = false;
+    if (mv_player) {
+      mv_player.dispose();
+      mv_player = null;
+    }
+  }
+}
+
+window.YusenMusicPlayer = {setPageMode: handle_music_page_mode};
+window.addEventListener('yusen:music-page-mode', function(event) {
+  handle_music_page_mode(Boolean(event && event.detail && event.detail.active));
+});
+
+function sync_music_mini_player() {
+  var mini = document.getElementById('music-mini-player');
+  if (!mini) return;
+  set_music_mini_player_collapsed(music_mini_player_collapsed, false);
+  var player = window.ap0;
+  var track = music_context_track(player);
+  var hasQueue = Boolean(player && player.list && Array.isArray(player.list.audios) && player.list.audios.length);
+  mini.hidden = !hasQueue || !track;
+  if (!track) return;
+
+  var title = document.getElementById('music-mini-title');
+  var artist = document.getElementById('music-mini-artist');
+  var cover = document.getElementById('music-mini-cover');
+  var time = document.getElementById('music-mini-time');
+  var progress = document.getElementById('music-mini-progress');
+  var volume = document.getElementById('music-mini-volume');
+  var playButton = document.getElementById('music-mini-toggle');
+  var playIcon = document.getElementById('music-mini-play-icon');
+  if (title) {
+    title.textContent = track.title || '未命名曲目';
+    title.setAttribute('title', track.title || '未命名曲目');
+  }
+  if (artist) artist.textContent = track.artist || '未知艺术家';
+  if (cover && player && player.template && player.template.pic) {
+    cover.style.backgroundImage = player.template.pic.style.backgroundImage || '';
+    cover.classList.toggle('has-cover', Boolean(player.template.pic.style.backgroundImage));
+  }
+  var currentTime = player && player.audio ? Number(player.audio.currentTime) || 0 : 0;
+  var duration = player && player.audio ? Number(player.audio.duration) || 0 : 0;
+  if (time) time.textContent = format_music_position(currentTime) + ' / ' + format_music_position(duration);
+  if (progress && document.activeElement !== progress) {
+    var progressRatio = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
+    progress.value = String(Math.round(progressRatio * 1000));
+    progress.style.setProperty('--mini-progress', Math.round(progressRatio * 100) + '%');
+    progress.setAttribute('aria-valuetext', format_music_position(currentTime) + ' / ' + format_music_position(duration));
+  }
+  if (volume && document.activeElement !== volume && player && typeof player.volume === 'function') {
+    var volumeRatio = Math.max(0, Math.min(1, player.volume()));
+    volume.value = String(Math.round(volumeRatio * 100));
+    volume.style.setProperty('--mini-progress', Math.round(volumeRatio * 100) + '%');
+  }
+  var playing = Boolean(player && player.audio && !player.audio.paused);
+  if (playIcon) playIcon.setAttribute('d', playing ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M8 5v14l11-7z');
+  if (playButton) {
+    playButton.setAttribute('aria-label', playing ? '暂停' : '播放');
+    playButton.setAttribute('title', playing ? '暂停' : '播放');
+  }
+  sync_music_mini_modes(player);
+}
+
+function set_music_mini_player_collapsed(collapsed, persist) {
+  music_mini_player_collapsed = Boolean(collapsed);
+  if (music_mini_player_collapsed) set_music_mini_queue_open(false);
+  var mini = document.getElementById('music-mini-player');
+  var button = document.getElementById('music-mini-collapse');
+  var icon = document.getElementById('music-mini-collapse-icon');
+  if (mini) mini.classList.toggle('isCollapsed', music_mini_player_collapsed);
+  if (button) {
+    var label = music_mini_player_collapsed ? '展开侧边栏播放器' : '收缩到侧边栏';
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+    button.setAttribute('aria-expanded', music_mini_player_collapsed ? 'false' : 'true');
+  }
+  if (icon) icon.setAttribute('d', music_mini_player_collapsed ? 'm10 6 6 6-6 6' : 'm14 6-6 6 6 6');
+  if (persist) {
+    try { localStorage.setItem(MUSIC_MINI_COLLAPSE_STORAGE_KEY, music_mini_player_collapsed ? 'true' : 'false'); } catch (error) {}
+  }
+}
+
+function sync_music_mini_modes(player) {
+  if (!player) return;
+  var floatingLyrics = window.__musicFloatingLyric;
+  var lyricsVisible = Boolean(floatingLyrics && floatingLyrics.root && !floatingLyrics.root.hidden);
+  var lyricsButton = document.getElementById('music-mini-lyric');
+  var lyricsLabel = document.getElementById('music-mini-lyric-label');
+  if (lyricsButton) {
+    lyricsButton.setAttribute('aria-pressed', lyricsVisible ? 'true' : 'false');
+    lyricsButton.setAttribute('aria-label', lyricsVisible ? '隐藏浮动歌词' : '显示浮动歌词');
+    lyricsButton.setAttribute('title', lyricsVisible ? '隐藏浮动歌词' : '显示浮动歌词');
+  }
+  if (lyricsLabel) lyricsLabel.textContent = lyricsVisible ? '歌词开' : '歌词';
+
+  var randomOrder = player.options && player.options.order === 'random';
+  var orderButton = document.getElementById('music-mini-order');
+  var orderLabel = document.getElementById('music-mini-order-label');
+  if (orderButton) {
+    orderButton.setAttribute('aria-pressed', randomOrder ? 'true' : 'false');
+    orderButton.setAttribute('aria-label', randomOrder ? '当前随机播放，切换顺序播放' : '当前顺序播放，切换随机播放');
+    orderButton.setAttribute('title', randomOrder ? '切换顺序播放' : '切换随机播放');
+  }
+  if (orderLabel) orderLabel.textContent = randomOrder ? '随机' : '顺序';
+
+  var loopMode = player.options && player.options.loop || 'all';
+  var loopButton = document.getElementById('music-mini-loop');
+  var loopLabel = document.getElementById('music-mini-loop-label');
+  var loopText = loopMode === 'one' ? '单曲' : loopMode === 'none' ? '循环关' : '循环';
+  if (loopButton) {
+    loopButton.setAttribute('aria-pressed', loopMode !== 'none' ? 'true' : 'false');
+    loopButton.setAttribute('aria-label', `当前${loopText}循环，切换循环模式`);
+    loopButton.setAttribute('title', `切换循环模式（当前：${loopText}）`);
+  }
+  if (loopLabel) loopLabel.textContent = loopText;
+
+  var queueButton = document.getElementById('music-mini-queue-toggle');
+  if (queueButton) {
+    queueButton.setAttribute('aria-expanded', music_mini_queue_open ? 'true' : 'false');
+    queueButton.setAttribute('aria-pressed', music_mini_queue_open ? 'true' : 'false');
+    queueButton.setAttribute('aria-label', music_mini_queue_open ? '收起队列' : '展开队列');
+    queueButton.setAttribute('title', music_mini_queue_open ? '收起队列' : '展开队列');
+  }
+}
+
+function render_music_mini_queue() {
+  var queue = document.getElementById('music-mini-queue-list');
+  var count = document.getElementById('music-mini-queue-count');
+  var player = window.ap0;
+  var audios = player && player.list && Array.isArray(player.list.audios) ? player.list.audios : [];
+  if (!queue) return;
+  queue.textContent = '';
+  if (count) count.textContent = `${audios.length} 首`;
+  audios.slice(0, 500).forEach(function(audio, index) {
+    var item = document.createElement('li');
+    var button = document.createElement('button');
+    var number = document.createElement('span');
+    var name = document.createElement('span');
+    var artist = document.createElement('span');
+    var title = String(audio && (audio.name || audio.title) || '未命名曲目');
+    var author = String(audio && (audio.artist || audio.author) || '');
+    button.type = 'button';
+    button.className = 'music-mini-queue__item' + (index === player.list.index ? ' is-current' : '');
+    button.setAttribute('aria-current', index === player.list.index ? 'true' : 'false');
+    button.title = author ? `${title} — ${author}` : title;
+    number.className = 'music-mini-queue__index';
+    number.textContent = String(index + 1).padStart(2, '0');
+    name.className = 'music-mini-queue__name';
+    name.textContent = title;
+    artist.className = 'music-mini-queue__artist';
+    artist.textContent = author;
+    button.appendChild(number);
+    button.appendChild(name);
+    if (author) button.appendChild(artist);
+    button.addEventListener('click', function() {
+      if (!window.ap0 || !window.ap0.list) return;
+      window.ap0.list.switch(index);
+      music_context_active_player = window.ap0;
+      window.ap0.play();
+      save_music_playlist_state(window.ap0);
+      sync_music_mini_player();
+      render_music_mini_queue();
+    });
+    item.appendChild(button);
+    queue.appendChild(item);
+  });
+}
+
+function set_music_mini_queue_open(open) {
+  music_mini_queue_open = Boolean(open) && !music_mini_player_collapsed;
+  var mini = document.getElementById('music-mini-player');
+  var queue = document.getElementById('music-mini-queue');
+  if (mini) mini.classList.toggle('hasQueueOpen', music_mini_queue_open);
+  if (queue) {
+    if (music_mini_queue_close_timer) window.clearTimeout(music_mini_queue_close_timer);
+    if (music_mini_queue_open) {
+      queue.hidden = false;
+      window.requestAnimationFrame(function() { if (music_mini_queue_open) queue.classList.add('isOpen'); });
+    } else {
+      queue.classList.remove('isOpen');
+      if (!queue.hidden) {
+        music_mini_queue_close_timer = window.setTimeout(function() {
+          if (!music_mini_queue_open) queue.hidden = true;
+          music_mini_queue_close_timer = 0;
+        }, 240);
+      } else queue.hidden = true;
+    }
+  }
+  var toggle = document.getElementById('music-mini-queue-toggle');
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', music_mini_queue_open ? 'true' : 'false');
+    toggle.setAttribute('aria-pressed', music_mini_queue_open ? 'true' : 'false');
+    toggle.setAttribute('aria-label', music_mini_queue_open ? '收起队列' : '展开队列');
+    toggle.setAttribute('title', music_mini_queue_open ? '收起队列' : '展开队列');
+  }
+  if (music_mini_queue_open) render_music_mini_queue();
+}
+
+function init_music_mini_player(player) {
+  if (!player || !document.getElementById('music-mini-player') || player.__yusenMiniPlayerRegistered) return;
+  player.__yusenMiniPlayerRegistered = true;
+  var previous = document.getElementById('music-mini-previous');
+  var toggle = document.getElementById('music-mini-toggle');
+  var next = document.getElementById('music-mini-next');
+  var progress = document.getElementById('music-mini-progress');
+  var volume = document.getElementById('music-mini-volume');
+  var collapse = document.getElementById('music-mini-collapse');
+  var lyricButton = document.getElementById('music-mini-lyric');
+  var orderButton = document.getElementById('music-mini-order');
+  var loopButton = document.getElementById('music-mini-loop');
+  var queueButton = document.getElementById('music-mini-queue-toggle');
+  var queueClose = document.getElementById('music-mini-queue-close');
+  function nativeModeButton(test) {
+    var controlRoot = document.getElementById('ctr_panel_div') || player.container;
+    return controlRoot && [...controlRoot.querySelectorAll('.aplayer-icon')].find(function(button) {
+      var label = `${button.getAttribute('aria-label') || ''} ${button.title || ''}`;
+      return test.test(label);
+    });
+  }
+  if (previous) previous.addEventListener('click', function() { player.skipBack(); });
+  if (toggle) toggle.addEventListener('click', function() { player.toggle(); });
+  if (next) next.addEventListener('click', function() { player.skipForward(); });
+  if (lyricButton) lyricButton.addEventListener('click', function() {
+    var button = nativeModeButton(/浮动歌词/);
+    if (button) button.click();
+    window.setTimeout(sync_music_mini_player, 0);
+  });
+  if (orderButton) orderButton.addEventListener('click', function() {
+    var button = nativeModeButton(/顺序播放|随机播放/);
+    if (button) button.click();
+    window.setTimeout(sync_music_mini_player, 0);
+  });
+  if (loopButton) loopButton.addEventListener('click', function() {
+    var button = nativeModeButton(/列表循环|单曲循环|循环关闭/);
+    if (button) button.click();
+    window.setTimeout(sync_music_mini_player, 0);
+  });
+  if (queueButton) queueButton.addEventListener('click', function() {
+    set_music_mini_queue_open(!music_mini_queue_open);
+  });
+  if (queueClose) queueClose.addEventListener('click', function() { set_music_mini_queue_open(false); });
+  if (progress) progress.addEventListener('input', function() {
+    var duration = Number(player.audio && player.audio.duration) || 0;
+    if (duration > 0) player.audio.currentTime = duration * Math.max(0, Math.min(1000, Number(progress.value))) / 1000;
+    sync_music_mini_player();
+  });
+  if (volume) volume.addEventListener('input', function() {
+    var volumeRatio = Math.max(0, Math.min(100, Number(volume.value))) / 100;
+    volume.style.setProperty('--mini-progress', Math.round(volumeRatio * 100) + '%');
+    player.volume(volumeRatio);
+  });
+  if (collapse) collapse.addEventListener('click', function() {
+    set_music_mini_player_collapsed(!music_mini_player_collapsed, true);
+  });
+  set_music_mini_player_collapsed(music_mini_player_collapsed, false);
+  ['play', 'pause', 'listswitch', 'timeupdate', 'loadedmetadata', 'volumechange', 'listadd', 'listremove', 'listclear'].forEach(function(eventName) {
+    player.on(eventName, sync_music_mini_player);
+  });
+  ['listswitch', 'listadd', 'listremove', 'listclear'].forEach(function(eventName) {
+    player.on(eventName, render_music_mini_queue);
+  });
+  var controlRoot = document.getElementById('ctr_panel_div') || player.container;
+  if (controlRoot) {
+    controlRoot.addEventListener('click', function(event) {
+      if (event.target && event.target.closest('.aplayer-icon')) {
+        window.setTimeout(sync_music_mini_player, 0);
+      }
+    });
+  }
+  if (player.template && player.template.pic && window.MutationObserver) {
+    var observer = new MutationObserver(sync_music_mini_player);
+    observer.observe(player.template.pic, {attributes: true, attributeFilter: ['style']});
+  }
+  sync_music_mini_player();
+}
+
 function music_agent_player() {
-  var candidates = [];
-  if (window.location.pathname.replace(/\/$/, '') === '/music' && window.ap0) candidates.push(window.ap0);
-  if (window.ap1) candidates.push(window.ap1);
-  if (window.ap0 && candidates.indexOf(window.ap0) === -1) candidates.push(window.ap0);
-  return candidates.find(function(player) { return player && player.audio && !player.audio.paused; }) ||
-    candidates.find(function(player) { return player && player.list && Array.isArray(player.list.audios); }) || null;
+  var player = window.ap0;
+  return player && player.list && Array.isArray(player.list.audios) ? player : null;
 }
 
 function wait_for_music_agent_player(timeoutMs) {
@@ -2283,9 +2600,7 @@ function clone_music_record(song) {
 }
 
 function get_playlist_players() {
-  return [window.ap1, window.ap0].filter(function(player, index, players) {
-    return player && player.list && players.indexOf(player) === index;
-  });
+  return window.ap0 && window.ap0.list ? [window.ap0] : [];
 }
 
 function read_saved_music_playlist() {
@@ -2334,7 +2649,7 @@ function render_music_position(player, currentTime, duration) {
 }
 
 function save_music_playlist_state(player) {
-  var activePlayer = player && player.list ? player : (window.ap0 && window.ap0.list ? window.ap0 : window.ap1);
+  var activePlayer = player && player.list ? player : window.ap0;
   var currentAudio = activePlayer && activePlayer.list && activePlayer.list.audios[activePlayer.list.index];
   var currentId = normalize_music_id(currentAudio && currentAudio.mid);
   if (currentId === null && music_playlist_restore_state) currentId = music_playlist_restore_state.currentId;
@@ -2447,7 +2762,7 @@ function install_music_playlist_state_persistence(player) {
   player.__yusenPlaylistPersistence = true;
   if (!window.__yusenMusicPlaylistUnloadBound) {
     window.__yusenMusicPlaylistUnloadBound = true;
-    window.addEventListener('pagehide', function() { save_music_playlist_state(window.ap0 || window.ap1); });
+    window.addEventListener('pagehide', function() { save_music_playlist_state(window.ap0); });
   }
   ['listswitch', 'listadd', 'listremove', 'listclear', 'seeked', 'pause'].forEach(function(eventName) {
     player.on(eventName, function() { schedule_music_playlist_state_save(player); });
@@ -2698,7 +3013,7 @@ function queue_music_next(musicId) {
   add_music_to_playlist(musicId, true);
 
   var players = get_playlist_players();
-  var activePlayer = players.find(function(player) { return !player.paused; }) || window.ap0 || window.ap1;
+  var activePlayer = players.find(function(player) { return !player.paused; }) || window.ap0;
   var activeAudio = activePlayer && activePlayer.list && activePlayer.list.audios[activePlayer.list.index];
   var currentId = normalize_music_id(activeAudio && activeAudio.mid);
   if (currentId === musicId) {
@@ -2716,7 +3031,7 @@ function queue_music_next(musicId) {
   players.forEach(function(player) { reorder_player_queue(player, orderedMusicIds, musicId); });
   sync_playlist_selection_ui();
   save_music_playlist_state(activePlayer);
-  var noticePlayer = activePlayer || window.ap0 || window.ap1;
+  var noticePlayer = activePlayer || window.ap0;
   if (noticePlayer && noticePlayer.notice) noticePlayer.notice('下一首播放：' + String(song.title || song.name || '歌曲'), 1800);
   return true;
 }
@@ -2774,20 +3089,14 @@ function init_aplayer() {
   link.setAttribute("rel", "stylesheet");
   link.setAttribute("type", "text/css");
   link.setAttribute("href", "/custom/css/aplayer.css");
-  document.body.appendChild(link);
-
-  var new_div = document.createElement("div");
-  new_div.setAttribute("id", "aplayer");
-  document.body.appendChild(new_div);
-
-  var new_div = document.createElement("script");
-  new_div.setAttribute("id", "aplayer");
-  document.body.appendChild(new_div);
+  if (!document.querySelector('link[href="/custom/css/aplayer.css"]')) document.head.appendChild(link);
+  ensure_persistent_music_player();
   try {
-    aplayer1();
-    if (window.ap1 && window.ap1.lrc) window.ap1.lrc.hide();
+    aplayer0();
+    init_music_mini_player(window.ap0);
+    set_music_player_page_mode(window.location.pathname.replace(/\/$/, '') === '/music');
   } catch (err) {
-    console.error('Unable to initialize the fixed APlayer instance', err);
+    console.error('Unable to initialize the persistent APlayer instance', err);
   }
   music_list_all[0] = ap_list_ptr[1];
 
@@ -2853,13 +3162,14 @@ function init_aplayer() {
 }
 
 function init_page() {
-  if (window.location.pathname.replace(/\/$/, '') === '/music') {
+  var isMusicPage = window.location.pathname.replace(/\/$/, '') === '/music';
+  set_music_player_page_mode(isMusicPage);
+  if (isMusicPage) {
     if (!page_loaded) {
-      if (!music_database_ready) return;
+      if (!music_database_ready || !window.ap0) return;
       console.log("load page");
       //document.getElementById("ap_list2").className += " --activated";
       page_loaded = true;
-      aplayer0();
       load_music_lists();
       SQ_button = document.getElementById("ap_qua1");
       HQ_button = document.getElementById("ap_qua2");
@@ -4737,10 +5047,6 @@ function set_quality() {
     var nextTrack = get_music_record(ap_list_ptr[1][i]);
     if (!nextTrack) continue;
     ap_list_ptr[0][i] = nextTrack;
-    if(typeof window.ap1 == 'object')
-    {
-      updatePlayerTrack(window.ap1, i, nextTrack);
-    }
     if(typeof window.ap0 == 'object')
     {
       updatePlayerTrack(window.ap0, i, nextTrack);
@@ -5809,6 +6115,7 @@ function install_stable_queue_switch(player) {
 }
 
 function aplayer0() {
+  if (window.ap0 && window.ap0.list && window.ap0.container) return window.ap0;
   try {
     window.ap0.destroy();
   } catch {}
@@ -6156,35 +6463,6 @@ function aplayer0() {
   window.setTimeout(schedule_lyric_center, 320);
 }
 
-
-function aplayer1() {
-
-  var ap1_list = prepare_music_lyrics_for_aplayer(JSON.parse(JSON.stringify(ap_list_ptr[0])));
-  window.ap1 = new APlayer({
-    element: document.getElementById("aplayer"),
-    showlrc: false,
-    fixed: true,
-    autoplay: false,
-    theme: "var(--ifm-color-primary)",
-    loop: read_player_settings().music.loop,
-    order: read_player_settings().music.order,
-    preload: "none",
-    volume: read_player_settings().music.volume,
-    listFolded: true,
-    listMaxHeight: "200px",
-    lrcType: 3,
-    audio: ap1_list,
-  });
-  install_bilingual_lyrics(window.ap1);
-  install_player_queue_remove_controls(window.ap1);
-  bind_music_player_settings(window.ap1);
-  install_music_playlist_state_persistence(window.ap1);
-  install_music_source_fallback(window.ap1);
-  set_player_cover(window.ap1, window.ap1.list && window.ap1.list.audios[window.ap1.list.index]);
-  restore_music_player_state(window.ap1);
-  register_music_context_player(window.ap1);
-  register_music_floating_lyric_player(window.ap1, window.ap1.container.querySelector('.aplayer-icon-lrc'));
-}
 
 function search_music(text) {
   var reg_child = new RegExp(text, "i");

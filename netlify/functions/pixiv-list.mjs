@@ -105,16 +105,30 @@ function encodeBookmarkCursor(publicNextUrl, privateNextUrl, userId) {
 }
 
 function toItem(illust, type) {
-  return publicImageUrls({
+  const originalImage = illust.meta_single_page?.original_image_url
+    || illust.meta_pages?.[0]?.image_urls?.original
+    || illust.image_urls?.original
+    || illust.meta_pages?.[0]?.image_urls?.large
+    || illust.image_urls?.large
+    || '';
+  const thumb = illust.image_urls?.medium || illust.image_urls?.small || '';
+  const item = publicImageUrls({
     rank: 0,
     id: illust.id,
     title: illust.title || '无题',
+    description: illust.caption || '',
     author: illust.user?.name || '未知',
     authorId: String(illust.user?.id || ''),
-    thumb: illust.image_urls?.medium || illust.image_urls?.small || '',
+    thumb,
+    originalImage,
     tags: (illust.tags || []).map((tag) => tag.name),
     isBookmarked: type === 'bookmarks' || Boolean(illust.is_bookmarked),
   });
+  // Pixiv occasionally returns stale bookmark records whose artwork has been
+  // deleted or whose image URL points at Pixiv's s.pximg.net placeholder.
+  // Normalize first, then omit entries with no renderable image to avoid empty cards.
+  if (!item.thumb && !item.originalImage) return null;
+  return item;
 }
 
 export default async (request) => {
@@ -155,7 +169,7 @@ export default async (request) => {
       data: {
         date: '',
         mode: type,
-        illusts: illusts.map((illust) => toItem(illust, type)),
+        illusts: illusts.map((illust) => toItem(illust, type)).filter(Boolean),
         nextOffset: null,
         nextCursor,
       },

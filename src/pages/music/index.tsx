@@ -1,7 +1,13 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import {PageMetadata} from '@docusaurus/theme-common';
 import Layout from '@theme/Layout';
 import './music.css';
+
+declare global {
+  interface Window {
+    YusenMusicPlayer?: {setPageMode: (active: boolean) => void};
+  }
+}
 
 const MusicIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h6V3h-8Z"/></svg>;
 const SearchIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="m21 21-4.35-4.35M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>;
@@ -9,6 +15,20 @@ const GridIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="c
 const ListIcon = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5h2v2H4V5Zm4 0h12v2H8V5ZM4 11h2v2H4v-2Zm4 0h12v2H8v-2ZM4 17h2v2H4v-2Zm4 0h12v2H8v-2Z"/></svg>;
 
 function Page(): JSX.Element {
+  useEffect(() => {
+    window.YusenMusicPlayer?.setPageMode(true);
+    window.dispatchEvent(new CustomEvent('yusen:music-page-mode', {detail: {active: true}}));
+    if (window.location.hash === '#music-player-page-mount') {
+      window.setTimeout(() => {
+        document.getElementById('music-player-page-mount')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      }, 120);
+    }
+    return () => {
+      window.YusenMusicPlayer?.setPageMode(false);
+      window.dispatchEvent(new CustomEvent('yusen:music-page-mode', {detail: {active: false}}));
+    };
+  }, []);
+
   return <div className="music-page">
     <header className="music-hero">
       <div className="music-hero__art"><MusicIcon /><span className="music-hero__pulse" /></div>
@@ -89,11 +109,7 @@ function Page(): JSX.Element {
         </div>
       </div>
       <div className="music-player-note"><MusicIcon /><p>默认使用 HQ 以获得更流畅的体验。切换至 SQ / Hi-Res 后，播放和拖动进度可能更依赖网络状况。</p></div>
-      <div className="music-player-shell">
-        <div className="music-player-shell__glow" aria-hidden="true" />
-        <div id="aplayer0"><div id="aplayer0-button"><button id="ap_load" className="sytle-ap-button">正在准备播放器</button></div></div>
-        <div id="aplayer_ctr" aria-label="播放控制" />
-      </div>
+      <div id="music-player-page-mount" className="music-player-page-mount" />
     </section>
 
     <section className="music-section music-mv-section">

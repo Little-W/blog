@@ -450,7 +450,10 @@ function parseSegments(source: string): Segment[] {
 function renderInline(text: string, line: number, context: RenderContext): React.ReactNode {
   if (!text.trim()) return null;
   const hast = toHastWithMath(text);
-  return hast.children?.map((child, index) => renderNode(child, index, {...context, offset: Math.max(0, line - 1)}));
+  const inlineNodes = (hast.children || []).flatMap((child) => (
+    child.tagName === 'p' ? child.children || [] : [child]
+  ));
+  return inlineNodes.map((child, index) => renderNode(child, index, {...context, offset: Math.max(0, line - 1)}));
 }
 
 function renderMarkdown(text: string, offset: number, context: RenderContext): React.ReactNode {

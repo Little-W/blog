@@ -31,6 +31,7 @@ import {
 } from '../lib/articles.mjs';
 import {readZipEntries} from '../lib/zip.mjs';
 import {fixMarkdownLinks, normalizeLatexDelimiters} from '../lib/markdown-links.mjs';
+import {handleGalleryConsole} from '../lib/gallery-console.mjs';
 
 const GITHUB_API = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
@@ -1654,6 +1655,7 @@ export default async (request) => {
     await requireSession(request, request.method !== 'GET');
     if (!sameOrigin(request)) return fail('请求来源无效。', 'INVALID_ORIGIN', 403);
 
+    if (url.pathname === '/api/console/gallery') return await handleGalleryConsole(request);
     if (url.pathname === '/api/console/datasets' && request.method === 'GET') {
       return json({success: true, data: {datasets: datasetList()}});
     }

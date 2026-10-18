@@ -108,14 +108,25 @@ function ensureLanguages() {
       Prism.languages[alias] = Prism.languages[target];
     }
   }
-  if (Prism.languages.tcl && !Prism.languages.tcl['vcformal-command']) {
-    Prism.languages.insertBefore('tcl', 'keyword', {
-      'vcformal-command': {
+  if (Prism.languages.tcl) {
+    const vcFormalTokens: Record<string, unknown> = {};
+    if (!Prism.languages.tcl['vcformal-command']) {
+      vcFormalTokens['vcformal-command'] = {
         pattern: /(^[\t ]*)(?:analyze|check_fv|compute_formal_core|compute_proof_assist|compute_reduced_constraints|elaborate|report_formal_core|report_fv|report_proof_assist|report_reduced_constraints|run_fv|view_trace)\b/m,
         lookbehind: true,
         alias: 'function',
-      },
-    });
+      };
+    }
+    if (!Prism.languages.tcl['vcformal-option']) {
+      vcFormalTokens['vcformal-option'] = {
+        pattern: /(^|[\s\[{])-[a-z][\w-]*\b/i,
+        lookbehind: true,
+        alias: 'property',
+      };
+    }
+    if (Object.keys(vcFormalTokens).length) {
+      Prism.languages.insertBefore('tcl', 'keyword', vcFormalTokens);
+    }
   }
 }
 

@@ -38,6 +38,7 @@
     "@emotion/styled": "^11.8.1",
     "@filmgardi/videojs-quality-selector": "^1.1.3",
     "@giscus/react": "^2.2.4",
+    "@huggingface/hub": "^2.17.8",
     "@iconify/react": "^4.0.1",
     "@mdx-js/react": "^1.6.22",
     "@netlify/blobs": "^10.7.9",

@@ -8,6 +8,7 @@ import {useAdminSession} from '@site/src/components/AdminSession';
 import styles from './styles.module.css';
 import {consoleApi, describeGitSync, type GitSyncResult} from '@site/src/components/admin/consoleApi';
 import ArticleConsole from '@site/src/components/admin/ArticleConsole';
+import GalleryConsole from '@site/src/components/admin/GalleryConsole';
 
 type DatasetInfo = {name: string; label: string; path: string};
 type JsonRecord = Record<string, unknown>;
@@ -1151,7 +1152,7 @@ export default function AdminPage() {
   const {authenticated, loading, user, repository} = useAdminSession();
   const location = useLocation();
   const initialPath = new URLSearchParams(location.search).get('file')?.replace(/^@site\//, '') || '';
-  const [tab, setTab] = useState<'data' | 'articles'>(initialPath ? 'articles' : 'data');
+  const [tab, setTab] = useState<'data' | 'articles' | 'gallery'>(initialPath ? 'articles' : 'data');
 
   if (loading) {
     return (
@@ -1181,7 +1182,7 @@ export default function AdminPage() {
   }
 
   return (
-    <Layout title="管理控制台" description="管理音乐、MV 数据和博客文章">
+    <Layout title="管理控制台" description="管理音乐、MV 数据、博客文章和图集">
       <main className={styles.adminPage}>
         <header className={styles.pageHeader}>
           <div>
@@ -1203,10 +1204,16 @@ export default function AdminPage() {
             <Icon icon="lucide:files" />
             文章编辑
           </button>
+          <button type="button" className={tab === 'gallery' ? styles.tabActive : styles.tab} onClick={() => setTab('gallery')}>
+            <Icon icon="lucide:images" />
+            图集编辑
+          </button>
         </nav>
         {tab === 'data'
           ? <DataConsole repository={repository} />
-          : <ArticleConsole initialPath={initialPath} repository={repository} />}
+          : tab === 'articles'
+            ? <ArticleConsole initialPath={initialPath} repository={repository} />
+            : <GalleryConsole />}
       </main>
     </Layout>
   );

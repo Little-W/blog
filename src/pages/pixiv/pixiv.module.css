@@ -7,22 +7,36 @@
 
 .hero {
   position: relative;
+  isolation: isolate;
   margin-bottom: 1.5rem;
   padding: 2.75rem 1.25rem 1.75rem;
   border-radius: 16px;
   overflow: hidden;
   text-align: center;
-  background-size: cover;
-  background-position: center 22%;
   background-color: var(--ifm-color-emphasis-100);
 }
 
 .hero::before {
   content: '';
   position: absolute;
+  inset: -32px;
+  z-index: 0;
+  background-color: var(--ifm-color-emphasis-100);
+  background-image: var(--hero-image, none);
+  background-position: center 22%;
+  background-size: cover;
+  filter: blur(24px) saturate(0.88);
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
   inset: 0;
-  background: rgba(255, 255, 255, 0.87);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.86);
+  pointer-events: none;
 }
 
 .hero > * {
@@ -43,6 +57,18 @@
   color: #334e68;
   font-size: 0.95rem;
   font-weight: 600;
+}
+
+:global(html[data-theme='dark']) .hero::after {
+  background: rgba(8, 15, 26, 0.78);
+}
+
+:global(html[data-theme='dark']) .heroTitle {
+  color: #eff6ff;
+}
+
+:global(html[data-theme='dark']) .heroSub {
+  color: #d5e2f0;
 }
 
 .refreshBtn {

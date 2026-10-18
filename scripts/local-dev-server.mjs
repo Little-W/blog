@@ -23,17 +23,19 @@ if (PROXY_ENV && process.env.NODE_USE_ENV_PROXY !== '1') {
 }
 
 function loadEnvFile() {
-  const file = path.join(ROOT, '.env');
-  if (!existsSync(file)) return;
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-    if (/^\s*(#|$)/.test(line)) continue;
-    const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-    if (!match) continue;
-    let value = match[2].trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+  for (const filename of ['.env.local', '.env']) {
+    const file = path.join(ROOT, filename);
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      if (/^\s*(#|$)/.test(line)) continue;
+      const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+      if (!match) continue;
+      let value = match[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[match[1]] === undefined) process.env[match[1]] = value;
     }
-    if (process.env[match[1]] === undefined) process.env[match[1]] = value;
   }
 }
 

@@ -752,6 +752,113 @@ code {
   color: var(--ifm-code-color);
 }
 
+.theme-doc-markdown code:not(pre code) {
+  color: #174a7e !important;
+  background: rgb(23 74 126 / 8%);
+}
+
+html[data-theme='dark'] .theme-doc-markdown code:not(pre code) {
+  color: #c3d8ef !important;
+  background: rgb(168 197 231 / 14%);
+}
+
+.theme-doc-markdown .theme-code-block pre code,
+.theme-doc-markdown .theme-code-block .token.plain {
+  color: #172b42 !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.comment {
+  color: #64748b !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.keyword {
+  color: #7c3aed !important;
+  font-weight: 650;
+}
+
+.theme-doc-markdown .theme-code-block .token.function,
+.theme-doc-markdown .theme-code-block .token.vcformal-command {
+  color: #1459a3 !important;
+  font-weight: 700;
+}
+
+.theme-doc-markdown .theme-code-block .token.property,
+.theme-doc-markdown .theme-code-block .token.vcformal-option {
+  color: #92400e !important;
+  font-weight: 650;
+}
+
+.theme-doc-markdown .theme-code-block .token.string,
+.theme-doc-markdown .theme-code-block .token.char {
+  color: #166534 !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.variable {
+  color: #9a3412 !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.number,
+.theme-doc-markdown .theme-code-block .token.constant {
+  color: #8a5a00 !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.builtin,
+.theme-doc-markdown .theme-code-block .token.class-name {
+  color: #0f766e !important;
+}
+
+.theme-doc-markdown .theme-code-block .token.operator,
+.theme-doc-markdown .theme-code-block .token.punctuation {
+  color: #475569 !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block pre code,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.plain {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.comment {
+  color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.keyword {
+  color: #c4b5fd !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.function,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.vcformal-command {
+  color: #93c5fd !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.property,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.vcformal-option {
+  color: #fdba74 !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.string,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.char {
+  color: #86efac !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.variable {
+  color: #fda4af !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.number,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.constant {
+  color: #fcd34d !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.builtin,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.class-name {
+  color: #67e8f9 !important;
+}
+
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.operator,
+html[data-theme='dark'] .theme-doc-markdown .theme-code-block .token.punctuation {
+  color: #cbd5e1 !important;
+}
+
 .bloginfo__content {
   position: sticky;
   top: calc(var(--ifm-navbar-height) + 1rem);
