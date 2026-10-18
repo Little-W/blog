@@ -68,20 +68,85 @@ function safeUrl(raw: string): string | null {
   return value;
 }
 
-function articleImageUrl(raw: string, sourcePath?: string): string | null {
-  const safe = safeUrl(raw);
-  if (!safe || !sourcePath || /^(?:https?:|data:|blob:|\/|#)/i.test(safe)) return safe;
-  const parts = [...sourcePath.split('/').slice(0, -1)];
-  for (const part of safe.replace(/\\/g, '/').split('/')) {
-    if (!part || part === '.') continue;
-    if (part === '..') {
-      if (parts.length <= 1) return null;
-      parts.pop();
-    } else parts.push(part);
+function splitPathAndSuffix(value: string): {path: string; suffix: string} {
+  const match = /^([^?#]*)([?#][\s\S]*)?$/.exec(value);
+  return {path: match?.[1] || value, suffix: match?.[2] || ''};
+}
+
+function resolveSourcePath(sourcePath: string | undefined, rawPath: string): string | null {
+  if (!sourcePath) return null;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath).replace(/\\/g, '/');
+  } catch {
+    return null;
+  }
+  let parts: string[];
+  if (/^\/?(?:docs|blog)\//i.test(decoded)) {
+    parts = decoded.replace(/^\//, '').split('/');
+  } else if (decoded.startsWith('/')) {
+    return null;
+  } else {
+    parts = sourcePath.replace(/\\/g, '/').split('/').slice(0, -1);
+    for (const part of decoded.split('/')) {
+      if (!part || part === '.') continue;
+      if (part === '..') {
+        if (parts.length <= 1) return null;
+        parts.pop();
+      } else {
+        parts.push(part);
+      }
+    }
   }
   const path = parts.join('/');
-  if (!/^(?:docs|blog)\/.+$/i.test(path)) return null;
+  return /^(?:docs|blog)\/.+$/i.test(path) && !parts.includes('..') ? path : null;
+}
+
+function assetUrl(path: string): string | null {
+  if (!/\.(?:avif|gif|jpe?g|png|svg|webp|bmp)$/i.test(path)) return null;
   return `/api/content/asset?path=${encodeURIComponent(path)}`;
+}
+
+function articleImageUrl(raw: string, sourcePath?: string): string | null {
+  const safe = safeUrl(raw);
+  if (!safe || /^(?:https?:|data:|blob:|\/\/|#)/i.test(safe)) return safe;
+  const {path: rawPath, suffix} = splitPathAndSuffix(safe);
+  const resolved = resolveSourcePath(sourcePath, rawPath);
+  const url = resolved ? assetUrl(resolved) : null;
+  return url ? `${url}${suffix}` : safe;
+}
+
+function articleLinkUrl(raw: string, sourcePath?: string): string | null {
+  const safe = safeUrl(raw);
+  if (!safe) return null;
+  if (/^(?:https?:|mailto:|tel:|\/\/|#)/i.test(safe)) {
+    const absoluteDoc = /^\/docs\/(.+\.mdx?)([?#][\s\S]*)?$/i.exec(safe);
+    if (absoluteDoc) {
+      let path: string;
+      try {
+        path = decodeURIComponent(absoluteDoc[1]);
+      } catch {
+        return safe;
+      }
+      const routeParts = ['docs', ...path.split('/')];
+      routeParts[routeParts.length - 1] = routeParts[routeParts.length - 1].replace(/\.mdx?$/i, '');
+      return `/${routeParts.map(encodeURIComponent).join('/')}${absoluteDoc[2] || ''}`;
+    }
+    return safe;
+  }
+
+  const {path: rawPath, suffix} = splitPathAndSuffix(safe);
+  const resolved = resolveSourcePath(sourcePath, rawPath);
+  if (!resolved) return safe;
+  const linkedAsset = assetUrl(resolved);
+  if (linkedAsset) return `${linkedAsset}${suffix}`;
+  if (!/\.mdx?$/i.test(resolved)) return safe;
+
+  const routeParts = resolved.replace(/\.mdx?$/i, '').split('/');
+  const route = routeParts[0].toLowerCase() === 'docs'
+    ? `/docs/${routeParts.slice(1).map(encodeURIComponent).join('/')}`
+    : `/${routeParts.map(encodeURIComponent).join('/')}`;
+  return `${route}${suffix}`;
 }
 
 function renderText(value: string, key: React.Key): React.ReactNode {
@@ -124,11 +189,13 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
   if (properties.title) props.title = String(properties.title);
   if (properties.alt) props.alt = String(properties.alt);
   if (tag === 'a' && properties.href) {
-    const href = safeUrl(String(properties.href));
+    const href = articleLinkUrl(String(properties.href), context.sourcePath);
     if (href) {
       props.href = href;
-      props.target = '_blank';
-      props.rel = 'noreferrer';
+      if (/^(?:https?:|\/\/)/i.test(href)) {
+        props.target = '_blank';
+        props.rel = 'noreferrer';
+      }
     }
   }
   if (tag === 'img' && properties.src) {
@@ -220,10 +287,10 @@ function renderMarkdown(text: string, offset: number, sourcePath?: string): Reac
   return hast.children?.map((child, index) => renderNode(child, index, {offset, sourcePath}));
 }
 
-export function MarkdownPreview({source, className, lineOffset = 0, sourcePath}: {source: string; className?: string; lineOffset?: number; sourcePath?: string}) {
+export function MarkdownPreview({source, className, lineOffset = 0, sourcePath, siteStyles = false}: {source: string; className?: string; lineOffset?: number; sourcePath?: string; siteStyles?: boolean}) {
   const segments = useMemo(() => parseSegments(source), [source]);
   return (
-    <div className={`${styles.markdownPreview}${className ? ` ${className}` : ''}`}>
+    <div className={`${siteStyles ? 'markdown' : styles.markdownPreview}${className ? ` ${className}` : ''}`}>
       {segments.map((segment, index) => {
         if (segment.type === 'table') {
           const tableLine = lineOffset + segment.start + 1;
