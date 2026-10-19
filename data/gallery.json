@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:07:53.818Z",
+  "updatedAt": "2026-10-19T09:08:55.964Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:07:53.818Z",
+      "updatedAt": "2026-10-19T09:08:55.964Z",
       "items": [
         {
           "id": "150882787",
@@ -1243,22 +1243,26 @@
           "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         },
         {
-          "id": "94763503",
-          "pixivId": "94763503",
-          "title": "ホワイト·クリスマス",
-          "author": "WERI",
-          "description": "",
+          "id": "72878784",
+          "pixivId": "72878784",
+          "title": "秋山澪ちゃん誕生日おめ",
+          "author": "まとけち",
+          "description": "めっちゃ遅くなったけどおめでとう(*´ω｀*)",
           "tags": [
-            "女の子",
-            "少女",
-            "クリスマス",
-            "ベレー帽",
-            "オリジナル50000users入り",
-            "オリジナル"
+            "秋山澪",
+            "平沢唯",
+            "田井中律",
+            "琴吹紬",
+            "中野梓",
+            "秋山澪生誕祭2019",
+            "けいおん!",
+            "放課後ティータイム",
+            "野生の京アニ",
+            "けいおん10000users入り"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/94763503",
-          "image": "albums/pixiv-latest-50/px94763503_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px94763503_p0.jpg"
+          "pixivUrl": "https://www.pixiv.net/artworks/72878784",
+          "image": "albums/pixiv-latest-50/px72878784_p0.png",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px72878784_p0.jpg"
         }
       ]
     }
