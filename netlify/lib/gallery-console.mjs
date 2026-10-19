@@ -1,10 +1,9 @@
+import {getPixivAccessToken, pixivApi} from './pixiv-client.mjs';
+
 const REPOSITORY = 'Yusen/2d_pic';
 const MANIFEST_PATH = 'gallery.json';
-const GITHUB_OWNER = process.env.GITHUB_REPO_OWNER?.trim() || 'Little-W';
-const GITHUB_REPO = process.env.GITHUB_REPO_NAME?.trim() || 'blog';
-const GITHUB_BRANCH = (process.env.GITHUB_REPO_BRANCH?.trim() || 'main').split('/').map(encodeURIComponent).join('/');
+// 图集数据只以 Hugging Face 数据集为唯一数据源，避免与 GitHub 副本互相覆盖。
 const MANIFEST_URLS = [
-  `https://raw.githubusercontent.com/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/${GITHUB_BRANCH}/data/gallery.json`,
   `https://huggingface.co/datasets/${REPOSITORY}/resolve/main/${MANIFEST_PATH}`,
   `https://hf-mirror.com/datasets/${REPOSITORY}/resolve/main/${MANIFEST_PATH}`,
 ];
@@ -28,6 +27,15 @@ function errorResponse(message, status = 400, code = 'INVALID_GALLERY') {
 
 function writeToken() {
   return process.env.HF_PIC_TOKEN?.trim() || '';
+}
+
+// 图集清单是「读取—修改—提交」流程，必须串行提交以避免并发写入互相覆盖。
+let manifestWriteLock = Promise.resolve();
+
+function withManifestLock(task) {
+  const result = manifestWriteLock.then(task, task);
+  manifestWriteLock = result.then(() => {}, () => {});
+  return result;
 }
 
 function imagePath(value) {
@@ -54,8 +62,7 @@ async function readManifest() {
   let lastError;
   for (const url of MANIFEST_URLS) {
     try {
-      const source = url.startsWith('https://raw.githubusercontent.com/') ? `${url}?v=${Date.now()}` : url;
-      const response = await fetch(source, {headers: {accept: 'application/json', 'cache-control': 'no-cache'}, signal: AbortSignal.timeout(12_000)});
+      const response = await fetch(url, {headers: {accept: 'application/json', 'cache-control': 'no-cache'}, signal: AbortSignal.timeout(12_000)});
       if (!response.ok) throw new Error(`图集清单读取失败（${response.status}）。`);
       const value = await response.json();
       if (!value || !Array.isArray(value.albums)) throw new Error('图集清单格式无效。');
@@ -65,6 +72,20 @@ async function readManifest() {
     }
   }
   throw lastError || new Error('图集清单暂时无法读取。');
+}
+
+async function listHfAssetPaths(token) {
+  const {listFiles} = await import('@huggingface/hub');
+  const existing = new Set();
+  for await (const entry of listFiles({
+    repo: {type: 'dataset', name: REPOSITORY},
+    path: 'albums',
+    recursive: true,
+    accessToken: token,
+  })) {
+    if (entry?.type === 'file' && entry.path) existing.add(entry.path);
+  }
+  return existing;
 }
 
 function validateManifest(value) {
@@ -92,8 +113,11 @@ function validateManifest(value) {
       item.tags = Array.isArray(item.tags) ? [...new Set(item.tags.map((tag) => String(tag || '').trim()).filter(Boolean))].slice(0, 40) : [];
       item.pixivId = String(item.pixivId || '').replace(/[^0-9]/g, '').slice(0, 20);
       item.pixivUrl = item.pixivId ? `https://www.pixiv.net/artworks/${item.pixivId}` : '';
-      const blocked = exclusionReason(item);
-      if (blocked) throw new Error(`${item.title}：${blocked}`);
+      item.manual = item.manual === true;
+      if (!item.manual) {
+        const blocked = exclusionReason(item);
+        if (blocked) throw new Error(`${item.title}：${blocked}`);
+      }
       for (const key of ['image', 'thumbnail']) {
         const path = imagePath(item[key]);
         if (!path || !path.startsWith(`albums/${id}/`)) throw new Error(`${item.title} 的图片路径无效。`);
@@ -131,11 +155,13 @@ function parseAssetId(name) {
   return id;
 }
 
-async function saveManifest(request, syncToRepository) {
+function saveManifest(request) {
+  return withManifestLock(() => saveManifestUnlocked(request));
+}
+
+async function saveManifestUnlocked(request) {
   const token = writeToken();
   if (!token) return errorResponse('管理台编辑图集需要配置 Hugging Face 写入密钥 HF_PIC_TOKEN。', 503, 'MISSING_HF_PIC_TOKEN');
-  if (!process.env.GITHUB_REPO_TOKEN?.trim()) return errorResponse('管理台同步 GitHub 仓库需要配置 GITHUB_REPO_TOKEN。', 503, 'MISSING_GITHUB_REPO_TOKEN');
-  if (typeof syncToRepository !== 'function') return errorResponse('GitHub 图集同步服务不可用。', 503, 'GALLERY_REPOSITORY_SYNC_UNAVAILABLE');
   const {commit} = await import('@huggingface/hub');
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_FORM_BYTES) return errorResponse('单次请求不能超过 26 MiB。', 413, 'GALLERY_UPLOAD_TOO_LARGE');
@@ -173,7 +199,7 @@ async function saveManifest(request, syncToRepository) {
       }
       if (totalBytes > MAX_UPLOAD_TOTAL_BYTES) throw new Error('单次图片上传总量不能超过 24 MiB。');
       item.image = `albums/${album.id}/${assetId}_p0.${extension}`;
-      item.thumbnail = `albums/${album.id}/thumbs/${assetId}_p0.webp`;
+      item.thumbnail = `albums/${album.id}/thumbs/${assetId}_p0.${extensionFor(thumbnail)}`;
       assetOperations.push({operation: 'addOrUpdate', path: item.image, content: original});
       assetOperations.push({operation: 'addOrUpdate', path: item.thumbnail, content: thumbnail});
     }
@@ -182,8 +208,17 @@ async function saveManifest(request, syncToRepository) {
 
   const nextManifest = validateManifest(submitted);
   const nextAssets = currentAssets(nextManifest);
+  // 以 HF 数据集的实际文件为唯一依据计算删除，避免已删除的文件再次出现在删除操作里。
+  let existingAssets = null;
+  try {
+    existingAssets = await listHfAssetPaths(token);
+  } catch {
+    existingAssets = null;
+  }
   for (const path of oldAssets) {
-    if (!nextAssets.has(path)) deleteOperations.push({operation: 'delete', path});
+    if (nextAssets.has(path)) continue;
+    if (existingAssets && !existingAssets.has(path)) continue;
+    deleteOperations.push({operation: 'delete', path});
   }
   const manifestText = `${JSON.stringify(nextManifest, null, 2)}\n`;
   const manifestOperation = {
@@ -195,32 +230,167 @@ async function saveManifest(request, syncToRepository) {
   if (assetOperations.length) {
     await commit({repo, accessToken: token, title: 'Gallery: upload image assets', operations: assetOperations});
   }
-  let gitSync;
+  const finalOperations = [...deleteOperations, manifestOperation];
+  let result;
   try {
-    gitSync = await syncToRepository(manifestText);
+    result = await commit({repo, accessToken: token, title: 'Gallery: edit curated illustrations', operations: finalOperations});
   } catch (error) {
-    const details = String(error?.message || '未知错误');
-    return errorResponse(`图片文件已上传到 HF，但 GitHub 配置同步失败：${details}`, 502, 'GALLERY_REPOSITORY_SYNC_FAILED');
+    // 若仍有文件已被删除，忽略失效的删除操作后重试，保证清单能正常更新。
+    if (deleteOperations.length && /does not exist|not\s*found|404/i.test(String(error?.message || ''))) {
+      result = await commit({repo, accessToken: token, title: 'Gallery: edit curated illustrations', operations: [manifestOperation]});
+    } else {
+      throw error;
+    }
   }
-  const result = await commit({
-    repo,
-    accessToken: token,
-    title: 'Gallery: edit curated illustrations',
-    operations: [...deleteOperations, manifestOperation],
-  });
   return json({success: true, data: {
     revision: result?.commit?.oid || '',
-    gitCommitSha: gitSync?.commitSha || '',
     count: nextManifest.albums.reduce((count, album) => count + album.items.length, 0),
   }});
 }
 
-export async function handleGalleryConsole(request, syncToRepository) {
+const PIXIV_IMAGE_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
+  Referer: 'https://www.pixiv.net/',
+  Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+};
+
+function imageExtensionFromType(contentType, url) {
+  const type = String(contentType || '').toLocaleLowerCase();
+  if (type.includes('png')) return 'png';
+  if (type.includes('gif')) return 'gif';
+  if (type.includes('webp')) return 'webp';
+  if (type.includes('avif')) return 'avif';
+  const fromUrl = /\.(jpe?g|png|gif|webp|avif)(?:$|\?)/i.exec(String(url || ''))?.[1]?.toLocaleLowerCase();
+  return fromUrl ? (fromUrl === 'jpeg' ? 'jpg' : fromUrl) : 'jpg';
+}
+
+function imageMirrorCandidates(url) {
+  const candidates = [url];
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'i.pximg.net') {
+      for (const host of ['i.pixiv.re', 'i.pixiv.nl']) {
+        const clone = new URL(url);
+        clone.hostname = host;
+        candidates.push(clone.toString());
+      }
+    }
+  } catch {
+    // Keep the original URL when it cannot be parsed.
+  }
+  return candidates;
+}
+
+async function downloadPixivImage(url) {
+  let lastError;
+  for (const candidate of imageMirrorCandidates(url)) {
+    try {
+      const response = await fetch(candidate, {headers: PIXIV_IMAGE_HEADERS, signal: AbortSignal.timeout(30_000)});
+      if (!response.ok) throw new Error(`图片下载失败（${response.status}）。`);
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength) throw new Error('图片内容为空。');
+      return {bytes, extension: imageExtensionFromType(response.headers.get('content-type'), candidate)};
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('图片下载失败。');
+}
+
+export async function importPixivArtwork(request) {
+  const token = writeToken();
+  if (!token) return errorResponse('导入 Pixiv 作品需要配置 Hugging Face 写入密钥 HF_PIC_TOKEN。', 503, 'MISSING_HF_PIC_TOKEN');
+  if (!process.env.PIXIV_REFRESH_TOKEN) return errorResponse('导入 Pixiv 作品需要配置 PIXIV_REFRESH_TOKEN。', 503, 'MISSING_PIXIV_CREDENTIALS');
+
+  let payload;
+  try {
+    payload = await request.json();
+  } catch {
+    return errorResponse('请求内容无法解析。');
+  }
+  const pixivId = String(payload?.pixivId ?? payload?.id ?? '').replace(/[^0-9]/g, '');
+  if (!/^\d{1,20}$/.test(pixivId)) return errorResponse('作品 ID 无效。');
+  const requestedAlbum = String(payload?.albumId || '').trim();
+
+  const accessToken = await getPixivAccessToken();
+  const detail = await pixivApi(`/v1/illust/detail?illust_id=${encodeURIComponent(pixivId)}`, accessToken);
+  const illust = detail?.illust;
+  if (!illust) return errorResponse('未读取到 Pixiv 作品详情。', 502, 'PIXIV_DETAIL_EMPTY');
+
+  const caption = String(illust.caption || '').replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').trim().slice(0, 500);
+  const item = {
+    id: pixivId,
+    pixivId,
+    title: String(illust.title || '无题').trim().slice(0, 180),
+    author: String(illust.user?.name || '').trim().slice(0, 120),
+    description: caption,
+    tags: (illust.tags || []).map((tag) => String(tag?.name || '').trim()).filter(Boolean).slice(0, 40),
+    pixivUrl: `https://www.pixiv.net/artworks/${pixivId}`,
+    manual: true,
+    image: '',
+    thumbnail: '',
+  };
+
+  const originalUrl = illust.meta_pages?.[0]?.image_urls?.original
+    || illust.meta_single_page?.original_image_url
+    || illust.image_urls?.large
+    || illust.image_urls?.medium
+    || '';
+  const thumbnailUrl = illust.image_urls?.large || illust.image_urls?.medium || originalUrl;
+  if (!originalUrl) return errorResponse('该作品没有可下载的图片。', 502, 'PIXIV_IMAGE_MISSING');
+
+  let original = await downloadPixivImage(originalUrl);
+  const thumbnail = await downloadPixivImage(thumbnailUrl);
+  if (original.bytes.byteLength > MAX_UPLOAD_FILE_BYTES || original.bytes.byteLength + thumbnail.bytes.byteLength > MAX_UPLOAD_TOTAL_BYTES) {
+    // 原图过大时退回 Pixiv 缩放版本，保证能通过图集上传限制。
+    original = await downloadPixivImage(thumbnailUrl);
+  }
+  if (original.bytes.byteLength > MAX_UPLOAD_FILE_BYTES) return errorResponse('原图超过 20 MiB，无法导入。', 413, 'GALLERY_IMAGE_TOO_LARGE');
+
+  const assetId = `px${pixivId}`;
+
+  return withManifestLock(async () => {
+    const manifest = await readManifest();
+    const album = requestedAlbum ? manifest.albums.find((entry) => entry.id === requestedAlbum) : manifest.albums[0];
+    if (!album) return errorResponse(requestedAlbum ? '目标图集不存在。' : '图集清单为空，无法导入作品。', 404, 'GALLERY_ALBUM_NOT_FOUND');
+    const duplicated = manifest.albums.find((entry) => (entry.items || []).some((candidate) => String(candidate.pixivId || candidate.id) === pixivId));
+    if (duplicated) {
+      const message = duplicated.id === album.id
+        ? `这张作品已经在图集「${duplicated.title}」中了。`
+        : `这张作品已存在于图集「${duplicated.title}」中，不会重复保存。`;
+      return errorResponse(message, 409, 'GALLERY_ITEM_EXISTS');
+    }
+    if ((album.items || []).length >= 1000) return errorResponse('该图集作品数量已达上限（1000 张）。', 400, 'GALLERY_ALBUM_FULL');
+
+    const submitted = {
+      version: manifest.version || 1,
+      updatedAt: manifest.updatedAt || null,
+      albums: manifest.albums.map((entry) => entry.id === album.id
+        ? {...entry, items: [...(entry.items || []), {...item, image: `pending:${assetId}`, thumbnail: `pending:${assetId}`}]}
+        : entry),
+    };
+
+    const form = new FormData();
+    form.append('manifest', JSON.stringify(submitted));
+    form.append('originals', new Blob([original.bytes], {type: 'image/*'}), `${assetId}.${original.extension}`);
+    form.append('thumbnails', new Blob([thumbnail.bytes], {type: 'image/*'}), `${assetId}.${thumbnail.extension}`);
+
+    const result = await saveManifestUnlocked(
+      new Request('https://gallery.internal/api/console/gallery', {method: 'POST', body: form}),
+    );
+    if (!result.ok) return result;
+    const body = await result.json();
+    body.data = {...(body.data || {}), albumId: album.id, albumTitle: album.title, item: {id: item.id, pixivId, title: item.title}};
+    return json(body);
+  });
+}
+
+export async function handleGalleryConsole(request) {
   const url = new URL(request.url);
   if (url.pathname !== '/api/console/gallery') return errorResponse('接口不存在。', 404, 'NOT_FOUND');
   if (!['GET', 'POST'].includes(request.method)) return errorResponse('不支持的请求方法。', 405, 'METHOD_NOT_ALLOWED');
   try {
-    if (request.method === 'POST') return await saveManifest(request, syncToRepository);
+    if (request.method === 'POST') return await saveManifest(request);
     const manifest = await readManifest();
     return json({success: true, data: manifest});
   } catch (error) {

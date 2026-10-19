@@ -67,8 +67,9 @@ test('gallery API validates Hugging Face paths and returns tagged image URLs', a
     const payload = await response.json();
     assert.equal(response.status, 200);
     assert.equal(payload.success, true);
-    assert.equal(requested.length, 3);
-    assert.equal(new URL(requested[0]).hostname, 'raw.githubusercontent.com');
+    assert.equal(requested.length, 2);
+    assert.equal(new URL(requested[0]).hostname, 'huggingface.co');
+    assert.equal(new URL(requested[1]).hostname, 'hf-mirror.com');
     assert.deepEqual(payload.data.albums[0].items[0].tags, ['原创', '夜景']);
     assert.equal(payload.data.albums[0].items[0].pixivUrl, 'https://www.pixiv.net/artworks/12345678');
     assert.equal(payload.data.albums[0].items.length, 1);
@@ -100,14 +101,14 @@ test('gallery API rejects paths that leave the image repository', async () => {
   }
 });
 
-test('gallery API dynamically prefers the GitHub repository manifest', async () => {
+test('gallery API reads the manifest from the Hugging Face dataset only', async () => {
   const originalFetch = globalThis.fetch;
   const requested = [];
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     requested.push(url);
-    assert.equal(url.hostname, 'raw.githubusercontent.com');
-    assert.equal(url.pathname, '/Little-W/blog/main/data/gallery.json');
+    assert.equal(url.hostname, 'huggingface.co');
+    assert.equal(url.pathname, '/datasets/Yusen/2d_pic/resolve/main/gallery.json');
     return new Response(JSON.stringify({
       version: 1,
       updatedAt: '2026-10-19T01:02:03Z',
@@ -119,7 +120,7 @@ test('gallery API dynamically prefers the GitHub repository manifest', async () 
     }), {status: 200, headers: {'content-type': 'application/json'}});
   };
   try {
-    const {default: handler} = await import('../netlify/functions/gallery.mjs?github-manifest-test');
+    const {default: handler} = await import('../netlify/functions/gallery.mjs?hf-manifest-test');
     const response = await handler(new Request('https://site.test/api/gallery'));
     const payload = await response.json();
     assert.equal(response.status, 200);

@@ -31,7 +31,7 @@ import {
 } from '../lib/articles.mjs';
 import {readZipEntries} from '../lib/zip.mjs';
 import {fixMarkdownLinks, normalizeLatexDelimiters} from '../lib/markdown-links.mjs';
-import {handleGalleryConsole} from '../lib/gallery-console.mjs';
+import {handleGalleryConsole, importPixivArtwork} from '../lib/gallery-console.mjs';
 
 const GITHUB_API = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
@@ -948,15 +948,6 @@ async function commitFiles({files, baseHeadSha, message}) {
   };
 }
 
-export async function syncGalleryManifestToGitHub(content) {
-  const snapshot = await repoSnapshot({fresh: true});
-  return commitFiles({
-    files: [{path: 'data/gallery.json', content}],
-    baseHeadSha: snapshot.headSha,
-    message: '图库：同步图集清单至 GitHub',
-  });
-}
-
 async function listFiles() {
   await seedContentFromRepository().catch(() => {});
   const index = await ensureArticleIndex().catch(() => null);
@@ -1664,8 +1655,12 @@ export default async (request) => {
     await requireSession(request, request.method !== 'GET');
     if (!sameOrigin(request)) return fail('请求来源无效。', 'INVALID_ORIGIN', 403);
 
+    if (url.pathname === '/api/console/gallery/from-pixiv') {
+      if (request.method !== 'POST') return fail('不支持的请求方法。', 'METHOD_NOT_ALLOWED', 405);
+      return await importPixivArtwork(request);
+    }
     if (url.pathname === '/api/console/gallery') {
-      return await handleGalleryConsole(request, syncGalleryManifestToGitHub);
+      return await handleGalleryConsole(request);
     }
     if (url.pathname === '/api/console/datasets' && request.method === 'GET') {
       return json({success: true, data: {datasets: datasetList()}});
