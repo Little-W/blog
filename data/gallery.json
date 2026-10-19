@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:51:13.318Z",
+  "updatedAt": "2026-10-19T09:51:29.651Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:51:13.318Z",
+      "updatedAt": "2026-10-19T09:51:29.651Z",
       "items": [
         {
           "id": "150882787",
@@ -1333,23 +1333,22 @@
           "manual": false
         },
         {
-          "id": "151000086",
-          "pixivId": "151000086",
-          "title": "心まで変わらぬように",
-          "author": "ふに・無9",
-          "description": "怪異さんと俺《参》\n10月20日（火）発売！",
+          "id": "150930584",
+          "pixivId": "150930584",
+          "title": "栞",
+          "author": "和音ハカ",
+          "description": "『栞』\nwotaku feat. 花隈千冬\nイラスト担当させていただきました！\nhttps://youtu.be/bOtfL94ln1A?si=lMnOPPwcTPXgsuOl",
           "tags": [
-            "漫画",
             "オリジナル",
-            "怪異さんと俺",
-            "怪異",
-            "妖怪",
-            "オカルト"
+            "白髪",
+            "銀髪",
+            "剣",
+            "オリジナル1000users入り"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/151000086",
+          "pixivUrl": "https://www.pixiv.net/artworks/150930584",
           "manual": true,
-          "image": "albums/pixiv-latest-50/px151000086_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px151000086_p0.jpg"
+          "image": "albums/pixiv-latest-50/px150930584_p0.jpg",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px150930584_p0.jpg"
         }
       ]
     }
