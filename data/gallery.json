@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:06:29.681Z",
+  "updatedAt": "2026-10-19T09:07:33.062Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:06:29.681Z",
+      "updatedAt": "2026-10-19T09:07:33.062Z",
       "items": [
         {
           "id": "150882787",
@@ -1243,24 +1243,23 @@
           "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         },
         {
-          "id": "106824171",
-          "pixivId": "106824171",
-          "title": "エアリスの独り舞",
-          "author": "Aoi-",
+          "id": "88724849",
+          "pixivId": "88724849",
+          "title": "毒花吐きの狼少女",
+          "author": "美和野らぐ",
           "description": "",
           "tags": [
-            "初音ミク",
-            "初音未来",
-            "VOCALOID",
-            "ミクさんマジ天使",
-            "ミクさんマジ女神",
-            "背景",
-            "original",
-            "VOCALOID1000users入り"
+            "オリジナル",
+            "女の子",
+            "麦わら帽子",
+            "狼耳",
+            "口に花",
+            "花と女の子",
+            "オリジナル50000users入り"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/106824171",
-          "image": "albums/pixiv-latest-50/px106824171_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px106824171_p0.jpg"
+          "pixivUrl": "https://www.pixiv.net/artworks/88724849",
+          "image": "albums/pixiv-latest-50/px88724849_p0.png",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px88724849_p0.jpg"
         }
       ]
     }
