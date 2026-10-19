@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:51:46.779Z",
+  "updatedAt": "2026-10-19T09:52:02.673Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:51:46.779Z",
+      "updatedAt": "2026-10-19T09:52:02.673Z",
       "items": [
         {
           "id": "150882787",
@@ -1333,27 +1333,23 @@
           "manual": false
         },
         {
-          "id": "150944479",
-          "pixivId": "150944479",
-          "title": "じいさんばあさん若返る【246】",
-          "author": "新挑限",
-          "description": "９巻↓\nhttps://amzn.asia/d/0gbCybiu\n\n8巻↓\nhttps://www.amazon.co.jp/dp/4046836830\n\n7巻↓\nhttps://www.amazon.co.jp/dp/404682378X\n\n6巻↓\nhttps://www.amazon.co.jp/dp/4046817992\n\n 5巻↓\nhttps://www.amazon.co.jp/dp/4046813369\n\n４巻↓\nhttps://www.amazon.co.jp/dp/404680727X\n\n３巻↓\nhttps://www.amazon.co.jp/dp/4046803533\n\n2巻↓\nhttps://www.amazon.co.jp/dp/4040659813\n\n1巻↓\nhttps://www.amazon.co.jp/dp/4040645324\n最新話先行公開中⇩\n【FANBOX】https://www.fanbox.cc/@araidokagiri\n【Fantia】https://fantia.jp/fanclubs/17120",
+          "id": "151000086",
+          "pixivId": "151000086",
+          "title": "心まで変わらぬように",
+          "author": "ふに・無9",
+          "description": "怪異さんと俺《参》\n10月20日（火）発売！",
           "tags": [
             "漫画",
-            "じいさんばあさん若返る",
-            "サキュ婆ス",
-            "じいさんばあさん若返る外伝",
-            "ひるまはおたのしみでしたね",
-            "美女が野獣",
-            "意味がわかるとエロい話",
-            "淫乱健気",
-            "美女の野獣",
-            "オリジナル3000users入り"
+            "オリジナル",
+            "怪異さんと俺",
+            "怪異",
+            "妖怪",
+            "オカルト"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/150944479",
+          "pixivUrl": "https://www.pixiv.net/artworks/151000086",
           "manual": true,
-          "image": "albums/pixiv-latest-50/px150944479_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px150944479_p0.jpg"
+          "image": "albums/pixiv-latest-50/px151000086_p0.jpg",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px151000086_p0.jpg"
         }
       ]
     }
