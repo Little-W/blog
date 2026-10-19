@@ -33,6 +33,11 @@ const ALLOWED_TAGS = new Set([
   'thead', 'tbody', 'tr', 'th', 'td', 'input', 'span', 'sup', 'sub', 'kbd',
 ]);
 const VOID_TAGS = new Set(['br', 'hr', 'img', 'input']);
+const SYSTEM_VERILOG_LANGUAGES = new Set(['verilog', 'systemverilog', 'system-verilog', 'sv', 'sva', 'hdl', 'v']);
+const languageCodeClass = (language: string, className: unknown) => {
+  const value = Array.isArray(className) ? className.join(' ') : String(className || '');
+  return value || `language-${language}`;
+};
 const LINE_TAGS = new Set([
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'blockquote',
   'pre', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
@@ -313,11 +318,25 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
   if (tag === 'pre') {
     const codeNode = node.children?.find((child) => child.tagName === 'code');
     const language = languageFromClassName(codeNode?.properties?.className);
+    if (context.siteStyles && language && SYSTEM_VERILOG_LANGUAGES.has(language.toLocaleLowerCase())) {
+      const codeClass = languageCodeClass(language, codeNode?.properties?.className);
+      const highlightedCode = React.createElement('pre', props, React.createElement('code', {
+        key: 'code',
+        className: codeClass,
+        dangerouslySetInnerHTML: {__html: highlightToHtml(collectText(codeNode || node), language)},
+      }));
+      return React.createElement(
+        'div',
+        {key, className: styles.markdownPreview},
+        highlightedCode,
+      );
+    }
     if (context.siteStyles) {
       const codeClassName = codeNode?.properties?.className;
       const codeClass = Array.isArray(codeClassName) ? codeClassName.join(' ') : String(codeClassName || '');
       const codeProperties = codeNode?.properties || {};
       return React.createElement(CodeBlock, {
+        key,
         className: codeClass || undefined,
         language: language || undefined,
         metastring: typeof codeProperties.metastring === 'string' ? codeProperties.metastring : undefined,

@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-var-requires, global-require */
 import Prism from 'prism-react-renderer/prism';
 
+const {installVcFormalTcl} = require('../../theme/prism-include-languages/vcFormalTcl') as {
+  installVcFormalTcl: (prism: unknown) => void;
+};
+
 // Prism language components attach to the renderer's Prism instance.
 const LOADERS: Array<() => unknown> = [
   () => require('prismjs/components/prism-markup-templating'),
@@ -108,25 +112,24 @@ function ensureLanguages() {
       Prism.languages[alias] = Prism.languages[target];
     }
   }
-  if (Prism.languages.tcl) {
-    const vcFormalTokens: Record<string, unknown> = {};
-    if (!Prism.languages.tcl['vcformal-command']) {
-      vcFormalTokens['vcformal-command'] = {
-        pattern: /(^[\t ]*)(?:analyze|check_fv|compute_formal_core|compute_proof_assist|compute_reduced_constraints|elaborate|report_formal_core|report_fv|report_proof_assist|report_reduced_constraints|run_fv|view_trace)\b/m,
-        lookbehind: true,
-        alias: 'function',
-      };
-    }
-    if (!Prism.languages.tcl['vcformal-option']) {
-      vcFormalTokens['vcformal-option'] = {
-        pattern: /(^|[\s\[{])-[a-z][\w-]*\b/i,
-        lookbehind: true,
-        alias: 'property',
-      };
-    }
-    if (Object.keys(vcFormalTokens).length) {
-      Prism.languages.insertBefore('tcl', 'keyword', vcFormalTokens);
-    }
+  installVcFormalTcl(Prism);
+  if (Prism.languages.verilog && !Prism.languages.verilog['sva-delay']) {
+    Prism.languages.insertBefore('verilog', 'number', {
+      'sva-delay': {
+        pattern: /##\s*(?:\[\s*(?:\d+|\$)?\s*(?::\s*(?:\d+|\$)?\s*)?\]|\d+|\$)/,
+        greedy: true,
+        alias: 'operator',
+      },
+      'sva-implication': {
+        pattern: /\|->|\|=>|#-#|#=#/,
+        alias: 'operator',
+      },
+      'sva-repetition': {
+        pattern: /\[(?:\*|=|->)\s*(?:\d+\s*(?::\s*(?:\d+|\$))?)?\s*\]/,
+        greedy: true,
+        alias: 'operator',
+      },
+    });
   }
 }
 

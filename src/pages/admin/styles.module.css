@@ -2082,21 +2082,30 @@ html[data-theme='dark'] .tabActive {
   font-size: 0.85em;
 }
 
+.markdownPreview code:not(pre code) {
+  color: #174a7e;
+}
+
 .markdownPreview pre code {
   padding: 0;
   background: transparent;
+  color: #172b42;
+}
+
+[data-theme='dark'] .markdownPreview code:not(pre code) {
+  color: #c3d8ef;
 }
 
 .markdownPreview pre code :global(.token.comment),
 .markdownPreview pre code :global(.token.prolog),
 .markdownPreview pre code :global(.token.doctype),
 .markdownPreview pre code :global(.token.cdata) {
-  color: #6b7280;
+  color: #475569;
   font-style: italic;
 }
 
 .markdownPreview pre code :global(.token.punctuation) {
-  color: #5b6470;
+  color: #334155;
 }
 
 .markdownPreview pre code :global(.token.tag),
@@ -2108,7 +2117,7 @@ html[data-theme='dark'] .tabActive {
 .markdownPreview pre code :global(.token.number),
 .markdownPreview pre code :global(.token.boolean),
 .markdownPreview pre code :global(.token.deleted) {
-  color: #b45309;
+  color: #9a3412;
 }
 
 .markdownPreview pre code :global(.token.string),
@@ -2124,7 +2133,7 @@ html[data-theme='dark'] .tabActive {
 .markdownPreview pre code :global(.token.atrule),
 .markdownPreview pre code :global(.token.rule),
 .markdownPreview pre code :global(.token.important) {
-  color: #7c3aed;
+  color: #5b21b6;
 }
 
 .markdownPreview pre code :global(.token.function),
@@ -2141,7 +2150,7 @@ html[data-theme='dark'] .tabActive {
 
 .markdownPreview pre code :global(.token.regex),
 .markdownPreview pre code :global(.token.variable) {
-  color: #b45309;
+  color: #9a3412;
 }
 
 .markdownPreview pre code :global(.token.bold) {
@@ -2156,11 +2165,11 @@ html[data-theme='dark'] .tabActive {
 [data-theme='dark'] .markdownPreview pre code :global(.token.prolog),
 [data-theme='dark'] .markdownPreview pre code :global(.token.doctype),
 [data-theme='dark'] .markdownPreview pre code :global(.token.cdata) {
-  color: #8b949e;
+  color: #a8b3c2;
 }
 
 [data-theme='dark'] .markdownPreview pre code :global(.token.punctuation) {
-  color: #9aa4b2;
+  color: #cbd5e1;
 }
 
 [data-theme='dark'] .markdownPreview pre code :global(.token.tag),
@@ -2172,7 +2181,7 @@ html[data-theme='dark'] .tabActive {
 [data-theme='dark'] .markdownPreview pre code :global(.token.number),
 [data-theme='dark'] .markdownPreview pre code :global(.token.boolean),
 [data-theme='dark'] .markdownPreview pre code :global(.token.deleted) {
-  color: #ffa657;
+  color: #fdba74;
 }
 
 [data-theme='dark'] .markdownPreview pre code :global(.token.string),
@@ -2188,7 +2197,7 @@ html[data-theme='dark'] .tabActive {
 [data-theme='dark'] .markdownPreview pre code :global(.token.atrule),
 [data-theme='dark'] .markdownPreview pre code :global(.token.rule),
 [data-theme='dark'] .markdownPreview pre code :global(.token.important) {
-  color: #d2a8ff;
+  color: #e9d5ff;
 }
 
 [data-theme='dark'] .markdownPreview pre code :global(.token.function),
@@ -2200,7 +2209,11 @@ html[data-theme='dark'] .tabActive {
 [data-theme='dark'] .markdownPreview pre code :global(.token.operator),
 [data-theme='dark'] .markdownPreview pre code :global(.token.entity),
 [data-theme='dark'] .markdownPreview pre code :global(.token.directive) {
-  color: #ff7b72;
+  color: #fca5a5;
+}
+
+[data-theme='dark'] .markdownPreview pre code {
+  color: #e2e8f0;
 }
 
 [data-theme='dark'] .markdownPreview pre code :global(.token.regex),

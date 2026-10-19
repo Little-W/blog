@@ -1,4 +1,5 @@
 import siteConfig from '@generated/docusaurus.config';
+import {installVcFormalTcl} from './vcFormalTcl';
 
 const escapeWord = (word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const words = (items, flags = 'i') => new RegExp(`\\b(?:${items.map(escapeWord).join('|')})\\b`, flags);
@@ -154,6 +155,7 @@ export default function prismIncludeLanguages(PrismObject) {
   });
 
   installSystemVerilog(PrismObject);
+  installVcFormalTcl(PrismObject);
   PrismObject.languages.shell = PrismObject.languages.bash;
   PrismObject.languages.sh = PrismObject.languages.bash;
   PrismObject.languages.console = PrismObject.languages.bash;
