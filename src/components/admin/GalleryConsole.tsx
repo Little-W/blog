@@ -14,6 +14,7 @@ type GalleryItem = {
   pixivUrl: string;
   image: string;
   thumbnail: string;
+  manual?: boolean;
   pendingId?: string;
 };
 type GalleryAlbum = {id: string; title: string; description: string; tags: string[]; updatedAt?: string; items: GalleryItem[]};
@@ -194,6 +195,7 @@ export default function GalleryConsole(): JSX.Element {
           pixivUrl: '',
           image: '',
           thumbnail: '',
+          manual: true,
           pendingId: id,
         });
       }

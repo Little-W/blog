@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import {Icon} from '@iconify/react';
@@ -32,6 +32,12 @@ export type GalleryAlbum = {
 
 type GalleryPayload = {albums: GalleryAlbum[]; updatedAt: string | null};
 
+type RevealStyle = React.CSSProperties & {'--reveal-delay'?: string};
+
+function revealDelay(index: number, step = 55, max = 14): RevealStyle {
+  return {'--reveal-delay': `${Math.min(index, max) * step}ms`};
+}
+
 async function fetchGallery(signal?: AbortSignal): Promise<GalleryPayload> {
   const response = await fetch('/api/gallery', {
     credentials: 'same-origin',
@@ -63,6 +69,7 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
   }, [eager, item.fallbackImage, item.image, item.proxyImage, item.thumbnail, item.thumbnailFallback, item.thumbnailProxy, original]);
   useEffect(() => {
     const image = imageRef.current;
+    if (image?.complete && image.naturalWidth > 0) setLoaded(true);
     if (!image || eager || original) {
       setRequestStarted(true);
       return undefined;
@@ -92,7 +99,7 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
     <span className={styles.imageFrame}>
       <img
         ref={imageRef}
-        className={`${styles.image}${contain ? ` ${styles.containImage}` : ''}`}
+        className={`${styles.image}${contain ? ` ${styles.containImage}` : ''}${loaded ? ` ${styles.imageLoaded}` : ''}`}
         src={source}
         alt={item.title}
         loading={eager ? 'eager' : 'lazy'}
@@ -114,9 +121,9 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
   );
 }
 
-function ArtworkCard({item, eager = false, onPreview}: {item: GalleryItem; eager?: boolean; onPreview: (item: GalleryItem) => void}) {
+function ArtworkCard({item, eager = false, index = 0, onPreview}: {item: GalleryItem; eager?: boolean; index?: number; onPreview: (item: GalleryItem) => void}) {
   return (
-    <article className={styles.artworkCard}>
+    <article className={styles.artworkCard} style={revealDelay(index)}>
       <div className={styles.imageLink}>
         <button className={styles.imagePreviewButton} type="button" onClick={() => onPreview(item)} aria-label={`预览插画：${item.title}`}>
           <GalleryImage item={item} eager={eager} />
@@ -196,6 +203,7 @@ export default function ImageGalleryPage(): JSX.Element {
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{x: number; y: number; panX: number; panY: number} | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
+  const pendingScrollRef = useRef(false);
 
   const loadGallery = useCallback(async () => {
     setLoading(true);
@@ -266,14 +274,28 @@ export default function ImageGalleryPage(): JSX.Element {
     changeZoom(event.deltaY < 0 ? 1.15 : 1 / 1.15);
   };
 
+  const scrollToResults = useCallback(() => {
+    const section = resultsRef.current;
+    if (!section) return;
+    const top = section.getBoundingClientRect().top + window.scrollY - 96;
+    window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
+  }, []);
+
   const jumpToPage = (nextPage: number) => {
     const safePage = Math.max(0, Math.min(pageCount - 1, nextPage));
-    setPageIndex(safePage);
-    if (resultsRef.current) {
-      const top = resultsRef.current.getBoundingClientRect().top + window.scrollY - 96;
-      window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
+    if (safePage === pageIndex) {
+      scrollToResults();
+      return;
     }
+    pendingScrollRef.current = true;
+    setPageIndex(safePage);
   };
+
+  useLayoutEffect(() => {
+    if (!pendingScrollRef.current) return;
+    pendingScrollRef.current = false;
+    scrollToResults();
+  }, [pageIndex, scrollToResults]);
 
   return (
     <Layout title="图集" description="插画收藏。">
@@ -301,8 +323,8 @@ export default function ImageGalleryPage(): JSX.Element {
             </label>
             {allTags.length ? (
               <nav className={styles.tagFilters} aria-label="按标签筛选图集">
-                <button type="button" className={`${styles.tagFilter} ${!activeTag ? styles.filterActive : ''}`} onClick={() => setActiveTag('')}>全部标签</button>
-                {visibleTags.map((tag) => <button type="button" className={`${styles.tagFilter} ${activeTag === tag ? styles.filterActive : ''}`} key={tag} onClick={() => setActiveTag(activeTag === tag ? '' : tag)}>{tag}</button>)}
+                <button type="button" style={revealDelay(0, 26, 22)} className={`${styles.tagFilter} ${!activeTag ? styles.filterActive : ''}`} onClick={() => setActiveTag('')}>全部标签</button>
+                {visibleTags.map((tag, index) => <button type="button" style={revealDelay(index + 1, 26, 22)} className={`${styles.tagFilter} ${activeTag === tag ? styles.filterActive : ''}`} key={tag} onClick={() => setActiveTag(activeTag === tag ? '' : tag)}>{tag}</button>)}
               </nav>
             ) : null}
           </div>
@@ -323,13 +345,15 @@ export default function ImageGalleryPage(): JSX.Element {
               </label>
             </div>
             <div className={styles.grid}>
-              {pageItems.map((item) => <ArtworkCard item={item} eager onPreview={setPreviewItem} key={item.id} />)}
+              {pageItems.map((item, index) => <ArtworkCard item={item} eager index={index} onPreview={setPreviewItem} key={item.id} />)}
             </div>
             {pageCount > 1 ? (
               <nav className={styles.pagination} aria-label="图集分页">
+                <button type="button" onClick={() => jumpToPage(0)} disabled={pageIndex === 0} aria-label="第一页" title="第一页"><Icon icon="lucide:chevrons-left" />首页</button>
                 <button type="button" onClick={() => jumpToPage(pageIndex - 1)} disabled={pageIndex === 0}><Icon icon="lucide:chevron-left" />上一页</button>
                 <span>第 {pageIndex + 1} / {pageCount} 页</span>
                 <button type="button" onClick={() => jumpToPage(pageIndex + 1)} disabled={pageIndex + 1 >= pageCount}>下一页<Icon icon="lucide:chevron-right" /></button>
+                <button type="button" onClick={() => jumpToPage(pageCount - 1)} disabled={pageIndex + 1 >= pageCount} aria-label="最后一页" title="最后一页">末页<Icon icon="lucide:chevrons-right" /></button>
               </nav>
             ) : null}
           </section>
