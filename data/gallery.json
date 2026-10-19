@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:06:06.065Z",
+  "updatedAt": "2026-10-19T09:06:29.681Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:06:06.065Z",
+      "updatedAt": "2026-10-19T09:06:29.681Z",
       "items": [
         {
           "id": "150882787",
@@ -1243,23 +1243,24 @@
           "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         },
         {
-          "id": "98987580",
-          "pixivId": "98987580",
-          "title": "くうになる",
-          "author": "紺屋",
-          "description": "空の底見つめてる",
+          "id": "106824171",
+          "pixivId": "106824171",
+          "title": "エアリスの独り舞",
+          "author": "Aoi-",
+          "description": "",
           "tags": [
-            "VOCALOID",
-            "女の子",
-            "初音未来",
             "初音ミク",
-            "可不",
-            "セーラー服",
-            "VOCALOID5000users入り"
+            "初音未来",
+            "VOCALOID",
+            "ミクさんマジ天使",
+            "ミクさんマジ女神",
+            "背景",
+            "original",
+            "VOCALOID1000users入り"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/98987580",
-          "image": "albums/pixiv-latest-50/px98987580_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px98987580_p0.jpg"
+          "pixivUrl": "https://www.pixiv.net/artworks/106824171",
+          "image": "albums/pixiv-latest-50/px106824171_p0.png",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px106824171_p0.jpg"
         }
       ]
     }
