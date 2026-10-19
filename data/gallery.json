@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:08:55.964Z",
+  "updatedAt": "2026-10-19T09:51:13.318Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:08:55.964Z",
+      "updatedAt": "2026-10-19T09:51:13.318Z",
       "items": [
         {
           "id": "150882787",
@@ -20,7 +20,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/150882787",
           "image": "albums/pixiv-latest-50/150882787_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/150882787_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/150882787_p0.webp",
+          "manual": false
         },
         {
           "id": "140484003",
@@ -35,7 +36,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/140484003",
           "image": "albums/pixiv-latest-50/140484003_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/140484003_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/140484003_p0.webp",
+          "manual": false
         },
         {
           "id": "140478164",
@@ -53,7 +55,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/140478164",
           "image": "albums/pixiv-latest-50/140478164_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/140478164_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/140478164_p0.webp",
+          "manual": false
         },
         {
           "id": "140326611",
@@ -70,7 +73,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/140326611",
           "image": "albums/pixiv-latest-50/140326611_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/140326611_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/140326611_p0.webp",
+          "manual": false
         },
         {
           "id": "140280183",
@@ -89,7 +93,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/140280183",
           "image": "albums/pixiv-latest-50/140280183_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/140280183_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/140280183_p0.webp",
+          "manual": false
         },
         {
           "id": "139114135",
@@ -110,7 +115,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/139114135",
           "image": "albums/pixiv-latest-50/139114135_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/139114135_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/139114135_p0.webp",
+          "manual": false
         },
         {
           "id": "138883077",
@@ -131,7 +137,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/138883077",
           "image": "albums/pixiv-latest-50/138883077_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/138883077_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/138883077_p0.webp",
+          "manual": false
         },
         {
           "id": "138879670",
@@ -151,7 +158,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/138879670",
           "image": "albums/pixiv-latest-50/138879670_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/138879670_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/138879670_p0.webp",
+          "manual": false
         },
         {
           "id": "138667279",
@@ -172,7 +180,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/138667279",
           "image": "albums/pixiv-latest-50/138667279_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/138667279_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/138667279_p0.webp",
+          "manual": false
         },
         {
           "id": "138458593",
@@ -191,7 +200,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/138458593",
           "image": "albums/pixiv-latest-50/138458593_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/138458593_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/138458593_p0.webp",
+          "manual": false
         },
         {
           "id": "136990362",
@@ -210,7 +220,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/136990362",
           "image": "albums/pixiv-latest-50/136990362_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/136990362_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/136990362_p0.webp",
+          "manual": false
         },
         {
           "id": "136099363",
@@ -227,7 +238,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/136099363",
           "image": "albums/pixiv-latest-50/136099363_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/136099363_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/136099363_p0.webp",
+          "manual": false
         },
         {
           "id": "129842099",
@@ -244,7 +256,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/129842099",
           "image": "albums/pixiv-latest-50/129842099_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/129842099_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/129842099_p0.webp",
+          "manual": false
         },
         {
           "id": "128840604",
@@ -264,7 +277,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/128840604",
           "image": "albums/pixiv-latest-50/128840604_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/128840604_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/128840604_p0.webp",
+          "manual": false
         },
         {
           "id": "128102484",
@@ -280,7 +294,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/128102484",
           "image": "albums/pixiv-latest-50/128102484_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/128102484_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/128102484_p0.webp",
+          "manual": false
         },
         {
           "id": "127207944",
@@ -302,7 +317,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/127207944",
           "image": "albums/pixiv-latest-50/127207944_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/127207944_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/127207944_p0.webp",
+          "manual": false
         },
         {
           "id": "126998078",
@@ -318,7 +334,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/126998078",
           "image": "albums/pixiv-latest-50/126998078_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126998078_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/126998078_p0.webp",
+          "manual": false
         },
         {
           "id": "106035308",
@@ -339,7 +356,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/106035308",
           "image": "albums/pixiv-latest-50/106035308_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/106035308_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/106035308_p0.webp",
+          "manual": false
         },
         {
           "id": "101015341",
@@ -361,7 +379,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/101015341",
           "image": "albums/pixiv-latest-50/101015341_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/101015341_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/101015341_p0.webp",
+          "manual": false
         },
         {
           "id": "126638995",
@@ -377,7 +396,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/126638995",
           "image": "albums/pixiv-latest-50/126638995_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126638995_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/126638995_p0.webp",
+          "manual": false
         },
         {
           "id": "126589815",
@@ -392,7 +412,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/126589815",
           "image": "albums/pixiv-latest-50/126589815_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126589815_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/126589815_p0.webp",
+          "manual": false
         },
         {
           "id": "126518197",
@@ -413,7 +434,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/126518197",
           "image": "albums/pixiv-latest-50/126518197_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126518197_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/126518197_p0.webp",
+          "manual": false
         },
         {
           "id": "126326619",
@@ -435,7 +457,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/126326619",
           "image": "albums/pixiv-latest-50/126326619_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126326619_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/126326619_p0.webp",
+          "manual": false
         },
         {
           "id": "121771174",
@@ -452,7 +475,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/121771174",
           "image": "albums/pixiv-latest-50/121771174_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/121771174_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/121771174_p0.webp",
+          "manual": false
         },
         {
           "id": "119107098",
@@ -468,7 +492,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/119107098",
           "image": "albums/pixiv-latest-50/119107098_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/119107098_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/119107098_p0.webp",
+          "manual": false
         },
         {
           "id": "118923053",
@@ -484,7 +509,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/118923053",
           "image": "albums/pixiv-latest-50/118923053_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/118923053_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/118923053_p0.webp",
+          "manual": false
         },
         {
           "id": "112805079",
@@ -505,7 +531,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/112805079",
           "image": "albums/pixiv-latest-50/112805079_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/112805079_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/112805079_p0.webp",
+          "manual": false
         },
         {
           "id": "110322625",
@@ -525,7 +552,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/110322625",
           "image": "albums/pixiv-latest-50/110322625_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/110322625_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/110322625_p0.webp",
+          "manual": false
         },
         {
           "id": "121895219",
@@ -547,7 +575,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/121895219",
           "image": "albums/pixiv-latest-50/121895219_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/121895219_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/121895219_p0.webp",
+          "manual": false
         },
         {
           "id": "123446416",
@@ -566,7 +595,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123446416",
           "image": "albums/pixiv-latest-50/123446416_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123446416_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123446416_p0.webp",
+          "manual": false
         },
         {
           "id": "120188807",
@@ -586,7 +616,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/120188807",
           "image": "albums/pixiv-latest-50/120188807_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/120188807_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/120188807_p0.webp",
+          "manual": false
         },
         {
           "id": "81162977",
@@ -607,7 +638,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/81162977",
           "image": "albums/pixiv-latest-50/81162977_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/81162977_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/81162977_p0.webp",
+          "manual": false
         },
         {
           "id": "91882132",
@@ -627,7 +659,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/91882132",
           "image": "albums/pixiv-latest-50/91882132_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/91882132_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/91882132_p0.webp",
+          "manual": false
         },
         {
           "id": "112900318",
@@ -648,7 +681,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/112900318",
           "image": "albums/pixiv-latest-50/112900318_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/112900318_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/112900318_p0.webp",
+          "manual": false
         },
         {
           "id": "100432010",
@@ -667,7 +701,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/100432010",
           "image": "albums/pixiv-latest-50/100432010_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/100432010_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/100432010_p0.webp",
+          "manual": false
         },
         {
           "id": "98204712",
@@ -684,7 +719,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/98204712",
           "image": "albums/pixiv-latest-50/98204712_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/98204712_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/98204712_p0.webp",
+          "manual": false
         },
         {
           "id": "96286643",
@@ -706,7 +742,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/96286643",
           "image": "albums/pixiv-latest-50/96286643_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/96286643_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/96286643_p0.webp",
+          "manual": false
         },
         {
           "id": "123937339",
@@ -724,7 +761,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123937339",
           "image": "albums/pixiv-latest-50/123937339_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123937339_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123937339_p0.webp",
+          "manual": false
         },
         {
           "id": "117571661",
@@ -743,7 +781,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/117571661",
           "image": "albums/pixiv-latest-50/117571661_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/117571661_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/117571661_p0.webp",
+          "manual": false
         },
         {
           "id": "115452892",
@@ -764,7 +803,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/115452892",
           "image": "albums/pixiv-latest-50/115452892_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/115452892_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/115452892_p0.webp",
+          "manual": false
         },
         {
           "id": "115454878",
@@ -782,7 +822,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/115454878",
           "image": "albums/pixiv-latest-50/115454878_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/115454878_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/115454878_p0.webp",
+          "manual": false
         },
         {
           "id": "123864712",
@@ -800,7 +841,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123864712",
           "image": "albums/pixiv-latest-50/123864712_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123864712_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123864712_p0.webp",
+          "manual": false
         },
         {
           "id": "84049779",
@@ -818,7 +860,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/84049779",
           "image": "albums/pixiv-latest-50/84049779_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/84049779_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/84049779_p0.webp",
+          "manual": false
         },
         {
           "id": "125435652",
@@ -840,7 +883,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/125435652",
           "image": "albums/pixiv-latest-50/125435652_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/125435652_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/125435652_p0.webp",
+          "manual": false
         },
         {
           "id": "107401013",
@@ -858,7 +902,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/107401013",
           "image": "albums/pixiv-latest-50/107401013_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/107401013_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/107401013_p0.webp",
+          "manual": false
         },
         {
           "id": "104607676",
@@ -876,7 +921,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/104607676",
           "image": "albums/pixiv-latest-50/104607676_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/104607676_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/104607676_p0.webp",
+          "manual": false
         },
         {
           "id": "95869858",
@@ -894,7 +940,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/95869858",
           "image": "albums/pixiv-latest-50/95869858_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/95869858_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/95869858_p0.webp",
+          "manual": false
         },
         {
           "id": "119318325",
@@ -909,7 +956,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/119318325",
           "image": "albums/pixiv-latest-50/119318325_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/119318325_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/119318325_p0.webp",
+          "manual": false
         },
         {
           "id": "121371144",
@@ -926,7 +974,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/121371144",
           "image": "albums/pixiv-latest-50/121371144_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/121371144_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/121371144_p0.webp",
+          "manual": false
         },
         {
           "id": "93197348",
@@ -945,7 +994,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/93197348",
           "image": "albums/pixiv-latest-50/93197348_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/93197348_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/93197348_p0.webp",
+          "manual": false
         },
         {
           "id": "123177143",
@@ -964,7 +1014,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123177143",
           "image": "albums/pixiv-latest-50/123177143_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123177143_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123177143_p0.webp",
+          "manual": false
         },
         {
           "id": "80372785",
@@ -982,7 +1033,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/80372785",
           "image": "albums/pixiv-latest-50/80372785_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/80372785_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/80372785_p0.webp",
+          "manual": false
         },
         {
           "id": "111260383",
@@ -997,7 +1049,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/111260383",
           "image": "albums/pixiv-latest-50/111260383_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/111260383_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/111260383_p0.webp",
+          "manual": false
         },
         {
           "id": "118550241",
@@ -1012,7 +1065,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/118550241",
           "image": "albums/pixiv-latest-50/118550241_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/118550241_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/118550241_p0.webp",
+          "manual": false
         },
         {
           "id": "123491943",
@@ -1027,7 +1081,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123491943",
           "image": "albums/pixiv-latest-50/123491943_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123491943_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123491943_p0.webp",
+          "manual": false
         },
         {
           "id": "110683913",
@@ -1048,7 +1103,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/110683913",
           "image": "albums/pixiv-latest-50/110683913_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/110683913_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/110683913_p0.webp",
+          "manual": false
         },
         {
           "id": "118967241",
@@ -1064,7 +1120,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/118967241",
           "image": "albums/pixiv-latest-50/118967241_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/118967241_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/118967241_p0.webp",
+          "manual": false
         },
         {
           "id": "121801913",
@@ -1081,7 +1138,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/121801913",
           "image": "albums/pixiv-latest-50/121801913_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/121801913_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/121801913_p0.webp",
+          "manual": false
         },
         {
           "id": "121764304",
@@ -1098,7 +1156,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/121764304",
           "image": "albums/pixiv-latest-50/121764304_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/121764304_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/121764304_p0.webp",
+          "manual": false
         },
         {
           "id": "117948202",
@@ -1114,7 +1173,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/117948202",
           "image": "albums/pixiv-latest-50/117948202_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/117948202_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/117948202_p0.webp",
+          "manual": false
         },
         {
           "id": "123457214",
@@ -1135,7 +1195,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123457214",
           "image": "albums/pixiv-latest-50/123457214_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/123457214_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/123457214_p0.webp",
+          "manual": false
         },
         {
           "id": "110473958",
@@ -1152,7 +1213,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/110473958",
           "image": "albums/pixiv-latest-50/110473958_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/110473958_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/110473958_p0.webp",
+          "manual": false
         },
         {
           "id": "114478204",
@@ -1171,7 +1233,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/114478204",
           "image": "albums/pixiv-latest-50/114478204_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/114478204_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/114478204_p0.webp",
+          "manual": false
         },
         {
           "id": "124479625",
@@ -1188,7 +1251,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/124479625",
           "image": "albums/pixiv-latest-50/124479625_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/124479625_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/124479625_p0.webp",
+          "manual": false
         },
         {
           "id": "122683962",
@@ -1205,7 +1269,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/122683962",
           "image": "albums/pixiv-latest-50/122683962_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/122683962_p0.webp"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/122683962_p0.webp",
+          "manual": false
         },
         {
           "id": "123491222",
@@ -1222,7 +1287,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/123491222",
           "image": "albums/pixiv-latest-50/px123491222_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px123491222_p0.jpg"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px123491222_p0.jpg",
+          "manual": false
         },
         {
           "id": "102734382",
@@ -1240,7 +1306,8 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/102734382",
           "image": "albums/pixiv-latest-50/px102734382_p0.jpg",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg",
+          "manual": false
         },
         {
           "id": "72878784",
@@ -1262,7 +1329,27 @@
           ],
           "pixivUrl": "https://www.pixiv.net/artworks/72878784",
           "image": "albums/pixiv-latest-50/px72878784_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px72878784_p0.jpg"
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px72878784_p0.jpg",
+          "manual": false
+        },
+        {
+          "id": "151000086",
+          "pixivId": "151000086",
+          "title": "心まで変わらぬように",
+          "author": "ふに・無9",
+          "description": "怪異さんと俺《参》\n10月20日（火）発売！",
+          "tags": [
+            "漫画",
+            "オリジナル",
+            "怪異さんと俺",
+            "怪異",
+            "妖怪",
+            "オカルト"
+          ],
+          "pixivUrl": "https://www.pixiv.net/artworks/151000086",
+          "manual": true,
+          "image": "albums/pixiv-latest-50/px151000086_p0.jpg",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px151000086_p0.jpg"
         }
       ]
     }
