@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:00:48.640Z",
+  "updatedAt": "2026-10-19T09:01:16.374Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:00:48.640Z",
+      "updatedAt": "2026-10-19T09:01:16.374Z",
       "items": [
         {
           "id": "150882787",
@@ -1223,6 +1223,24 @@
           "pixivUrl": "https://www.pixiv.net/artworks/123491222",
           "image": "albums/pixiv-latest-50/px123491222_p0.png",
           "thumbnail": "albums/pixiv-latest-50/thumbs/px123491222_p0.jpg"
+        },
+        {
+          "id": "102734382",
+          "pixivId": "102734382",
+          "title": "I wanted to dance in your pulse.",
+          "author": "紺屋",
+          "description": "",
+          "tags": [
+            "VOCALOID",
+            "初音ミク",
+            "女の子",
+            "VOCALOID10000users入り",
+            "花束",
+            "VOCALOID30000users入り"
+          ],
+          "pixivUrl": "https://www.pixiv.net/artworks/102734382",
+          "image": "albums/pixiv-latest-50/px102734382_p0.jpg",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         }
       ]
     }
