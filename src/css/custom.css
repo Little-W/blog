@@ -1,11 +1,11 @@
 :root {
-  --ifm-color-primary: #E6A9BD;
+  --ifm-color-primary: #00a8e9;
   --ifm-color-primary-dark: #05a1ec;
   --ifm-color-primary-darker: #0598df;
   --ifm-color-primary-darkest: #047eb8;
-  --ifm-color-primary-light: #2cb8fb;
-  --ifm-color-primary-lighter: #b0e6ff;
-  --ifm-color-primary-lightest: #d5f1fd;
+  --ifm-color-primary-light: #00a8e9;
+  --ifm-color-primary-lighter: #00b2e9;
+  --ifm-color-primary-lightest: #00c3eb;
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', 'Helvetica Neue', 'Noto Sans',
@@ -14,7 +14,7 @@
     'Liberation Mono', monospace;
 
   --ifm-heading-font-family: var(var(--ifm-font-family-base))
-  /* --content-font-family: "Raleway", "Kai", "¿¬Ìå", "Kaiti", serif; */
+  /* --content-font-family: "Raleway", "Kai", "ï¿½ï¿½ï¿½ï¿½", "Kaiti", serif; */
 
   --ifm-navbar-shadow: 0 4px 28px rgb(0 0 0 / 10%);
   --ifm-toc-border-color: #f7f7f7;
@@ -23,26 +23,26 @@
 
   --ifm-menu-color: #0d203a;
 
-  /* ËÑË÷¿ò */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
   --search-local-modal-background: hsl(0deg 0% 100%);
   --search-local-modal-shadow: 0 0 48px hsl(0deg 0% 0% / 12%);
 
-  /* ½ø¶ÈÌõ±³¾° */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
   --progress-bar-background-color: #f3f3f3;
 
-  /* ¿¨Æ¬±³¾° */
+  /* ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ */
   --card-background: #fff;
 
-  /* Ñ¡ÖĞÎ´Ñ¡ÖĞ */
+  /* Ñ¡ï¿½ï¿½Î´Ñ¡ï¿½ï¿½ */
   --btn-selected: var(--ifm-color-primary);
   --btn-unselected: #cecece;
 
-  /* ±êÇ©±³¾° */
+  /* ï¿½ï¿½Ç©ï¿½ï¿½ï¿½ï¿½ */
   --tag-background: var(--ifm-color-primary);
   --tag-background-dark: #0179fa77;
   --tag-background-light: #1982bb;
 
-  /* ´úÂë¿é±³¾° */
+  /* ï¿½ï¿½ï¿½ï¿½é±³ï¿½ï¿½ */
   --ifm-code-background: #12affa1a;
   --ifm-code-color: var(--ifm-color-primary);
   --prism-background-color: #f6f8fa;
@@ -77,7 +77,7 @@ html {
   --ifm-heading-color: #000;
 
   -webkit-font-smoothing: unset;
-  /* ÎÄ×ÖÑÕÉ« */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É« */
   color: hsl(214deg 37% 25%);
 }
 
@@ -102,14 +102,14 @@ html[data-theme='dark'] {
 
   color: hsl(214deg 15% 85%);
 
-  /* ËÑË÷ */
-  /* ËÑË÷¿ò */
+  /* ï¿½ï¿½ï¿½ï¿½ */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
   --search-local-modal-background: var(--ifm-background-color);
   --search-local-modal-shadow: 0 0 48px hsl(0deg 100% 100% / 12%);
 
-  /* ½ø¶ÈÌõ±³¾° */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
   --progress-bar-background-color: #3e3e3e;
-  /* ¿¨Æ¬±³¾° */
+  /* ï¿½ï¿½Æ¬ï¿½ï¿½ï¿½ï¿½ */
   --card-background: #0c0c0c;
 
   --ifm-text-color: var(--ifm-menu-color);
@@ -219,7 +219,7 @@ html[data-theme='dark'] .theme-code-block {
   }
 }
 
-/* Ê×Ò³±³¾° */
+/* ï¿½ï¿½Ò³ï¿½ï¿½ï¿½ï¿½ */
 .container-wrapper {
   background: var(--content-background-color);
 
@@ -278,7 +278,7 @@ html[data-theme='dark'] .theme-code-block {
   animation: fading 0.8s;
 }
 
-/* ÇĞ»»ÊÓÍ¼°´Å¥ */
+/* ï¿½Ğ»ï¿½ï¿½ï¿½Í¼ï¿½ï¿½Å¥ */
 .bloghome__swith-view {
   text-align: center;
   margin: 0 0 1em;
@@ -375,13 +375,13 @@ html[data-theme='dark'] .theme-code-block {
     color: var(--ifm-color-emphasis-600);
   }
 
-  /* ²©¿ÍÁĞ±í */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½Ğ±ï¿½ */
   /*   .bloghome__posts {
     display: grid;
     grid-template-columns: 1fr 1fr;
   } */
 
-  /* ·¢²¼ÈÕÆÚ */
+  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
   .post__date-container {
     display: grid;
     justify-items: center;
@@ -456,7 +456,7 @@ html[data-theme='dark'] .pagination-nav__link {
   );
 }
 
-/* ÎÄµµ²àÀ¸×ÖÌå´óĞ¡ */
+/* ï¿½Äµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¡ */
 .menu__list-item > .menu__link[tabindex] {
   font-size: 0.875rem;
   font-weight: normal;
@@ -583,7 +583,7 @@ html[data-theme='dark'] .pagination-nav__link {
   }
 }
 
-/* µ¼º½ÊÕËõÏàÓ¦³ß´çµ÷´ó */
+/* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ß´ï¿½ï¿½ï¿½ï¿½ */
 @media (max-width: 1100px) {
   .navbar > .container,
   .navbar > .container-fluid {
