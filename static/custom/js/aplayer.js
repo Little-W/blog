@@ -579,6 +579,44 @@ function init_music_mini_player(player) {
     mini.addEventListener('focusout', function(event) {
       if (music_mini_player_collapsed && !mini.contains(event.relatedTarget)) schedule_music_mini_player_edge_hide(2200);
     });
+    var miniTouchStart = null;
+    var miniPointerStart = null;
+    function is_mini_reveal_gesture_start(x, y) {
+      return !mini.hidden && music_mini_player_collapsed && x <= 48 && y >= window.innerHeight - 220;
+    }
+    function finish_mini_reveal_gesture(start, x, y) {
+      if (!start) return;
+      if (x - start.x < 40 || Math.abs(y - start.y) > 96) return;
+      reveal_music_mini_player_edge();
+    }
+    window.addEventListener('touchstart', function(event) {
+      var touch = event.changedTouches && event.changedTouches[0];
+      miniTouchStart = touch && is_mini_reveal_gesture_start(touch.clientX, touch.clientY)
+        ? {x: touch.clientX, y: touch.clientY}
+        : null;
+    }, {passive: true, capture: true});
+    window.addEventListener('touchend', function(event) {
+      var start = miniTouchStart;
+      miniTouchStart = null;
+      var touch = event.changedTouches && event.changedTouches[0];
+      if (touch) finish_mini_reveal_gesture(start, touch.clientX, touch.clientY);
+    }, {passive: true, capture: true});
+    window.addEventListener('touchcancel', function() { miniTouchStart = null; }, {passive: true, capture: true});
+    window.addEventListener('pointerdown', function(event) {
+      if (event.pointerType !== 'touch') return;
+      miniPointerStart = is_mini_reveal_gesture_start(event.clientX, event.clientY)
+        ? {x: event.clientX, y: event.clientY}
+        : null;
+    }, {passive: true, capture: true});
+    window.addEventListener('pointerup', function(event) {
+      if (event.pointerType !== 'touch') return;
+      var start = miniPointerStart;
+      miniPointerStart = null;
+      finish_mini_reveal_gesture(start, event.clientX, event.clientY);
+    }, {passive: true, capture: true});
+    window.addEventListener('pointercancel', function(event) {
+      if (event.pointerType === 'touch') miniPointerStart = null;
+    }, {passive: true, capture: true});
   }
   set_music_mini_player_collapsed(music_mini_player_collapsed, false);
   ['play', 'pause', 'listswitch', 'timeupdate', 'loadedmetadata', 'volumechange', 'listadd', 'listremove', 'listclear'].forEach(function(eventName) {

@@ -327,7 +327,7 @@ function renderNode(node: HastNode, key: React.Key, context: RenderContext): Rea
       }));
       return React.createElement(
         'div',
-        {key, className: styles.markdownPreview},
+        {key, className: `${styles.markdownPreview} ${styles.verilogCodeBlock}`},
         highlightedCode,
       );
     }

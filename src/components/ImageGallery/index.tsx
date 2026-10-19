@@ -38,6 +38,13 @@ function revealDelay(index: number, step = 55, max = 14): RevealStyle {
   return {'--reveal-delay': `${Math.min(index, max) * step}ms`};
 }
 
+function imageDownloadName(item: GalleryItem): string {
+  const title = item.title.trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100) || item.pixivId || 'illustration';
+  const path = item.image.split(/[?#]/, 1)[0];
+  const extension = path.match(/\.([a-z0-9]{2,5})$/i)?.[1] || 'png';
+  return `${title}_${item.pixivId}.${extension}`;
+}
+
 async function fetchGallery(signal?: AbortSignal): Promise<GalleryPayload> {
   const response = await fetch('/api/gallery', {
     credentials: 'same-origin',
@@ -57,9 +64,10 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
   const [loaded, setLoaded] = useState(false);
   const [requestStarted, setRequestStarted] = useState(eager || original);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const loadedRef = useRef(false);
   const candidates = original
-    ? [item.proxyImage, item.image, item.fallbackImage].filter(Boolean)
-    : [item.thumbnailProxy || item.proxyImage, item.thumbnail || item.image, item.thumbnailFallback || item.fallbackImage].filter(Boolean);
+    ? [item.proxyImage, item.fallbackImage, item.image].filter(Boolean)
+    : [item.thumbnailProxy || item.proxyImage, item.thumbnailFallback || item.fallbackImage, item.thumbnail || item.image].filter(Boolean);
   const source = candidates[attempt] || item.image;
   useEffect(() => {
     setAttempt(0);
@@ -67,6 +75,10 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
     setLoaded(false);
     setRequestStarted(eager || original);
   }, [eager, item.fallbackImage, item.image, item.proxyImage, item.thumbnail, item.thumbnailFallback, item.thumbnailProxy, original]);
+  useEffect(() => { loadedRef.current = loaded; }, [loaded]);
+  useEffect(() => {
+    setLoaded(false);
+  }, [source]);
   useEffect(() => {
     const image = imageRef.current;
     if (image?.complete && image.naturalWidth > 0) setLoaded(true);
@@ -90,9 +102,10 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
   useEffect(() => {
     if (failed || loaded || !requestStarted) return undefined;
     const timeout = window.setTimeout(() => {
+      if (loadedRef.current) return;
       if (attempt < candidates.length - 1) setAttempt(attempt + 1);
       else setFailed(true);
-    }, original ? 25000 : 12000);
+    }, original ? 30000 : 15000);
     return () => window.clearTimeout(timeout);
   }, [attempt, candidates.length, failed, loaded, original, requestStarted]);
   return (
@@ -106,7 +119,15 @@ function GalleryImage({item, eager = false, contain = false, original = false, i
         decoding="async"
         draggable={false}
         style={imageStyle}
-        onLoad={() => { setLoaded(true); setFailed(false); }}
+        onLoad={(event) => {
+          const image = event.currentTarget;
+          const reveal = () => { setLoaded(true); setFailed(false); };
+          if (image && typeof image.decode === 'function') {
+            image.decode().then(reveal).catch(reveal);
+          } else {
+            reveal();
+          }
+        }}
         onError={() => {
           setLoaded(false);
           if (attempt < candidates.length - 1) {
@@ -202,8 +223,11 @@ export default function ImageGalleryPage(): JSX.Element {
   const [pan, setPan] = useState({x: 0, y: 0});
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<{x: number; y: number; panX: number; panY: number} | null>(null);
+  const touchGestureRef = useRef<{x: number; y: number; panX: number; panY: number; zoom: number; pinchDistance: number | null; pinched: boolean} | null>(null);
+  const lastTapRef = useRef<{time: number; x: number; y: number} | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const pendingScrollRef = useRef(false);
+  const previewScrollPositionRef = useRef<number | null>(null);
 
   const loadGallery = useCallback(async () => {
     setLoading(true);
@@ -241,10 +265,48 @@ export default function ImageGalleryPage(): JSX.Element {
     if (pageIndex >= pageCount) setPageIndex(Math.max(0, pageCount - 1));
   }, [pageCount, pageIndex]);
 
+  const openPreview = (item: GalleryItem) => {
+    if (!previewItem) previewScrollPositionRef.current = window.scrollY;
+    setPreviewItem(item);
+  };
+
   useEffect(() => {
     if (!previewItem) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const scrollY = previewScrollPositionRef.current ?? window.scrollY;
+    const body = document.body;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      overflow: body.style.overflow,
+      paddingRight: body.style.paddingRight,
+    };
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth) body.style.paddingRight = `${scrollbarWidth}px`;
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.left = previous.left;
+      body.style.right = previous.right;
+      body.style.overflow = previous.overflow;
+      body.style.paddingRight = previous.paddingRight;
+      previewScrollPositionRef.current = null;
+      const root = document.documentElement;
+      const previousScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      window.scrollTo(0, scrollY);
+      window.requestAnimationFrame(() => { root.style.scrollBehavior = previousScrollBehavior; });
+    };
+  }, [previewItem !== null]);
+
+  useEffect(() => {
+    if (!previewItem) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setPreviewItem(null);
       if (event.key === 'ArrowLeft' && previewIndex > 0) setPreviewItem(galleryItems[previewIndex - 1]);
@@ -254,10 +316,7 @@ export default function ImageGalleryPage(): JSX.Element {
       if (event.key === '0') { setZoom(1); setPan({x: 0, y: 0}); }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
-    };
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [galleryItems, previewIndex, previewItem]);
 
   useEffect(() => {
@@ -272,6 +331,74 @@ export default function ImageGalleryPage(): JSX.Element {
   const handleImageWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     changeZoom(event.deltaY < 0 ? 1.15 : 1 / 1.15);
+  };
+  const handleViewerTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length > 1) {
+      const first = event.touches[0];
+      const second = event.touches[1];
+      const dx = second.clientX - first.clientX;
+      const dy = second.clientY - first.clientY;
+      touchGestureRef.current = {x: 0, y: 0, panX: pan.x, panY: pan.y, zoom, pinchDistance: Math.hypot(dx, dy), pinched: true};
+      setIsDragging(true);
+      return;
+    }
+    const touch = event.touches[0];
+    if (touch) {
+      touchGestureRef.current = {x: touch.clientX, y: touch.clientY, panX: pan.x, panY: pan.y, zoom, pinchDistance: null, pinched: false};
+      if (zoom > 1) setIsDragging(true);
+    }
+  };
+  const handleViewerTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current;
+    if (!gesture) return;
+    if (event.touches.length > 1) {
+      const first = event.touches[0];
+      const second = event.touches[1];
+      const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+      if (gesture.pinchDistance) setZoom(Math.max(1, Math.min(5, gesture.zoom * distance / gesture.pinchDistance)));
+      gesture.pinched = true;
+      event.preventDefault();
+      return;
+    }
+    if (gesture.zoom > 1 && event.touches[0]) {
+      setPan({x: gesture.panX + event.touches[0].clientX - gesture.x, y: gesture.panY + event.touches[0].clientY - gesture.y});
+      event.preventDefault();
+    }
+  };
+  const handleViewerTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current;
+    if (!gesture || event.touches.length) return;
+    touchGestureRef.current = null;
+    setIsDragging(false);
+    if (gesture.pinched) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+    if (gesture.zoom <= 1.05 && Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      const nextIndex = previewIndex + (dx < 0 ? 1 : -1);
+      if (nextIndex >= 0 && nextIndex < galleryItems.length) setPreviewItem(galleryItems[nextIndex]);
+      lastTapRef.current = null;
+      return;
+    }
+    if (gesture.zoom <= 1.05 && dy > 88 && dy > Math.abs(dx) * 1.2) {
+      setPreviewItem(null);
+      lastTapRef.current = null;
+      return;
+    }
+    if (Math.hypot(dx, dy) > 18) {
+      lastTapRef.current = null;
+      return;
+    }
+    const now = Date.now();
+    const previousTap = lastTapRef.current;
+    if (previousTap && now - previousTap.time < 320 && Math.hypot(touch.clientX - previousTap.x, touch.clientY - previousTap.y) < 28) {
+      if (zoom > 1.05) resetZoom();
+      else setZoom(2.25);
+      lastTapRef.current = null;
+    } else {
+      lastTapRef.current = {time: now, x: touch.clientX, y: touch.clientY};
+    }
   };
 
   const scrollToResults = useCallback(() => {
@@ -345,7 +472,7 @@ export default function ImageGalleryPage(): JSX.Element {
               </label>
             </div>
             <div className={styles.grid}>
-              {pageItems.map((item, index) => <ArtworkCard item={item} eager index={index} onPreview={setPreviewItem} key={item.id} />)}
+              {pageItems.map((item, index) => <ArtworkCard item={item} eager index={index} onPreview={openPreview} key={item.id} />)}
             </div>
             {pageCount > 1 ? (
               <nav className={styles.pagination} aria-label="图集分页">
@@ -367,18 +494,24 @@ export default function ImageGalleryPage(): JSX.Element {
                   className={`${styles.viewerImageCanvas}${isDragging ? ` ${styles.viewerImageCanvasDragging}` : ''}`}
                   onWheel={handleImageWheel}
                   onPointerDown={(event) => {
+                    if (event.pointerType === 'touch') return;
                     event.preventDefault();
                     event.currentTarget.setPointerCapture(event.pointerId);
                     dragRef.current = {x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y};
                     setIsDragging(true);
                   }}
                   onPointerMove={(event) => {
+                    if (event.pointerType === 'touch') return;
                     if (!dragRef.current) return;
                     setPan({x: dragRef.current.panX + event.clientX - dragRef.current.x, y: dragRef.current.panY + event.clientY - dragRef.current.y});
                   }}
-                  onPointerUp={() => { dragRef.current = null; setIsDragging(false); }}
-                  onPointerCancel={() => { dragRef.current = null; setIsDragging(false); }}
-                  onLostPointerCapture={() => { dragRef.current = null; setIsDragging(false); }}
+                  onPointerUp={(event) => { if (event.pointerType === 'touch') return; dragRef.current = null; setIsDragging(false); }}
+                  onPointerCancel={(event) => { if (event.pointerType === 'touch') return; dragRef.current = null; setIsDragging(false); }}
+                  onLostPointerCapture={(event) => { if (event.pointerType === 'touch') return; dragRef.current = null; setIsDragging(false); }}
+                  onTouchStart={handleViewerTouchStart}
+                  onTouchMove={handleViewerTouchMove}
+                  onTouchEnd={handleViewerTouchEnd}
+                  onTouchCancel={() => { touchGestureRef.current = null; setIsDragging(false); }}
                 >
                   <GalleryImage item={previewItem} eager contain original imageStyle={{transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`}} />
                 </div>
@@ -400,7 +533,10 @@ export default function ImageGalleryPage(): JSX.Element {
                 {previewItem.author ? <p className={styles.author}>{previewItem.author}</p> : null}
                 {previewItem.description ? <p className={styles.viewerDescription}>{previewItem.description}</p> : null}
                 {previewItem.tags.length ? <div className={styles.tags}>{previewItem.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
-                {previewItem.pixivUrl ? <a className={styles.pixivLink} href={previewItem.pixivUrl} target="_blank" rel="noreferrer"><Icon icon="lucide:external-link" />打开 Pixiv 作品</a> : null}
+                <div className={styles.viewerActions}>
+                  {previewItem.pixivUrl ? <a className={styles.pixivLink} href={previewItem.pixivUrl} target="_blank" rel="noreferrer"><Icon icon="lucide:external-link" />打开 Pixiv 作品</a> : null}
+                  <a className={styles.downloadLink} href={previewItem.proxyImage || previewItem.image} download={imageDownloadName(previewItem)} aria-label={`下载原图：${previewItem.title}`}><Icon icon="lucide:download" />下载原图</a>
+                </div>
               </aside>
             </section>
           </div>

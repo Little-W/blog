@@ -202,6 +202,9 @@ export default function PixivRanking() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewImageSourceRef = useRef('');
   const pointerDragRef = useRef<{pointerId: number; startX: number; startY: number; panX: number; panY: number} | null>(null);
+  const touchGestureRef = useRef<{x: number; y: number; panX: number; panY: number; zoom: number; pinchDistance: number | null; pinched: boolean} | null>(null);
+  const lastTapRef = useRef<{time: number; x: number; y: number} | null>(null);
+  const modalScrollPositionRef = useRef<number | null>(null);
   const galleryQueueRef = useRef<Array<{id: number; title: string}>>([]);
   const galleryActiveRef = useRef(0);
   const pendingScrollRestoreRef = useRef<number | null>(null);
@@ -461,9 +464,23 @@ export default function PixivRanking() {
 
   useEffect(() => {
     if (selectedId === null) return undefined;
-    const scrollY = window.scrollY;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const scrollY = modalScrollPositionRef.current ?? window.scrollY;
+    const body = document.body;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      overflow: body.style.overflow,
+      paddingRight: body.style.paddingRight,
+    };
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth) body.style.paddingRight = `${scrollbarWidth}px`;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelectedId(null);
@@ -474,11 +491,21 @@ export default function PixivRanking() {
     window.addEventListener('keydown', onKeyDown);
     modalScrollRef.current?.scrollTo(0, 0);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.left = previous.left;
+      body.style.right = previous.right;
+      body.style.overflow = previous.overflow;
+      body.style.paddingRight = previous.paddingRight;
       window.removeEventListener('keydown', onKeyDown);
+      modalScrollPositionRef.current = null;
+      const root = document.documentElement;
+      const previousScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
       window.scrollTo(0, scrollY);
+      window.requestAnimationFrame(() => { root.style.scrollBehavior = previousScrollBehavior; });
     };
-  }, [selectedId]);
+  }, [selectedId !== null]);
 
   useEffect(() => {
     setZoom(1);
@@ -652,6 +679,7 @@ export default function PixivRanking() {
   };
 
   const openArtwork = (seed: PreviewSeed, fromRelated = false) => {
+    if (selectedId === null) modalScrollPositionRef.current = window.scrollY;
     setDetailHistory((history) => fromRelated && previewSeed ? [...history, previewSeed] : []);
     setPreviewSeed(seed);
     setSelectedId(seed.id);
@@ -784,7 +812,7 @@ export default function PixivRanking() {
   };
 
   const handleViewerPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (zoom <= 1 || event.button !== 0) return;
+    if (event.pointerType === 'touch' || zoom <= 1 || event.button !== 0) return;
     event.preventDefault();
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -796,16 +824,96 @@ export default function PixivRanking() {
   };
 
   const handleViewerPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === 'touch') return;
     const drag = pointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     setPan({x: drag.panX + event.clientX - drag.startX, y: drag.panY + event.clientY - drag.startY});
   };
 
   const finishViewerDrag = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === 'touch') return;
     if (pointerDragRef.current?.pointerId !== event.pointerId) return;
     pointerDragRef.current = null;
     setDragging(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const handleDetailTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length > 1) {
+      const first = event.touches[0];
+      const second = event.touches[1];
+      touchGestureRef.current = {
+        x: 0,
+        y: 0,
+        panX: pan.x,
+        panY: pan.y,
+        zoom,
+        pinchDistance: Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY),
+        pinched: true,
+      };
+      return;
+    }
+    const touch = event.touches[0];
+    if (touch) touchGestureRef.current = {x: touch.clientX, y: touch.clientY, panX: pan.x, panY: pan.y, zoom, pinchDistance: null, pinched: false};
+  };
+
+  const handleDetailTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current;
+    if (!gesture) return;
+    if (event.touches.length > 1) {
+      const first = event.touches[0];
+      const second = event.touches[1];
+      const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+      if (gesture.pinchDistance) setZoom(Math.max(1, Math.min(5, gesture.zoom * distance / gesture.pinchDistance)));
+      gesture.pinched = true;
+      event.preventDefault();
+      return;
+    }
+    if (gesture.zoom > 1 && event.touches[0]) {
+      setPan({x: gesture.panX + event.touches[0].clientX - gesture.x, y: gesture.panY + event.touches[0].clientY - gesture.y});
+      event.preventDefault();
+    }
+  };
+
+  const handleDetailTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const gesture = touchGestureRef.current;
+    if (!gesture || event.touches.length) return;
+    touchGestureRef.current = null;
+    if (gesture.pinched) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - gesture.x;
+    const dy = touch.clientY - gesture.y;
+    if (gesture.zoom <= 1.05 && Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      const direction = dx < 0 ? 1 : -1;
+      if (pageCount > 1) {
+        setPageIndex((current) => Math.max(0, Math.min(pageCount - 1, current + direction)));
+      } else {
+        const currentIndex = items.findIndex((item) => item.id === selectedId);
+        const nextItem = items[currentIndex + direction];
+        if (nextItem) openArtwork({id: nextItem.id, title: nextItem.title, author: nextItem.author, thumb: nextItem.thumb, tags: nextItem.tags, isBookmarked: nextItem.isBookmarked});
+      }
+      lastTapRef.current = null;
+      return;
+    }
+    if (gesture.zoom <= 1.05 && dy > 88 && dy > Math.abs(dx) * 1.2) {
+      closeDetail();
+      lastTapRef.current = null;
+      return;
+    }
+    if (Math.hypot(dx, dy) > 18) {
+      lastTapRef.current = null;
+      return;
+    }
+    const now = Date.now();
+    const previousTap = lastTapRef.current;
+    if (previousTap && now - previousTap.time < 320 && Math.hypot(touch.clientX - previousTap.x, touch.clientY - previousTap.y) < 28) {
+      if (zoom > 1.05) resetViewer();
+      else setZoom(2.25);
+      lastTapRef.current = null;
+    } else {
+      lastTapRef.current = {time: now, x: touch.clientX, y: touch.clientY};
+    }
   };
 
   const resetViewer = () => {
@@ -953,7 +1061,14 @@ export default function PixivRanking() {
                   <div className={styles.detailLayout}>
                     <div className={styles.detailImagePanel}>
                       {pageDisplay && (
-                        <div className={styles.detailImageViewport} ref={viewerViewportRef}>
+                        <div
+                          className={styles.detailImageViewport}
+                          ref={viewerViewportRef}
+                          onTouchStart={handleDetailTouchStart}
+                          onTouchMove={handleDetailTouchMove}
+                          onTouchEnd={handleDetailTouchEnd}
+                          onTouchCancel={() => { touchGestureRef.current = null; }}
+                        >
                           {!previewImage && <span className={styles.detailImagePlaceholder} aria-hidden="true" />}
                           <PixivImage
                             className={styles.detailSourceImage}
@@ -989,7 +1104,7 @@ export default function PixivRanking() {
                         </div>
                       )}
                       <div className={styles.zoomTools}>
-                        <span className={styles.zoomHint}>滚轮缩放 · 放大后可拖动</span>
+                        <span className={styles.zoomHint}>滚轮/双指缩放 · 滑动切图 · 放大后可拖动</span>
                         <button type="button" onClick={() => setZoom((current) => Math.max(1, current / 1.25))} disabled={zoom <= 1} aria-label="缩小">−</button>
                         <span className={styles.zoomValue}>{Math.round(zoom * 100)}%</span>
                         <button type="button" onClick={() => setZoom((current) => Math.min(5, current * 1.25))} disabled={zoom >= 5} aria-label="放大">+</button>

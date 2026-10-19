@@ -456,6 +456,7 @@
   justify-content: center;
   overflow: hidden;
   overscroll-behavior: contain;
+  touch-action: none;
 }
 
 .detailImageCanvas {
@@ -862,21 +863,27 @@
 
 @media (max-width: 700px) {
   .hero { padding: 2.6rem 0.8rem 1.3rem; }
-  .importControl { padding: 0.25rem 0.4rem 0.25rem 0.6rem; }
+  .importControl { position: relative; top: auto; left: auto; width: max-content; max-width: 100%; justify-content: center; margin: 0.85rem auto 0; padding: 0.35rem 0.55rem 0.35rem 0.7rem; }
   .importLabel { display: none; }
   .tabs { gap: 0.15rem; padding: 0.3rem; }
   .tab { padding: 0.4rem 0.7rem; font-size: 0.88rem; }
-  .waterfall { column-gap: 10px; }
+  .waterfall { --waterfall-columns: 1; grid-template-columns: minmax(0, 1fr); column-gap: 0; row-gap: 12px; }
+  .card { border-radius: 14px; }
+  .favoriteButton,.galleryAddButton { width: 44px; height: 44px; }
+  .favoriteButton { right: 12px; bottom: 12px; }
+  .galleryAddButton { top: 12px; right: 12px; }
   .info { padding: 8px; }
   .modalBackdrop { padding: 0; }
-  .modal { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
-  .modalScroll { max-height: 100vh; }
+  .modal { width: 100%; max-height: 100dvh; height: 100dvh; border: 0; border-radius: 0; }
+  .modalScroll { max-height: 100dvh; }
   .detailLayout { display: flex; flex-direction: column; }
   .detailImagePanel { min-height: 280px; padding: 54px 12px 14px; }
-  .detailImageViewport { height: min(50vh, 420px); }
+  .detailImageViewport { height: min(50dvh, 420px); min-height: 220px; }
   .detailImageCanvas { max-width: none; max-height: none; }
   .zoomTools { flex-wrap: wrap; }
   .zoomHint { width: 100%; margin: 0 0 0.25rem; text-align: center; }
   .detailInfo { padding: 1.25rem; }
   .relatedSection { padding: 1.25rem; }
+  .modalClose { width: 44px; height: 44px; top: 8px; right: 8px; }
+  .zoomTools button,.pageControls button { min-width: 44px; min-height: 44px; }
 }

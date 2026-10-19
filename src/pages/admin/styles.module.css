@@ -2092,6 +2092,19 @@ html[data-theme='dark'] .tabActive {
   color: #172b42;
 }
 
+.markdownPreview.verilogCodeBlock {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.markdownPreview.verilogCodeBlock pre {
+  font-size: var(--ifm-code-font-size, 95%);
+}
+
+.markdownPreview.verilogCodeBlock pre code {
+  font-size: inherit;
+}
+
 [data-theme='dark'] .markdownPreview code:not(pre code) {
   color: #c3d8ef;
 }
