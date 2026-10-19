@@ -86,7 +86,7 @@ error "此文件是 FTA 教学模板：请先完成真实 FPV 环境、属性集
 | 故障未检出 | 可能是死代码、影响不可达、属性缺失或环境屏蔽 | 先审查可达性和影响路径 |
 | 注入无法激活 | 故障点在现有环境下不被触发 | 检查约束及故障定义 |
 | 结果未完成 | 当前证明资源不足 | 提升策略或缩小任务 |
-| 被审查豁免 | 有外部充分证据认定不需要该项 | 记录依据并保留原结果 |
+| 经审查的 waiver（豁免） | 有外部充分证据认定不需要该项 | 记录依据并保留原结果 |
 
 故障结果必须结合分析前的属性状态和所选的故障模型来解读。当基准设计本身已经失败时，不能把同一个失败算作新增故障被检出；当故障无法激活或传播时，也不能据此宣称断言已经检查了对应功能。应该把未检出的有效故障带回到规格和属性正文中分析。
 
@@ -117,9 +117,9 @@ fta_init -top <top_module>
 fta_init -scope <module_list>
 ```
 
-**参数解释。** `-top` 指定故障注入的顶层，在分步的 `analyze/elaborate` 流程中尤其要先设置；`-scope` 限定参与故障注入的模块列表。两种写法分别出现在 User Guide 的流程说明中，但这并不等于所有模式都必须同时提供这两个选项。
+**参数解释：** `-top` 指定故障注入的顶层，在分步的 `analyze/elaborate` 流程中尤其要先设置；`-scope` 限定参与故障注入的模块列表。两种写法分别出现在 User Guide 的流程说明中，但这并不等于所有模式都必须同时提供这两个选项。
 
-**用法与结果。** FTA 应该从已有的干净 FPV 环境开始，随后在读入或展开设计时使用 `-inject_fault`。如果没有提供专用的 Certitude 文件，工具可以为所有模块自动生成注入配置；这会显著扩大故障集合。显式配置文件中的 FaultSet 与注入开关之间存在优先级，不能只凭一条 Tcl 判断实际的故障范围。
+**用法与结果：** FTA 应该从已有的干净 FPV 环境开始，随后在读入或展开设计时使用 `-inject_fault`。如果没有提供专用的 Certitude 文件，工具可以为所有模块自动生成注入配置；这会显著扩大故障集合。显式配置文件中的 FaultSet 与注入开关之间存在优先级，不能只凭一条 Tcl 判断实际的故障范围。
 
 ```tcl
 set_fml_appmode FPV
@@ -140,9 +140,9 @@ configure_fta_props -par_task <fpv_task>
   [-min_proof_depth <depth>]
 ```
 
-**参数解释。** `-par_task` 指定父 FPV 任务。`-fault_class` 在已经插入的故障内进一步选择类别，例如 SynchronousControlFlow、ComboLogicControlFlow；它不能补插编译时没有生成的故障。`-type`、`-usage`、`-status` 选择参与检测的属性，默认只使用 proven 属性。`-min_proof_depth` 为纳入的未完成属性设定最小有界证明深度；如果没有显式给出，工具就取所选未完成属性中最小的证明深度。
+**参数解释：** `-par_task` 指定父 FPV 任务。`-fault_class` 在已经插入的故障内进一步选择类别，例如 SynchronousControlFlow、ComboLogicControlFlow；它不能补插编译时没有生成的故障。`-type`、`-usage`、`-status` 选择参与检测的属性，默认只使用 proven 属性。`-min_proof_depth` 为纳入的未完成属性设定最小有界证明深度；如果没有显式给出，工具就取所选未完成属性中最小的证明深度。
 
-**用法与结果。** 选择 inconclusive 属性时，要同时报告它的有界深度，不能让最终的故障检测率看起来与全部使用完整证明的配置相同。原文有一处示例误拼成 `-par_tack`，其他定义和示例都使用 `-par_task`；本教程采用后一种拼写。
+**用法与结果：** 选择 inconclusive 属性时，要同时报告它的有界深度，不能让最终的故障检测率看起来与全部使用完整证明的配置相同。原文有一处示例误拼成 `-par_tack`，其他定义和示例都使用 `-par_task`；本教程采用后一种拼写。
 
 ```tcl
 configure_fta_props -par_task FPV \
@@ -158,9 +158,9 @@ configure_fta_props -par_task FPV -status {proven}
 compute_fta -par_task <fpv_task> [-property <property_collection>]
 ```
 
-**参数解释。** `-par_task` 指明提供规格断言和约束的父任务。`-property` 可以显式选取用于检测故障的属性；省略时使用配置和默认的选择规则，通常为 proven 属性。
+**参数解释：** `-par_task` 指明提供规格断言和约束的父任务。`-property` 可以显式选取用于检测故障的属性；省略时使用配置和默认的选择规则，通常为 proven 属性。
 
-**用法与结果。** 先在全部故障被内部关闭的情况下重跑 FPV，确认注入后的设计模型仍然满足原基线，然后再运行 FTA。故障未被检测并不自动证明故障没有影响：可能是断言漏写、约束屏蔽了激活条件、故障无法传播，或者求解尚无结论。需要结合分类和反例继续分析。
+**用法与结果：** 先在全部故障被内部关闭的情况下重跑 FPV，确认注入后的设计模型仍然满足原基线，然后再运行 FTA。故障未被检测并不自动证明故障没有影响：可能是断言漏写、约束屏蔽了激活条件、故障无法传播，或者求解尚无结论。需要结合分类和反例继续分析。
 
 ```tcl
 check_fv -block
@@ -178,9 +178,9 @@ fta_report -instance {controller}
 get_fta_faults <instance_list> [-status <status_list>]
 ```
 
-**参数解释。** 位置参数限定设计实例；`-status non_detected` 可以筛选出未检测的故障。返回的是工具集合，可以交给 `report_fv`、`fvdisable`、`fvenable`、`fvwaive`。
+**参数解释：** 位置参数限定设计实例；`-status non_detected` 可以筛选出未检测的故障。返回的是工具集合，可以交给 `report_fv`、`fvdisable`、`fvenable`、`fvwaive`。
 
-**用法与结果。** 是否区分同一模块不同实例中的故障，受编译前的 `fml_fta_inst_qual` 设置影响。在大量共用模块的场景下，应该先确认实例级故障是否彼此独立，再比较每个实例的检测率。禁用或豁免集合只是在本次分析中排除掉目标，并不等于已经检测。
+**用法与结果：** 是否区分同一模块不同实例中的故障，受编译前的 `fml_fta_inst_qual` 设置影响。在大量共用模块的场景下，应该先确认实例级故障是否彼此独立，再比较每个实例的检测率。禁用或豁免集合只是在本次分析中排除掉目标，并不等于已经检测。
 
 ```tcl
 set nd [get_fta_faults controller.u_fifo -status non_detected]
@@ -198,9 +198,9 @@ fta_report <instance_name> -list
 fta_report <instance_name> -verbose
 ```
 
-**参数解释。** `-instance` 指定一个或多个实例，`-list` 和 `-verbose` 分别用于逐项报告和详细报告。这里保留了 User Guide 中分别出现的调用形式；不把示意性的 `-list/-verbose` 连写成一个可执行的开关。
+**参数解释：** `-instance` 指定一个或多个实例，`-list` 和 `-verbose` 分别用于逐项报告和详细报告。这里保留了 User Guide 中分别出现的调用形式；不把示意性的 `-list/-verbose` 连写成一个可执行的开关。
 
-**用法与结果。** 先看总量和状态分布，再看未检测故障对应的 RTL 和规格断言。报告应该注明故障类别、实例范围、被排除的故障和参与检测的属性集合，否则不同运行得到的百分比不能直接比较。
+**用法与结果：** 先看总量和状态分布，再看未检测故障对应的 RTL 和规格断言。报告应该注明故障类别、实例范围、被排除的故障和参与检测的属性集合，否则不同运行得到的百分比不能直接比较。
 
 ```tcl
 fta_report -instance {controller.u_fifo controller.u_arbiter}
@@ -215,9 +215,9 @@ fta_report controller.u_fifo -verbose
 read_fta_waiver [-elfiles <exclusion_file_list>]
 ```
 
-**参数解释。** `-elfiles` 指定一个或多个由 `save_waiver_file -fta` 生成的文件。故障键包含类别、原 RTL 构造及其他唯一属性，而不只是依赖容易变化的显示序号。
+**参数解释：** `-elfiles` 指定一个或多个由 `save_waiver_file -fta` 生成的文件。故障键包含类别、原 RTL 构造及其他唯一属性，而不只是依赖容易变化的显示序号。
 
-**用法与结果。** 当设计修改导致原故障键不再匹配时，不应该强行沿用旧的豁免；应该审查失配项。工作目录中的 COI.el、FC.el 可能会被相关的 FTA/高强度汇总流程自动使用，运行归档时要一并收集这些文件，避免出现隐藏的排除来源。
+**用法与结果：** 当设计修改导致原故障键不再匹配时，不应该强行沿用旧的豁免；应该审查失配项。工作目录中的 COI.el、FC.el 可能会被相关的 FTA/高强度汇总流程自动使用，运行归档时要一并收集这些文件，避免出现隐藏的排除来源。
 
 ```tcl
 fvwaive [get_fta_faults controller.u_debug]
@@ -233,9 +233,9 @@ read_fta_waiver -elfiles {reviewed_faults.el}
 read_faultdb -name <database_path>
 ```
 
-**参数解释。** `-name` 指向的是 Testbench Quality Assurance/Certitude 数据库，而不是普通的 VCS 代码覆盖 `.vdb`。
+**参数解释：** `-name` 指向的是 Testbench Quality Assurance/Certitude 数据库，而不是普通的 VCS 代码覆盖 `.vdb`。
 
-**用法与结果。** 必须在 `read_file` 或 `elaborate` 之前使用。在仿真数据库中已经判为检测到的故障，可以从形式分析目标中排除，让形式工具集中处理其余的故障。合并统计之前，仍然需要确认两个流程的设计版本、故障定义和配置一致。
+**用法与结果：** 必须在 `read_file` 或 `elaborate` 之前使用。在仿真数据库中已经判为检测到的故障，可以从形式分析目标中排除，让形式工具集中处理其余的故障。合并统计之前，仍然需要确认两个流程的设计版本、故障定义和配置一致。
 
 ```tcl
 set_fml_appmode FPV
@@ -252,9 +252,9 @@ read_file -top controller -inject_fault RTL -sva \
 save_faultdb [-name <database_path>]
 ```
 
-**参数解释。** `-name` 指定保存目录或数据库路径。结果会保存到 Testbench Quality Assurance 数据库，供独立工具合并和查看。
+**参数解释：** `-name` 指定保存目录或数据库路径。结果会保存到 Testbench Quality Assurance 数据库，供独立工具合并和查看。
 
-**用法与结果。** 这是 FTA 的数据库接口，既不是 FuSa 的 `fusa_save`，也不是覆盖率的 `save_covdb`。三者的数据对象和后续使用它们的工具各不相同，文件名相似并不意味着命令可以互换。
+**用法与结果：** 这是 FTA 的数据库接口，既不是 FuSa 的 `fusa_save`，也不是覆盖率的 `save_covdb`。三者的数据对象和后续使用它们的工具各不相同，文件名相似并不意味着命令可以互换。
 
 ```tcl
 save_faultdb -name formal_fault_results
@@ -268,9 +268,9 @@ save_faultdb -name formal_fault_results
 cluster_fta_faults
 ```
 
-**参数解释。** User Guide 在本节给出的调用不带参数；它对未检测的故障进行相似性分组。
+**参数解释：** User Guide 在本节给出的调用不带参数；它对未检测的故障进行相似性分组。
 
-**用法与结果。** 分组用于减少重复调试。修复组内一个代表故障所暴露的检查缺失之后，应该重跑整组，而不是直接把其他成员改成“已检测”。相似只是一种分析提示，并不是逻辑等价的证明。
+**用法与结果：** 分组用于减少重复调试。修复组内一个代表故障所暴露的检查缺失之后，应该重跑整组，而不是直接把其他成员改成“已检测”。相似只是一种分析提示，并不是逻辑等价的证明。
 
 ```tcl
 cluster_fta_faults
@@ -285,9 +285,9 @@ report_fta_fault_clusters
 report_fta_fault_clusters
 ```
 
-**参数解释。** 输入是先前由 `cluster_fta_faults` 计算出的分组结果；本节没有列出额外参数。
+**参数解释：** 输入是先前由 `cluster_fta_faults` 计算出的分组结果；本节没有列出额外参数。
 
-**用法与结果。** 优先选择那些影响可观察输出、关联关键功能且覆盖属性较少的分组，做代表性调试。保留组成员清单，便于在补充断言之后核实整组状态的变化。
+**用法与结果：** 优先选择那些影响可观察输出、关联关键功能且覆盖属性较少的分组，做代表性调试。保留组成员清单，便于在补充断言之后核实整组状态的变化。
 
 ```tcl
 cluster_fta_faults
@@ -304,9 +304,9 @@ debug_fta -dump_setup
 debug_fta -run_user_setup
 ```
 
-**参数解释。** `-property` 限定目标故障；不提供时使用流程的默认目标。`-dump_setup` 导出 fta_ndf.tcl；修改这个模板之后再用 `-run_user_setup` 运行用户设置。这三种形式属于不同阶段，不应该把导出和运行开关无条件堆在同一个调用中。
+**参数解释：** `-property` 限定目标故障；不提供时使用流程的默认目标。`-dump_setup` 导出 fta_ndf.tcl；修改这个模板之后再用 `-run_user_setup` 运行用户设置。这三种形式属于不同阶段，不应该把导出和运行开关无条件堆在同一个调用中。
 
-**用法与结果。** 这个命令借助 SEQ 比较正常设计与带目标故障的设计，并自动打开带 Verdi 的独立会话，因此批处理 FTA 也可能需要图形显示和 SEQ 许可。它会调整工作目录中的 Certitude 配置文件；回到原来的 FPV-FTA 流程之前，应该按原文要求恢复。初始化时不启用目标故障，故障在复位阶段的影响不属于这个默认的调试问题。
+**用法与结果：** 这个命令借助 SEQ 比较正常设计与带目标故障的设计，并自动打开带 Verdi 的独立会话，因此批处理 FTA 也可能需要图形显示和 SEQ 许可。它会调整工作目录中的 Certitude 配置文件；回到原来的 FPV-FTA 流程之前，应该按原文要求恢复。初始化时不启用目标故障，故障在复位阶段的影响不属于这个默认的调试问题。
 
 ```tcl
 debug_fta -dump_setup
@@ -445,7 +445,7 @@ set -o pipefail
 vcf -f scripts/fpv_counter.tcl -batch 2>&1 | tee logs/fpv_counter.log
 ```
 
-**结果阅读。** 在初始状态正确的前提下，正确版预期会满足这些断言，并存在到达 9 和回绕的覆盖轨迹。这并不是本次 VC Formal 的实际运行结果。这些断言分别覆盖范围、保持、普通递增和回绕；复位值以及运行中的重新复位仍然需要结合初始化模型和专门的复位检查，不能仅凭范围属性成立就认定全部功能正确。
+**结果阅读：** 在初始状态正确的前提下，正确版预期会满足这些断言，并存在到达 9 和回绕的覆盖轨迹。这并不是本次 VC Formal 的实际运行结果。这些断言分别覆盖范围、保持、普通递增和回绕；复位值以及运行中的重新复位仍然需要结合初始化模型和专门的复位检查，不能仅凭范围属性成立就认定全部功能正确。
 
 ### 7.1.5 故意错误的 RTL
 

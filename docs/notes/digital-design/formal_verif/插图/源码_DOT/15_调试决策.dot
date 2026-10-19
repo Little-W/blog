@@ -10,7 +10,7 @@ digraph G {
  result [label="形式检查结果",fillcolor="#E5EEFC",color="#597CB9"];
  fail [label="Falsified\n核对反例合法性",fillcolor="#FCE9E6",color="#C17869"];
  pass [label="Proven\n审查假设与空洞性",fillcolor="#E5F4E9",color="#559C76"];
- inc [label="Inconclusive\n拆分 / 不变量 / 性能",fillcolor="#FFF2DF",color="#C69348"];
+ inc [label="Inconclusive（未完成）\n拆分属性、补充不变量\n调整性能与资源",fillcolor="#FFF2DF",color="#C69348"];
  result -> fail; result -> pass; result -> inc;
 
 }

@@ -120,11 +120,11 @@ fusa_config [-sff <files>] [-fdb <database_name>]
   [-dut_path <dut_path>] [-save_fdb_incr <interval>]
 ```
 
-**参数解释。** 至少要提供 `-sff` 或 `-fdb` 所代表的故障输入。`-sff` 接受 SFF 文件列表；`-fdb` 指定统一故障数据库。`-fdb_path` 是本地数据库路径，不能同时与 `-sff`、`-fdb_server` 一起使用；`-fdb_server` 选择服务端，`-fdb_campaign` 选择故障分析活动。`-status` 选择待分析的状态或状态组，状态组在 `fusa_generate` 时展开。`-dut_path` 用于对齐故障文件与当前设计的顶层路径。
+**参数解释：** 至少要提供 `-sff` 或 `-fdb` 所代表的故障输入。`-sff` 接受 SFF 文件列表；`-fdb` 指定统一故障数据库。`-fdb_path` 是本地数据库路径，不能同时与 `-sff`、`-fdb_server` 一起使用；`-fdb_server` 选择服务端，`-fdb_campaign` 选择故障分析活动。`-status` 选择待分析的状态或状态组，状态组在 `fusa_generate` 时展开。`-dut_path` 用于对齐故障文件与当前设计的顶层路径。
 
 `-save_fdb_incr` 控制运行期间的增量保存，单位是 M 或 H，默认 1H，非零时最小为 10M，设为 0 表示关闭。SFF 流程在重新配置之前需要 `fusa_clear`，并且 SFF 输入应该在读设计之前完成。
 
-**用法与结果。** 统一安全流程涉及的工具版本需要相互匹配。User Guide 的“本地 FDB”示意代码存在重复远程选项的排版问题，因此本教程以 `-fdb_path` 的明确定义来区分本地和服务端用法。数据库能够连接，并不代表其中的故障对象都能在当前设计中找到，随后必须检查生成报告和忽略报告。
+**用法与结果：** 统一安全流程涉及的工具版本需要相互匹配。User Guide 的“本地 FDB”示意代码存在重复远程选项的排版问题，因此本教程以 `-fdb_path` 的明确定义来区分本地和服务端用法。数据库能够连接，并不代表其中的故障对象都能在当前设计中找到，随后必须检查生成报告和忽略报告。
 
 ```tcl
 set_fml_appmode FUSA
@@ -142,9 +142,9 @@ fusa_config -sff {faults.sff}
 fusa_clear
 ```
 
-**参数解释。** 不带参数；它清除已经读入的故障和相关属性，使后续可以重新配置。
+**参数解释：** 不带参数；它清除已经读入的故障和相关属性，使后续可以重新配置。
 
-**用法与结果。** FDB 流程可以在保留设计的情况下切换故障配置，但必须先 clear。更换 SFF 文件受到读设计时机的限制：读设计之后再提供新的 SFF 会报错，而在旧式 SFF 流程中，读设计之后连 clear 也不允许。它并不是普遍适用的“随时重启本应用”命令。
+**用法与结果：** FDB 流程可以在保留设计的情况下切换故障配置，但必须先 clear。更换 SFF 文件受到读设计时机的限制：读设计之后再提供新的 SFF 会报错，而在旧式 SFF 流程中，读设计之后连 clear 也不允许。它并不是普遍适用的“随时重启本应用”命令。
 
 ```tcl
 fusa_config -sff first.sff
@@ -161,9 +161,9 @@ fusa_config -sff second.sff
 fusa_map_status [-sff_status <status_code>] [<internal_status>]
 ```
 
-**参数解释。** 位置参数是内部状态，例如 FNR、SIN、SSF、SNO、SND、CNC、CCC、CIN、ONO、OOB、OIN、DND、DDT、DIN、NOD、NON、ODT、OND；`-sff_status` 指定输出的编码。
+**参数解释：** 位置参数是内部状态，例如 FNR、SIN、SSF、SNO、SND、CNC、CCC、CIN、ONO、OOB、OIN、DND、DDT、DIN、NOD、NON、ODT、OND；`-sff_status` 指定输出的编码。
 
-**用法与结果。** 状态编码存在版本差异，不能仅凭两三个字母就判断分析证据。内部的“不可观察”“可检测”“无结论”属于不同维度；自定义外部编码之后，仍然要保留原来的内部状态和分析模式。下面的示例显式重申了原文列出的 FNR→NA 关系，不擅自改写安全分类。
+**用法与结果：** 状态编码存在版本差异，不能仅凭两三个字母就判断分析证据。内部的“不可观察”“可检测”“无结论”属于不同维度；自定义外部编码之后，仍然要保留原来的内部状态和分析模式。下面的示例显式重申了原文列出的 FNR→NA 关系，不擅自改写安全分类。
 
 ```tcl
 fusa_map_status -sff_status NA FNR
@@ -180,9 +180,9 @@ fusa_blackbox [-module <modules>] [-all]
   [-task <failure_mode_task>] [<instances>]
 ```
 
-**参数解释。** `-module` 或实例列表用来限定对象；`-all` 作用于全部结构黑盒。`-all_auto_path` 默认自动创建从输入到输出的路径，`-no_auto_path` 不自动创建；`-seq_path` 和 `-comb_path` 分别采用时序传播和组合传播。`-ignore_unresolved` 跳过未解析的模块；`-data_path_only` 不沿多路选择器的选择控制传播，但允许数据分支传播。`-remove` 撤销安全抽象。`-task` 仅在存在多个 failure mode 时指定所属任务。
+**参数解释：** `-module` 或实例列表用来限定对象；`-all` 作用于全部结构黑盒。`-all_auto_path` 默认自动创建从输入到输出的路径，`-no_auto_path` 不自动创建；`-seq_path` 和 `-comb_path` 分别采用时序传播和组合传播。`-ignore_unresolved` 跳过未解析的模块；`-data_path_only` 不沿多路选择器的选择控制传播，但允许数据分支传播。`-remove` 撤销安全抽象。`-task` 仅在存在多个 failure mode 时指定所属任务。
 
-**用法与结果。** 在设计展开之后、`fusa_generate` 之前使用。普通的结构黑盒会断开传播路径，可能错误地证明故障不可观察；安全抽象则保持保守传播，但也可能添加实际上并不成立的路径，形成需要进一步精化的失败。生成前的报告不一定列出最终的安全黑盒。
+**用法与结果：** 在设计展开之后、`fusa_generate` 之前使用。普通的结构黑盒会断开传播路径，可能错误地证明故障不可观察；安全抽象则保持保守传播，但也可能添加实际上并不成立的路径，形成需要进一步精化的失败。生成前的报告不一定列出最终的安全黑盒。
 
 ```tcl
 fusa_blackbox -all -seq_path
@@ -198,9 +198,9 @@ fusa_report -blackbox -path
 fusa_observation [-add] [-delete] [-file <filename>] [<signals>]
 ```
 
-**参数解释。** `-add` 增加，`-delete` 删除；信号可以直接以 Tcl 列表给出，也可以通过 `-file` 读取。对象应该是输出数据、事务响应或其他用于判断功能影响的信号。
+**参数解释：** `-add` 增加，`-delete` 删除；信号可以直接以 Tcl 列表给出，也可以通过 `-file` 读取。对象应该是输出数据、事务响应或其他用于判断功能影响的信号。
 
-**用法与结果。** 观察点和检测点应该分别根据系统规格确定，不应该为了提高检测率就把所有功能输出都当作告警。FDB/SFF 中已有的点可能会自动导入，也可以再用 Tcl 补充或修改；生成之后用报告核实最终的集合。
+**用法与结果：** 观察点和检测点应该分别根据系统规格确定，不应该为了提高检测率就把所有功能输出都当作告警。FDB/SFF 中已有的点可能会自动导入，也可以再用 Tcl 补充或修改；生成之后用报告核实最终的集合。
 
 ```tcl
 fusa_observation -add {controller.data_out controller.done}
@@ -215,9 +215,9 @@ fusa_report -observation
 fusa_detection [-add] [-delete] [-file <filename>] [<signals>]
 ```
 
-**参数解释。** `-add` 增加，`-delete` 删除；信号可以直接以 Tcl 列表给出，也可以通过 `-file` 读取。对象应该是错误标志、告警或其他安全机制用于报告故障的信号。
+**参数解释：** `-add` 增加，`-delete` 删除；信号可以直接以 Tcl 列表给出，也可以通过 `-file` 读取。对象应该是错误标志、告警或其他安全机制用于报告故障的信号。
 
-**用法与结果。** 观察点和检测点应该分别根据系统规格确定，不应该为了提高检测率就把所有功能输出都当作告警。FDB/SFF 中已有的点可能会自动导入，也可以再用 Tcl 补充或修改；生成之后用报告核实最终的集合。
+**用法与结果：** 观察点和检测点应该分别根据系统规格确定，不应该为了提高检测率就把所有功能输出都当作告警。FDB/SFF 中已有的点可能会自动导入，也可以再用 Tcl 补充或修改；生成之后用报告核实最终的集合。
 
 ```tcl
 fusa_detection -add {controller.error_alarm}
@@ -234,9 +234,9 @@ fusa_generate [-scopes <scopes>] [-excludes <scopes>] [-exact]
   [-analysis <analysis_list>] [-verbose] [-types <node_types>]
 ```
 
-**参数解释。** 按已经导入的 SFF/FDB 清单运行时，使用无参数形式。主动生成或筛选对象时，`-scopes` 指定范围，`-excludes` 排除子范围，`-exact` 避免部分名称匹配。`-fault_type` 选择固定故障或瞬态故障；`-analysis` 选择 structural、control、observe、detect；`-types` 选择 WIRE、PORT、VARI、ARRY；`-verbose` 展开生成的信息。
+**参数解释：** 按已经导入的 SFF/FDB 清单运行时，使用无参数形式。主动生成或筛选对象时，`-scopes` 指定范围，`-excludes` 排除子范围，`-exact` 避免部分名称匹配。`-fault_type` 选择固定故障或瞬态故障；`-analysis` 选择 structural、control、observe、detect；`-types` 选择 WIRE、PORT、VARI、ARRY；`-verbose` 展开生成的信息。
 
-**用法与结果。** 生成属性之后，仍然需要设置运行模式并执行 `check_fv`。该版本对瞬态故障的支持范围不能从允许的枚举值推断出来：User Guide 的支持矩阵只列出了它对结构分析的支持。时钟和复位故障也有专门的结构分析限制，不能把全部注入对象都纳入同一个动态检测率的分母。
+**用法与结果：** 生成属性之后，仍然需要设置运行模式并执行 `check_fv`。该版本对瞬态故障的支持范围不能从允许的枚举值推断出来：User Guide 的支持矩阵只列出了它对结构分析的支持。时钟和复位故障也有专门的结构分析限制，不能把全部注入对象都纳入同一个动态检测率的分母。
 
 ```tcl
 fusa_generate
@@ -254,9 +254,9 @@ fusa_get_ignored_signals
 fusa_get_ignored_signals [-clock] [-reset] [-skipped]
 ```
 
-**参数解释。** `-clock` 只显示被忽略的时钟，`-reset` 只显示复位，`-skipped` 显示其他被跳过的信号；不加筛选时查看整体情况。
+**参数解释：** `-clock` 只显示被忽略的时钟，`-reset` 只显示复位，`-skipped` 显示其他被跳过的信号；不加筛选时查看整体情况。
 
-**用法与结果。** 这个报告是故障范围审查的一部分。信号出现在 RTL 中，并不表示它的故障参与了全部分析模式，尤其不要把时钟、复位对结构分析的支持误说成可控、可观察和检测分析也都支持。
+**用法与结果：** 这个报告是故障范围审查的一部分。信号出现在 RTL 中，并不表示它的故障参与了全部分析模式，尤其不要把时钟、复位对结构分析的支持误说成可控、可观察和检测分析也都支持。
 
 ```tcl
 fusa_get_ignored_signals -clock
@@ -276,9 +276,9 @@ fusa_report [-list] [-verbose] [-no_summary]
   [-instance <instances>] [-fault_category] [-fdb_version]
 ```
 
-**参数解释。** `-list` 让每个故障占一行，`-verbose` 输出详细记录，`-no_summary` 去掉汇总；`-fault_id` 定位故障，`-instance` 按实例筛选，`-with_top` 保留顶层前缀。`-observation`、`-detection` 输出这两类点。`-blackbox` 查看安全黑盒，`-path` 查看传播路径，`-path_config` 查看用户路径配置，`-col` 返回对应的实例集合。`-fdb_report` 输出数据库报告，`-file` 指定该报告的 SFF 文件；`-fault_category` 展示分类，`-fdb_version` 查看数据库版本。
+**参数解释：** `-list` 让每个故障占一行，`-verbose` 输出详细记录，`-no_summary` 去掉汇总；`-fault_id` 定位故障，`-instance` 按实例筛选，`-with_top` 保留顶层前缀。`-observation`、`-detection` 输出这两类点。`-blackbox` 查看安全黑盒，`-path` 查看传播路径，`-path_config` 查看用户路径配置，`-col` 返回对应的实例集合。`-fdb_report` 输出数据库报告，`-file` 指定该报告的 SFF 文件；`-fault_category` 展示分类，`-fdb_version` 查看数据库版本。
 
-**用法与结果。** 报告中的故障状态和分析模式都应该保留。例如，结构上无通路、动态不可激活和尚未求得结论，不能合并成一个“通过”。需要复核检测能力时，要同时查看检测点是否正确导入，而不只是读取 observed 的数量。
+**用法与结果：** 报告中的故障状态和分析模式都应该保留。例如，结构上无通路、动态不可激活和尚未求得结论，不能合并成一个“通过”。需要复核检测能力时，要同时查看检测点是否正确导入，而不只是读取 observed 的数量。
 
 ```tcl
 fusa_report -list
@@ -297,9 +297,9 @@ fusa_save [-sff <filename>] [-fault_db <database_path>]
   [-test <test_name>] [-status <statuses>] [-all_failure_modes]
 ```
 
-**参数解释。** `-sff` 保存 SFF；`-fault_db` 指定数据库；`-test` 指定结果所属的测试名；`-status` 只保存所选的状态；`-all_failure_modes` 保存全部 failure mode 的当前结果。已经配置了本地 FDB 时，可以不带参数保存到当前数据库。
+**参数解释：** `-sff` 保存 SFF；`-fault_db` 指定数据库；`-test` 指定结果所属的测试名；`-status` 只保存所选的状态；`-all_failure_modes` 保存全部 failure mode 的当前结果。已经配置了本地 FDB 时，可以不带参数保存到当前数据库。
 
-**用法与结果。** 输出格式应该与输入流程一致：SFF 输入就导出 SFF，FDB 输入就保存 FDB，不要把这个命令当作通用的格式转换器。它保存的是当前的证据，不会补做尚未完成的分析；汇总报告应该明确指出还有哪些状态未知。
+**用法与结果：** 输出格式应该与输入流程一致：SFF 输入就导出 SFF，FDB 输入就保存 FDB，不要把这个命令当作通用的格式转换器。它保存的是当前的证据，不会补做尚未完成的分析；汇总报告应该明确指出还有哪些状态未知。
 
 ```tcl
 fusa_save -sff formal_safety_result.sff

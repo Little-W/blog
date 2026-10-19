@@ -182,9 +182,9 @@ elaborate_seq -spectop <reference_top> -impltop <implementation_top>
 elaborate_seq -spectop <top> -same_design
 ```
 
-**参数解释。** `-spectop`、`-impltop` 分别指定参考和实现的顶层。分析时如果使用了非默认的 spec、impl 库名，就需要相应设置 `-speclib`、`-impllib`。`-same_design` 从同一个已分析设计建立两份实例，不必重复 `analyze`，也不再要求 `-impltop`。
+**参数解释：** `-spectop`、`-impltop` 分别指定参考和实现的顶层。分析时如果使用了非默认的 spec、impl 库名，就需要相应设置 `-speclib`、`-impllib`。`-same_design` 从同一个已分析设计建立两份实例，不必重复 `analyze`，也不再要求 `-impltop`。
 
-**用法与结果。** 两个版本的模块重名时，用库来隔离，不能把两个定义放进同一个普通工作库，然后指望工具自动区分。`-same_design` 适合同一份 RTL 在不同配置下的比较，但不会自动建立配置差异；差异仍由两侧的常量、模式和环境设置来表达。
+**用法与结果：** 两个版本的模块重名时，用库来隔离，不能把两个定义放进同一个普通工作库，然后指望工具自动区分。`-same_design` 适合同一份 RTL 在不同配置下的比较，但不会自动建立配置差异；差异仍由两侧的常量、模式和环境设置来表达。
 
 ```tcl
 set_fml_appmode SEQ
@@ -206,11 +206,11 @@ map_by_name [-exclude <signals>] [-blackbox] [-undriven] [-abstraction]
   [-condition <expression>]
 ```
 
-**参数解释。** `-exclude` 排除不应自动对应的信号；`-blackbox` 包括同名黑盒和编译存储器抽象，默认还要求它们的底层模块名相同。`-undriven` 对应未驱动信号，`-abstraction` 对应抽象对象。`-map_type` 限制对象类别，例如只比较 output。`-align_mismatch_bitwidth` 指定不同位宽按 lsb 还是 msb 对齐，使用前要确认哪一部分具有规格意义。
+**参数解释：** `-exclude` 排除不应自动对应的信号；`-blackbox` 包括同名黑盒和编译存储器抽象，默认还要求它们的底层模块名相同。`-undriven` 对应未驱动信号，`-abstraction` 对应抽象对象。`-map_type` 限制对象类别，例如只比较 output。`-align_mismatch_bitwidth` 指定不同位宽按 lsb 还是 msb 对齐，使用前要确认哪一部分具有规格意义。
 
 `-clock` 和 `-edge` 决定比较的采样事件，默认边沿为 posedge。`-spec_latency`、`-impl_latency` 设置两侧的比较延迟；`-condition` 限定相等检查成立的条件。未解析模块的端口方向可以由 `-infer_unresolved_ports` 辅助推断。这里展开的是 User Guide 在使用章节中逐项说明的选项，不要把它误当成独立平台命令参考的全部选项。
 
-**用法与结果。** 应在 `sim_run` 之前建立对应。初始化之后才执行可能会报错；即使降低错误等级，生成的约束种类也可能从环境约束变成普通属性约束，初始状态因此不再等价。输入和黑盒输出之间的相等通常形成假设，输出和黑盒输入之间的相等则形成待证明目标，二者不能混淆。
+**用法与结果：** 应在 `sim_run` 之前建立对应。初始化之后才执行可能会报错；即使降低错误等级，生成的约束种类也可能从环境约束变成普通属性约束，初始状态因此不再等价。输入和黑盒输出之间的相等通常形成假设，输出和黑盒输入之间的相等则形成待证明目标，二者不能混淆。
 
 ```tcl
 seqmap -port spec.request impl.req
@@ -229,9 +229,9 @@ map_by_name -map_type {output} -clock spec.clk \
 seqmap [-name <name>] [-port] [-exact] <spec_expression> <impl_expression>
 ```
 
-**参数解释。** 两个位置参数可以是信号、实例或匹配表达式。实例形式会在两侧实例下按寄存器名称寻找对应；通配形式只接受符合类别和位宽规则的对象。`-name` 给这条规则命名，多对匹配会产生带序号的派生名称；名称不能重复。`-port` 用于端口对象，`-exact` 表示精确的信号对，而不是前缀搜索。
+**参数解释：** 两个位置参数可以是信号、实例或匹配表达式。实例形式会在两侧实例下按寄存器名称寻找对应；通配形式只接受符合类别和位宽规则的对象。`-name` 给这条规则命名，多对匹配会产生带序号的派生名称；名称不能重复。`-port` 用于端口对象，`-exact` 表示精确的信号对，而不是前缀搜索。
 
-**用法与结果。** 寄存器匹配主要是为求解器提供提示，并不意味着未经证明就把内部寄存器强制设成相等。端口对应则可以生成输入假设和输出断言，必须按接口规格审查。在默认的表达式匹配中，寄存器和未驱动信号不能跨类别对应。
+**用法与结果：** 寄存器匹配主要是为求解器提供提示，并不意味着未经证明就把内部寄存器强制设成相等。端口对应则可以生成输入假设和输出断言，必须按接口规格审查。在默认的表达式匹配中，寄存器和未驱动信号不能跨类别对应。
 
 ```tcl
 seqmap -name state_pair -exact spec.state impl.state_reg
@@ -249,9 +249,9 @@ sequnmap [-port] [-exact] <spec_expression> <impl_expression>
 sequnmap -name <mapping_name>
 ```
 
-**参数解释。** 可以按信号或实例表达式移除一组关系，也可以只用 `-name` 指定已命名关系。`-name` 不能与两个位置表达式一起使用。`-port` 作用于端口对应，`-exact` 避免前缀匹配扩大范围。
+**参数解释：** 可以按信号或实例表达式移除一组关系，也可以只用 `-name` 指定已命名关系。`-name` 不能与两个位置表达式一起使用。`-port` 作用于端口对应，`-exact` 避免前缀匹配扩大范围。
 
-**用法与结果。** 移除端口对应可能会删除已经生成的属性；移除输入约束会使依赖旧约束的 proven、vacuous、uncoverable 结果失效。被显式取消的对应，在后续的 `map_by_name` 或 `check_fv` 中可能继续被跳过，因此不能把这个命令理解成只清除报告中的一行。
+**用法与结果：** 移除端口对应可能会删除已经生成的属性；移除输入约束会使依赖旧约束的 proven、vacuous、uncoverable 结果失效。被显式取消的对应，在后续的 `map_by_name` 或 `check_fv` 中可能继续被跳过，因此不能把这个命令理解成只清除报告中的一行。
 
 ```tcl
 sequnmap -name state_pair
@@ -273,11 +273,11 @@ seq_config [-specprefix <prefix>] [-implprefix <prefix>]
   [-enable_infer_blackbox_port_direction <true|false>]
 ```
 
-**参数解释。** `-specprefix`、`-implprefix` 默认是 spec、impl。`-recipe` 可选 orch_generic_easy、orch_generic_low、orch_generic_medium、orch_generic_hard，默认为 medium。`-map_uninit` 在复位时按名称对应未初始化寄存器；`-map_counters` 对应抽象计数器；`-extended_mapping` 扩大人工对应的对象搜索范围。`-latch_scope` 选择对哪一侧进行锁存器处理。
+**参数解释：** `-specprefix`、`-implprefix` 默认是 spec、impl。`-recipe` 可选 orch_generic_easy、orch_generic_low、orch_generic_medium、orch_generic_hard，默认为 medium。`-map_uninit` 在复位时按名称对应未初始化寄存器；`-map_counters` 对应抽象计数器；`-extended_mapping` 扩大人工对应的对象搜索范围。`-latch_scope` 选择对哪一侧进行锁存器处理。
 
 `-map_x` 默认为 none：zero/one 把工具产生的未定义值固定为 0/1，safe 对应同名但位宽不同的信号，bestmatch 优先按名称对应，无法对应时置零，none 则保留未知行为。它不处理 snip；被切断的两侧信号需要另行建立关系。`-auto_failure_debug` 控制失败分析；`-enable_rca_path` 默认为 ON。`-map_diff_bb_designs` 默认为 OFF，开启后允许同名但底层模块不同的黑盒对应。未解析端口推断默认为 ON，所有黑盒端口方向推断默认为 false；`-enable_clock_coi_analysis` 默认为 false。
 
-**用法与结果。** 这些选项并不只是运行速度的设置。尤其是把 X 固定为常量、对应未初始化状态、允许不同黑盒对应，都改变了比较问题或其抽象方式。应在报告中保留设置及理由，并先确认正常初始化下的行为，不能为了消除失败就直接使用 bestmatch。
+**用法与结果：** 这些选项并不只是运行速度的设置。尤其是把 X 固定为常量、对应未初始化状态、允许不同黑盒对应，都改变了比较问题或其抽象方式。应在报告中保留设置及理由，并先确认正常初始化下的行为，不能为了消除失败就直接使用 bestmatch。
 
 ```tcl
 seq_config -recipe orch_generic_medium
@@ -295,9 +295,9 @@ get_seq_mappings [-type <mapped|not_mapped>]
   [-map_type <types>] [-skip_map_type <types>] [-clear_mem]
 ```
 
-**参数解释。** `-map_type` 支持 input、output、bbin、bbout、absin、absout、sequential、undriven、unloaded、explicit_x、undefined_x、net，以及 auto、all；`-skip_map_type` 排除具体类别。`-type` 区分已对应和未对应，`-clear_mem` 清除之前该命令建立的集合，避免长期运行的脚本累积查询对象。
+**参数解释：** `-map_type` 支持 input、output、bbin、bbout、absin、absout、sequential、undriven、unloaded、explicit_x、undefined_x、net，以及 auto、all；`-skip_map_type` 排除具体类别。`-type` 区分已对应和未对应，`-clear_mem` 清除之前该命令建立的集合，避免长期运行的脚本累积查询对象。
 
-**用法与结果。** 在 `map_by_name` 之后调用。返回值是工具的集合，不是普通的 Tcl 字符串列表，应使用 `foreach_in_collection` 和 `get_attribute` 读取属性。`not_mapped_reason` 比只看未对应数量更有意义，能够区分名称不存在、位宽不同、方向不同等问题。
+**用法与结果：** 在 `map_by_name` 之后调用。返回值是工具的集合，不是普通的 Tcl 字符串列表，应使用 `foreach_in_collection` 和 `get_attribute` 读取属性。`not_mapped_reason` 比只看未对应数量更有意义，能够区分名称不存在、位宽不同、方向不同等问题。
 
 ```tcl
 set missing [get_seq_mappings -type not_mapped -map_type input]
@@ -317,9 +317,9 @@ report_seq_mappings [-type <mapped|not_mapped>]
   [-sort <ascending|descending>]
 ```
 
-**参数解释。** 对象类别与 `get_seq_mappings` 相同。`-list` 每对一行，`-verbose` 展开细节，`-no_summary` 去掉汇总；`-sort` 按位宽升序或降序排列。`-backend` 用于查看求解后端实际采用的对应，不能同时使用 `-map_type`、`-list`、`-verbose`、`-no_summary`。
+**参数解释：** 对象类别与 `get_seq_mappings` 相同。`-list` 每对一行，`-verbose` 展开细节，`-no_summary` 去掉汇总；`-sort` 按位宽升序或降序排列。`-backend` 用于查看求解后端实际采用的对应，不能同时使用 `-map_type`、`-list`、`-verbose`、`-no_summary`。
 
-**用法与结果。** 这个命令说明的是“哪些对象建立了关系”，而不是“哪些比较已经证明成功”。默认的新流程先给出类别汇总，需要显式加上 `-list` 才会逐项显示。最终的等价结论仍由输出比较和必要的约束审查决定。
+**用法与结果：** 这个命令说明的是“哪些对象建立了关系”，而不是“哪些比较已经证明成功”。默认的新流程先给出类别汇总，需要显式加上 `-list` 才会逐项显示。最终的等价结论仍由输出比较和必要的约束审查决定。
 
 ```tcl
 report_seq_mappings -map_type all -list
@@ -336,9 +336,9 @@ get_seq_equivalences [-status <success|failed|bounded|no_status>]
                      [-id <integer>]
 ```
 
-**参数解释。** `-status` 筛选内部等价点的状态；`-id` 选择报告中指定的内部等价编号。success 表示内部检查成功，failed 表示内部不等价，bounded 表示有界结果，no_status 可能表示该提示未被使用。
+**参数解释：** `-status` 筛选内部等价点的状态；`-id` 选择报告中指定的内部等价编号。success 表示内部检查成功，failed 表示内部不等价，bounded 表示有界结果，no_status 可能表示该提示未被使用。
 
-**用法与结果。** 内部寄存器不等价不一定会导致输出不等价，例如重编码或不同的流水组织可能改变内部状态而保持接口功能不变。这个查询用于调试和分析，不能用“所有提示都必须 success”来代替最终的输出检查标准。
+**用法与结果：** 内部寄存器不等价不一定会导致输出不等价，例如重编码或不同的流水组织可能改变内部状态而保持接口功能不变。这个查询用于调试和分析，不能用“所有提示都必须 success”来代替最终的输出检查标准。
 
 ```tcl
 set failed [get_seq_equivalences -status failed]
@@ -355,9 +355,9 @@ foreach_in_collection eq $failed {
 seq_debug [-stop] [-block] [<property_list>]
 ```
 
-**参数解释。** 省略目标列表时，对当前适用的失败属性进行计算；提供属性名则限制范围。`-block` 等待分析完成，`-stop` 停止正在进行的分析。
+**参数解释：** 省略目标列表时，对当前适用的失败属性进行计算；提供属性名则限制范围。`-block` 等待分析完成，`-stop` 停止正在进行的分析。
 
-**用法与结果。** 先运行比较并获得反例，再计算诊断。信息会区分第一处不一致、驱动关系不一致、未对应、未驱动、切断、抽象或黑盒影响等类型。这些类型说明了反例如何形成，但不会自动判定究竟属于 RTL 错误还是环境设置错误。
+**用法与结果：** 先运行比较并获得反例，再计算诊断。信息会区分第一处不一致、驱动关系不一致、未对应、未驱动、切断、抽象或黑盒影响等类型。这些类型说明了反例如何形成，但不会自动判定究竟属于 RTL 错误还是环境设置错误。
 
 ```tcl
 check_fv -block
@@ -374,9 +374,9 @@ seq_debug_report [-detail <list|summary|verbose>]
   [-format <text|xml>] [-group_failure <criteria>] [<property_list>]
 ```
 
-**参数解释。** `-detail` 默认为 summary；`-format` 默认为 text；`-group_failure` 可以按 mismatch、depth、rootcause_type、rootcause_signal 分组。属性列表用于限制报告范围。
+**参数解释：** `-detail` 默认为 summary；`-format` 默认为 text；`-group_failure` 可以按 mismatch、depth、rootcause_type、rootcause_signal 分组。属性列表用于限制报告范围。
 
-**用法与结果。** 必须先有诊断计算的结果。按最早失败深度和共同原因信号分组，可以避免逐条重复检查同一个接口配置错误；XML 格式适合后续用脚本汇总，但应保留原属性名称和反例索引。
+**用法与结果：** 必须先有诊断计算的结果。按最早失败深度和共同原因信号分组，可以避免逐条重复检查同一个接口配置错误；XML 格式适合后续用脚本汇总，但应保留原属性名称和反例索引。
 
 ```tcl
 seq_debug -block

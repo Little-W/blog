@@ -9,7 +9,7 @@ tags: [形式验证, 数字IC, VC Formal, FCA, 覆盖率]
 
 FPV 证明某一条属性是否成立；FCA 侧重理解覆盖目标的可达性，帮助分析仿真中未覆盖的代码和功能点，在现有约束下是否真的不可能触发。典型情况是：随机回归发现某个分支从未执行，原因究竟是测试不够、环境限制过严，还是这个分支从设计的初始状态就根本不可到达？FCA 可以在适当的逻辑模型中研究可达性，并为覆盖率排除提供依据。
 
-FCA 的结果通常与 VCS 的覆盖数据配合使用，常涉及 `simv.vdb`、排除文件 `.el` 和 `save_covdb` 产生的覆盖数据库。**并不是所有未覆盖都应该被豁免**；覆盖目标在形式模型下不可到达，也不代表它一定不对应产品的真实行为，因为模型和假设可能过度限制。
+FCA 的结果通常与 VCS 的覆盖数据配合使用，常涉及 `simv.vdb`、排除文件 `.el` 和 `save_covdb` 产生的覆盖数据库。**并不是所有未覆盖都应该被当作 waiver（豁免）**；覆盖目标在形式模型下不可到达，也不代表它一定不对应产品的真实行为，因为模型和假设可能过度限制。
 
 ## 2. 覆盖对象与每种结果的含义
 
@@ -166,9 +166,9 @@ read_covdb -cov_input <database_path> -cov_dut <simulation_instance>
            [-fv_dut <formal_instance>]
 ```
 
-**参数解释。** `-cov_input` 指向仿真生成的覆盖数据库；`-cov_dut` 是数据库内的 DUT 实例路径，而不是 RTL 模块名。形式环境另外加了封装模块时，用 `-fv_dut` 指定形式设计内的 DUT 路径，使两个层次中的覆盖对象正确对应。
+**参数解释：** `-cov_input` 指向仿真生成的覆盖数据库；`-cov_dut` 是数据库内的 DUT 实例路径，而不是 RTL 模块名。形式环境另外加了封装模块时，用 `-fv_dut` 指定形式设计内的 DUT 路径，使两个层次中的覆盖对象正确对应。
 
-**用法与结果。** 通常先设定 COV 应用模式、导入数据库，再读取设计并生成覆盖目标。没有仿真数据库时，可以直接从 RTL 开始做不可达分析。导入后主要分析仿真尚未覆盖的目标；不能把仿真的实例路径直接当成形式封装中的路径。以下列出的是 User Guide 使用流程中展示的选项，未扩展到该流程中没有解释的平台参数。
+**用法与结果：** 通常先设定 COV 应用模式、导入数据库，再读取设计并生成覆盖目标。没有仿真数据库时，可以直接从 RTL 开始做不可达分析。导入后主要分析仿真尚未覆盖的目标；不能把仿真的实例路径直接当成形式封装中的路径。以下列出的是 User Guide 使用流程中展示的选项，未扩展到该流程中没有解释的平台参数。
 
 ```tcl
 set_fml_appmode COV
@@ -189,11 +189,11 @@ save_cov_exclusion -file <filename> [-append] [-missing_else]
   [-strict] [-scope <module_or_instance>]
 ```
 
-**参数解释。** `-file` 指定文件，`-append` 表示追加。`-missing_else` 纳入隐含的缺失 else 分支。`-cov` 用加号连接各项指标，支持 line、cond、toggle、fsm_state、fsm_trans、branch、cg、assert、cover、all；all 指结构覆盖类型，assert 和 cover 应显式指定。语法把 `-cov` 标为可选，原文同一段又出现“mandatory”，与省略它的示例相互矛盾；正文采用其明确给出的省略示例，不把该句解释为必填。
+**参数解释：** `-file` 指定文件，`-append` 表示追加。`-missing_else` 纳入隐含的缺失 else 分支。`-cov` 用加号连接各项指标，支持 line、cond、toggle、fsm_state、fsm_trans、branch、cg、assert、cover、all；all 指结构覆盖类型，assert 和 cover 应显式指定。语法把 `-cov` 标为可选，原文同一段又出现“mandatory”，与省略它的示例相互矛盾；正文采用其明确给出的省略示例，不把该句解释为必填。
 
 `-line_intent` 只保留与代码意图相关的目标，`-no_line_intent` 排除这些目标；`-filter` 按属性筛选，`-targets` 显式指定目标集合。`-enable_top_mod_excl` 对顶层使用模块排除，对子层使用实例排除；`-mod_excl` 求同一模块各实例共有的不可达项，`-mod_excl_scope` 限定模块。`-scope` 限定导出层次。`-strict` 写出供 URG/Verdi 严格检查使用的排除文件，以便发现“数据库中已覆盖、排除文件却排除”的冲突。
 
-**用法与结果。** 默认导出已判为不可达的目标，成功返回 1，失败返回 0。显式使用 `-targets` 可以改变导出对象，因此仅有排除文件并不等于每一项都有不可达证明；审查时要同时保留约束、状态和日志。
+**用法与结果：** 默认导出已判为不可达的目标，成功返回 1，失败返回 0。显式使用 `-targets` 可以改变导出对象，因此仅有排除文件并不等于每一项都有不可达证明；审查时要同时保留约束、状态和日志。
 
 ```tcl
 check_fv -block
@@ -212,9 +212,9 @@ save_covdb -name <covdb_name> [-update] [-overwrite]
   [-status <status_list>]
 ```
 
-**参数解释。** `-name` 给出目标数据库；`-update` 把新测试结果更新到已有数据库，`-overwrite` 删除旧内容并重建，两种策略不要混用。`-cov` 筛选指标，`-line_intent` 和 `-no_line_intent` 筛选与代码意图相关的目标。`-status` 支持 covered、uncoverable。assert 和 cover 不会因为省略 `-cov` 就自动全部保存，需要明确选择。
+**参数解释：** `-name` 给出目标数据库；`-update` 把新测试结果更新到已有数据库，`-overwrite` 删除旧内容并重建，两种策略不要混用。`-cov` 筛选指标，`-line_intent` 和 `-no_line_intent` 筛选与代码意图相关的目标。`-status` 支持 covered、uncoverable。assert 和 cover 不会因为省略 `-cov` 就自动全部保存，需要明确选择。
 
-**用法与结果。** 应先保存数据库，再调用 `view_coverage`。原文特别提醒：未使用 `-status covered` 时，不可达目标可能直接从数据库中移除，Verdi Exclusion Manager 不一定把它们显示为“被排除的目标”。需要可审计的排除记录时，要另存 `.el` 文件，不能只保留最终的百分比。
+**用法与结果：** 应先保存数据库，再调用 `view_coverage`。原文特别提醒：未使用 `-status covered` 时，不可达目标可能直接从数据库中移除，Verdi Exclusion Manager 不一定把它们显示为“被排除的目标”。需要可审计的排除记录时，要另存 `.el` 文件，不能只保留最终的百分比。
 
 ```tcl
 save_covdb -name formal_result.vdb -overwrite -status covered
@@ -230,9 +230,9 @@ view_coverage -cov_input formal_result.vdb -elfile formal_unr.el
 view_coverage -cov_input <saved_database> -elfile <exclusion_file>
 ```
 
-**参数解释。** `-cov_input` 选择已保存的覆盖数据库，`-elfile` 叠加不可达排除文件。这是 User Guide 展示的查看流程，并不表示这两个选项就构成了该命令的全部平台语法。
+**参数解释：** `-cov_input` 选择已保存的覆盖数据库，`-elfile` 叠加不可达排除文件。这是 User Guide 展示的查看流程，并不表示这两个选项就构成了该命令的全部平台语法。
 
-**用法与结果。** 打开 Verdi Coverage 后，在 Exclusion Manager 中审查排除项及其来源。检查每个不可达结论是否依赖设计模式、绑定的常量或环境限制，再决定能否用于仿真覆盖验收。查看窗口本身不执行证明，也不改变已有约束。
+**用法与结果：** 打开 Verdi Coverage 后，在 Exclusion Manager 中审查排除项及其来源。检查每个不可达结论是否依赖设计模式、绑定的常量或环境限制，再决定能否用于仿真覆盖验收。查看窗口本身不执行证明，也不改变已有约束。
 
 ```tcl
 save_covdb -name fca_result.vdb -overwrite -status covered
@@ -258,11 +258,11 @@ cov_config [-auto_scale]
 cov_config -debug
 ```
 
-**参数解释。** `-auto_scale` 开启自动分解；各 `*_task` 指定对应指标的并行任务数。`-limit` 是模块已有总覆盖率的阈值，默认为 70；高于阈值的模块会被跳过。各 `*_limit` 则是未覆盖目标数量的阈值，低于该数量的模块会被跳过，不能把这两类阈值都理解成百分比。`-module` 指定形式设计的起点，`-inst_list` 指定输入覆盖数据库中的实例起点。
+**参数解释：** `-auto_scale` 开启自动分解；各 `*_task` 指定对应指标的并行任务数。`-limit` 是模块已有总覆盖率的阈值，默认为 70；高于阈值的模块会被跳过。各 `*_limit` 则是未覆盖目标数量的阈值，低于该数量的模块会被跳过，不能把这两类阈值都理解成百分比。`-module` 指定形式设计的起点，`-inst_list` 指定输入覆盖数据库中的实例起点。
 
 `-start_task_cmd` 在每个任务创建之后、证明之前执行，`-end_task_cmd` 在该任务证明结束后执行；各 `-start_*_task_cmd` 只作用于对应的指标。`-exclude_assumes_covdb` 保存约束对应的排除信息，`-exclude_bb_signals` 排除数据库中的黑盒信号。`-debug` 输出时间和内存消耗信息，是后文使用示例中补充的开关。
 
-**用法与结果。** 必须先开启 `-auto_scale`，再配置其他自动分解选项，或者在同一条命令里设置。阈值和层次选择项必须在 `read_file` 或 `elaborate` 之前使用；读取设计之后再修改，不会按预期重新决定覆盖插装的范围。此流程要用 `compute_cov` 启动，而不是简单地替换几个 `check_fv` 参数。
+**用法与结果：** 必须先开启 `-auto_scale`，再配置其他自动分解选项，或者在同一条命令里设置。阈值和层次选择项必须在 `read_file` 或 `elaborate` 之前使用；读取设计之后再修改，不会按预期重新决定覆盖插装的范围。此流程要用 `compute_cov` 启动，而不是简单地替换几个 `check_fv` 参数。
 
 ```tcl
 set_fml_appmode COV
@@ -281,9 +281,9 @@ compute_cov
 compute_cov
 ```
 
-**参数解释。** 该用法不需要位置参数；它的输入是 `cov_config` 建立的自动分解配置，以及已经读取的 RTL、覆盖数据库和环境。
+**参数解释：** 该用法不需要位置参数；它的输入是 `cov_config` 建立的自动分解配置，以及已经读取的 RTL、覆盖数据库和环境。
 
-**用法与结果。** 这个命令按指标和层次生成并执行任务，报告各任务和总体的结果。每个任务可以产生自己的排除文件，整个流程还会合并产生 `unreachables.el`。任务被筛选跳过并不等于目标已经证明不可达，应把自动筛选范围和最终结论一起记录。
+**用法与结果：** 这个命令按指标和层次生成并执行任务，报告各任务和总体的结果。每个任务可以产生自己的排除文件，整个流程还会合并产生 `unreachables.el`。任务被筛选跳过并不等于目标已经证明不可达，应把自动筛选范围和最终结论一起记录。
 
 ```tcl
 cov_config -auto_scale

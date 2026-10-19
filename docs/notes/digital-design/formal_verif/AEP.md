@@ -160,7 +160,7 @@ aep_config -dont_generate -type fsm_livelock {state_reg:state_name}
 | `aep_config` | 在读入设计前控制自动检查生成 |
 | `aep_generate` | 生成状态机公平性及输入变化约束 |
 | `enable_aep_goals_in_coi` | 只启用指定 FPV 目标相关的 AEP |
-| `fvwaive` | 对可豁免目标记录豁免 |
+| `fvwaive` | 对可豁免目标记录 waiver（豁免） |
 | `fvunwaive` | 撤销目标豁免 |
 | `save_waiver_file` | 保存当前目标豁免 |
 | `read_waiver_file` | 读入已审核豁免 |
@@ -176,9 +176,9 @@ aep_config [-dont_generate] [-type <type-list>]
            [<signal-name:state>]
 ```
 
-**参数解释。** `-dont_generate` 阻止所选类别生成；`-type` 可以选择数组越界、算术溢出、驱动冲突、悬空、多驱动、分支完整性或互斥、置位复位、X 赋值、三种状态机锁定检查以及 all。位置参数可以精确到状态寄存器及某一个状态，使用单个冒号连接。`-enable_counter_arith_oflow` 控制自增、自减计数器的算术溢出检查，默认为 true；`-generate_only_with_fanout` 只保留目标信号有扇出使用的检查，默认为 false。
+**参数解释：** `-dont_generate` 阻止所选类别生成；`-type` 可以选择数组越界、算术溢出、驱动冲突、悬空、多驱动、分支完整性或互斥、置位复位、X 赋值、三种状态机锁定检查以及 all。位置参数可以精确到状态寄存器及某一个状态，使用单个冒号连接。`-enable_counter_arith_oflow` 控制自增、自减计数器的算术溢出检查，默认为 true；`-generate_only_with_fanout` 只保留目标信号有扇出使用的检查，默认为 false。
 
-**用法与结果。** 这个命令必须在 `read_file` 之前执行。它会改变插入到模型中的目标，而 `fvdisable` 只是停用已经生成的目标。对于设计本来允许等待的 RESET 状态，应当按规格局部排除，不应把全部死锁检查都关闭。User Guide 语法注释中提到的 `-exclude` 与展示的选项不一致，示例采用正文明确给出的 `-dont_generate`。
+**用法与结果：** 这个命令必须在 `read_file` 之前执行。它会改变插入到模型中的目标，而 `fvdisable` 只是停用已经生成的目标。对于设计本来允许等待的 RESET 状态，应当按规格局部排除，不应把全部死锁检查都关闭。User Guide 语法注释中提到的 `-exclude` 与展示的选项不一致，示例采用正文明确给出的 `-dont_generate`。
 
 ```tcl
 set_fml_appmode AEP
@@ -200,9 +200,9 @@ aep_generate -type <fsm_fairness|change_at>
              [-max_width <integer>] [-bit] [-property <properties>]
 ```
 
-**参数解释。** `-type fsm_fairness` 为有关的输入建立公平性前提；`change_at` 建立允许变化的边沿规则。`-input_type` 指定主输入、截断点、抽象点或黑盒输出；`-inputs` 指定对象，不给时使用属性影响范围内的输入。`-tcl` 把生成结果写到文件，以供审核。`-max_width` 限制总线位宽：未指定 inputs 时默认阈值为 2，指定 inputs 时默认为 10；超限会给出警告，没有生成任何公平性约束则会报错。`-bit` 按位生成，`-property` 限定相关属性。
+**参数解释：** `-type fsm_fairness` 为有关的输入建立公平性前提；`change_at` 建立允许变化的边沿规则。`-input_type` 指定主输入、截断点、抽象点或黑盒输出；`-inputs` 指定对象，不给时使用属性影响范围内的输入。`-tcl` 把生成结果写到文件，以供审核。`-max_width` 限制总线位宽：未指定 inputs 时默认阈值为 2，指定 inputs 时默认为 10；超限会给出警告，没有生成任何公平性约束则会报错。`-bit` 按位生成，`-property` 限定相关属性。
 
-**用法与结果。** 先建立时钟、复位和常量，然后再生成。总线公平性可能要求遍历其全部可能值，按位公平性与总线组合公平性也不相同；这些都是额外的环境承诺。建议先输出 Tcl，逐条确认外部环境真的保证这种变化，然后再 `source`。不能用公平性去强迫设计内部卡住的状态“总会变化”。
+**用法与结果：** 先建立时钟、复位和常量，然后再生成。总线公平性可能要求遍历其全部可能值，按位公平性与总线组合公平性也不相同；这些都是额外的环境承诺。建议先输出 Tcl，逐条确认外部环境真的保证这种变化，然后再 `source`。不能用公平性去强迫设计内部卡住的状态“总会变化”。
 
 ```tcl
 create_clock clk -period 100
@@ -222,9 +222,9 @@ enable_aep_goals_in_coi [-type <types>] [-status <statuses>]
                         [<names-ids-or-property-collections>]
 ```
 
-**参数解释。** 位置参数指定 FPV 目标；`-type` 限制 AEP 类别，`-status` 限定状态，`-filter` 施加属性过滤，`-regexp` 或 `-exact` 改变名称的匹配方式。
+**参数解释：** 位置参数指定 FPV 目标；`-type` 限制 AEP 类别，`-status` 限定状态，`-filter` 施加属性过滤，`-regexp` 或 `-exact` 改变名称的匹配方式。
 
-**用法与结果。** 这个命令在 FPV 应用中工作，会启用所选目标影响范围内的 AEP，并停用其他 AEP。它用来聚焦相关的结构，并不等于其他结构已经验证过。使用之后应当记录 AEP 总数和启用数量，避免在汇总报告中忽略未检查的部分。
+**用法与结果：** 这个命令在 FPV 应用中工作，会启用所选目标影响范围内的 AEP，并停用其他 AEP。它用来聚焦相关的结构，并不等于其他结构已经验证过。使用之后应当记录 AEP 总数和启用数量，避免在汇总报告中忽略未检查的部分。
 
 ```tcl
 fvassert AP_OUTPUT_NONZERO -expr {out > 0}
@@ -240,9 +240,9 @@ report_fv -class aep -list
 fvwaive <property-name>
 ```
 
-**参数解释。** 指定已经审核、需要保留为例外的目标。AEP 豁免流程要求在读入设计之前设置 `fml_aep_enable_waiver_flow`。
+**参数解释：** 指定已经审核、需要保留为例外的目标。AEP 豁免流程要求在读入设计之前设置 `fml_aep_enable_waiver_flow`。
 
-**用法与结果。** 豁免并不会把目标变成已证明。User Guide 明确说明该机制不支持 assert 类型的 AEP，因此不能把这个命令当成通用的断言免检方式。FCA 还有覆盖目标豁免，应当区分不同的应用和目标类型。
+**用法与结果：** 豁免并不会把目标变成已证明。User Guide 明确说明该机制不支持 assert 类型的 AEP，因此不能把这个命令当成通用的断言免检方式。FCA 还有覆盖目标豁免，应当区分不同的应用和目标类型。
 
 ```tcl
 set_fml_var fml_aep_enable_waiver_flow true
@@ -258,9 +258,9 @@ fvwaive reviewed_waivable_goal
 fvunwaive <property-name>
 ```
 
-**参数解释。** 指定已有豁免的目标名称。
+**参数解释：** 指定已有豁免的目标名称。
 
-**用法与结果。** 规格、RTL 或输入约束发生变化后，应当撤销不再有依据的旧豁免并重新分析；如果只是重新导入旧的排除文件，就会继承过时的结论。
+**用法与结果：** 规格、RTL 或输入约束发生变化后，应当撤销不再有依据的旧豁免并重新分析；如果只是重新导入旧的排除文件，就会继承过时的结论。
 
 ```tcl
 fvunwaive reviewed_waivable_goal
@@ -275,9 +275,9 @@ report_fv -list
 save_waiver_file -file <filename>
 ```
 
-**参数解释。** `-file` 指定输出文件；在 AEP 用法中保存可复用的 XML 豁免内容。
+**参数解释：** `-file` 指定输出文件；在 AEP 用法中保存可复用的 XML 豁免内容。
 
-**用法与结果。** 文件扩展名并不能决定文件的真实格式。保存时应当同时保存豁免理由、适用的设计版本和审核人；工具生成的文件通常不足以表达全部的工程依据。
+**用法与结果：** 文件扩展名并不能决定文件的真实格式。保存时应当同时保存豁免理由、适用的设计版本和审核人；工具生成的文件通常不足以表达全部的工程依据。
 
 ```tcl
 save_waiver_file -file aep_waivers.xml
@@ -291,9 +291,9 @@ save_waiver_file -file aep_waivers.xml
 read_waiver_file -elfiles <filename>
 ```
 
-**参数解释。** `-elfiles` 在本版 AEP 用法中指定之前保存的豁免文件。
+**参数解释：** `-elfiles` 在本版 AEP 用法中指定之前保存的豁免文件。
 
-**用法与结果。** 应当在目标已经建立、正式检查之前导入，并确认匹配的目标数量。名称变化导致豁免未匹配，与目标无需再检查，是两种不同的情况。
+**用法与结果：** 应当在目标已经建立、正式检查之前导入，并确认匹配的目标数量。名称变化导致豁免未匹配，与目标无需再检查，是两种不同的情况。
 
 ```tcl
 read_waiver_file -elfiles aep_waivers.xml

@@ -276,7 +276,7 @@ set -o pipefail
 vcf -f scripts/fpv_register_demo.tcl -batch 2>&1 | tee logs/fpv_register_demo.log
 ```
 
-**检查范围。** 本节的源码足以说明并验证这个简化接口下的寄存器规则，但不能替代 FRV 对 IP-XACT/RALF 的加载、总线适配和自动生成属性。原生 FRV 工程仍然必须由本节之后的规格输入和接口桥接组成。
+**检查范围：** 本节的源码足以说明并验证这个简化接口下的寄存器规则，但不能替代 FRV 对 IP-XACT/RALF 的加载、总线适配和自动生成属性。原生 FRV 工程仍然必须由本节之后的规格输入和接口桥接组成。
 
 ## 4. 一个最小脚本模板
 
@@ -344,11 +344,11 @@ frv_load [-ipxact <file>] [-ral <file>] [-csv <file>]
   [-auto_load] [-parameters <parameter_list>] [-verbose]
 ```
 
-**参数解释。** `-ipxact`、`-ral`、`-csv` 用来选择相应格式的寄存器规格，工程应该明确选定自己的输入格式，不要把三种规格混在同一次调用中。`-bind` 给出总线连接文件；`-checker_file` 指定生成的检查器文件名，默认是 frv.sv。`-top` 限定 component、memoryMap 或 addressBlock；不写类型时，依次按 comp、mmap、block 查找，同名的对象可以使用完整层次路径。
+**参数解释：** `-ipxact`、`-ral`、`-csv` 用来选择相应格式的寄存器规格，工程应该明确选定自己的输入格式，不要把三种规格混在同一次调用中。`-bind` 给出总线连接文件；`-checker_file` 指定生成的检查器文件名，默认是 frv.sv。`-top` 限定 component、memoryMap 或 addressBlock；不写类型时，依次按 comp、mmap、block 查找，同名的对象可以使用完整层次路径。
 
 `-include` 可以选 unmapped、unmapped_reg、unmapped_field、reserved、reserved_reg、reserved_field。包含保留或未分配空间后，还需要设置 RSVD_MODE：0 表示不检查，1 表示期望全零，2 表示期望全一，3 表示使用 snps:outAddrValue 自定义值。`-auto_load` 装入生成的检查器、绑定文件和依赖库。`-parameters` 是 Tcl 参数列表，例如 `{RSVD_MODE=1 COVER_READ=1}`；支持的检查器参数还包括 ADDR_WIDTH、DATA_WIDTH、COMPOSITE、BUS_LATENCY、WR_LATENCY、RD_LATENCY、COVER_TYPE、COVER_WRITE、COVER_BYTE_UPDATE、OUTADDR_EN、LATENCY_MD、OUTABLK_MD、SNPS_AD_ABS、COVER_ALLOW_ERROR。`-verbose` 会显示不支持的结构，而不是默认忽略掉。
 
-**用法与结果。** 这个命令只生成检查器，并不代表已经完成证明。总线封装必须把协议事件转换成检查器所需的读写事件；APB/AHB/AXI 的封装位于安装目录的 Frv 包中，其他协议则需要检查并适配通用封装。原文示例中有一处使用 `-parameter`，正式语法用 `-parameters`，正文统一使用后者，不依赖工具是否接受这种缩写。
+**用法与结果：** 这个命令只生成检查器，并不代表已经完成证明。总线封装必须把协议事件转换成检查器所需的读写事件；APB/AHB/AXI 的封装位于安装目录的 Frv 包中，其他协议则需要检查并适配通用封装。原文示例中有一处使用 `-parameter`，正式语法用 `-parameters`，正文统一使用后者，不依赖工具是否接受这种缩写。
 
 ```tcl
 frv_config -generate_covers true
@@ -374,11 +374,11 @@ frv_config [-generate_backdoor_checks <boolean>]
   [-enable_volatile_check <none|with_hw_update|all>]
 ```
 
-**参数解释。** 反向观察检查和 cover 生成默认开启；地址块之外的检查默认关闭。`-generate_out_of_block_range_checks` 同时给出开关和期望读值，期望值只能是 0 或 1，省略时默认是 0。`-ignore` 目前列出 unknown_access；`-disable_backdoor_checks` 可以禁用寄存器数组或全部反向观察检查。
+**参数解释：** 反向观察检查和 cover 生成默认开启；地址块之外的检查默认关闭。`-generate_out_of_block_range_checks` 同时给出开关和期望读值，期望值只能是 0 或 1，省略时默认是 0。`-ignore` 目前列出 unknown_access；`-disable_backdoor_checks` 可以禁用寄存器数组或全部反向观察检查。
 
 `-generate_wo_read_check` 默认关闭，开启之后再通过 `-generate_wo_read_check_value` 指定只写字段被读时的期望值，顺序不能颠倒。`-generate_bdrsig_from_name` 根据规格的 name 属性生成 RTL 信号路径，只有名称确实对应 RTL 时才能使用。`-enable_fiv` 默认是 false；`-enable_volatile_check` 默认是 none，with_hw_update 只对带有硬件更新描述的易变字段生成读数据检查，all 则对所有此类字段生成。
 
-**用法与结果。** 必须在 `frv_load` 之前配置，因为这些选项决定生成哪些属性，而不只是在结果报告时过滤。不带参数调用会打印当前的默认配置，适合保存到运行日志里。boolean 选项按原文支持 true/false 或 1/0；对于明确只列出 true/false 的选项，保持该拼写。
+**用法与结果：** 必须在 `frv_load` 之前配置，因为这些选项决定生成哪些属性，而不只是在结果报告时过滤。不带参数调用会打印当前的默认配置，适合保存到运行日志里。boolean 选项按原文支持 true/false 或 1/0；对于明确只列出 true/false 的选项，保持该拼写。
 
 ```tcl
 frv_config -generate_covers true
@@ -400,9 +400,9 @@ frv_report [-hide_fields] [-no_summary]
   [-filter <expression>]
 ```
 
-**参数解释。** `-hide_fields` 隐藏字段细节，`-no_summary` 隐藏汇总。`-top` 限定规格对象，类型省略时按 comp、mmap、block 查找。`-vendor_extensions` 展开指定寄存器或字段的厂商扩展信息。`-filter` 支持 regAccess、fieldAccess，用 `==` 或 `!=` 比较访问类型。
+**参数解释：** `-hide_fields` 隐藏字段细节，`-no_summary` 隐藏汇总。`-top` 限定规格对象，类型省略时按 comp、mmap、block 查找。`-vendor_extensions` 展开指定寄存器或字段的厂商扩展信息。`-filter` 支持 regAccess、fieldAccess，用 `==` 或 `!=` 比较访问类型。
 
-**用法与结果。** 应该在证明之前检查寄存器的数量、地址和属性数量是否与预期一致。缺少寄存器或字段检查，往往源于规格格式、访问类型、包含范围或参数设置，不能用“所有已生成的断言都通过”来掩盖漏生成的问题。
+**用法与结果：** 应该在证明之前检查寄存器的数量、地址和属性数量是否与预期一致。缺少寄存器或字段检查，往往源于规格格式、访问类型、包含范围或参数设置，不能用“所有已生成的断言都通过”来掩盖漏生成的问题。
 
 ```tcl
 frv_report
@@ -444,7 +444,7 @@ User Guide 第 627 页说明，`frv_load` 可以生成专用的 SVA 检查器文
 - 确认总线的读写接受点、字节使能、错误响应、超时和复位行为。
 - 确认已经报告并审查了 FRV 自动生成属性的数量和类别。
 - 对 W1C/W1S/volatile/自清除等字段，增加必要的手工检查。
-- 对无法证明、已豁免和未支持的字段单独汇总，而不是把它们遗漏掉。
+- 对无法证明、waiver（豁免）和未支持的字段单独汇总，而不是把它们遗漏掉。
 
 ## 9. 参考资料
 

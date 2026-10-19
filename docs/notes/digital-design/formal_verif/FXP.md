@@ -83,9 +83,9 @@ fxp_generate [<instance-scopes>] [-name <prefix>]
              [-type <type-list>]
 ```
 
-**参数解释。** 范围使用实例名，而不是模块定义名；嵌套实例使用相对顶层的层级路径，多个实例写入 Tcl 列表。`-name` 作为生成属性的共同前缀。`-type` 选择来源与观察类别，省略时使用默认组合；auto 对应文档列出的默认组合。常见类别包括 uninit、oba、xassign、undef、undriven、in、out、bbin、bbout、unresin、unresout、abs 和 snip。
+**参数解释：** 范围使用实例名，而不是模块定义名；嵌套实例使用相对顶层的层级路径，多个实例写入 Tcl 列表。`-name` 作为生成属性的共同前缀。`-type` 选择来源与观察类别，省略时使用默认组合；auto 对应文档列出的默认组合。常见类别包括 uninit、oba、xassign、undef、undriven、in、out、bbin、bbout、unresin、unresout、abs 和 snip。
 
-**用法与结果。** 默认类别并不是“给所有输入都注入 X”：主输入 in、黑盒输出 bbout 和未解析模块输出 unresout 在属性类型表中都不是默认项。语法列表中的 snipdrv 与表中的 snip_drv 拼写存在差异，教程不会把其中任意一个扩展成通用的可运行选项。最小案例显式给出 uninit 和 out，确保既有来源又有观察点。
+**用法与结果：** 默认类别并不是“给所有输入都注入 X”：主输入 in、黑盒输出 bbout 和未解析模块输出 unresout 在属性类型表中都不是默认项。语法列表中的 snipdrv 与表中的 snip_drv 拼写存在差异，教程不会把其中任意一个扩展成通用的可运行选项。最小案例显式给出 uninit 和 out，确保既有来源又有观察点。
 
 ```tcl
 fxp_generate -name reset_x -type {uninit out}
@@ -104,9 +104,9 @@ fxp_assume -injectx [-name <name>] [-reset] [-oba] [-xassign]
 fxp_assume -nox [-name <name>] [-reset] [-condition <expression>] <signal>
 ```
 
-**参数解释。** `-injectx` 建立 X 来源，`-nox` 从指定点排除 X。`-name` 命名生成的目标；`-reset` 用于时序单元的出复位状态。`-oba`、`-xassign`、`-undef` 分别对应越界、显式 X 和未定义行为，作用于整个范围时必须配合 `-scope`；`-condition` 是控制该操作的组合条件。
+**参数解释：** `-injectx` 建立 X 来源，`-nox` 从指定点排除 X。`-name` 命名生成的目标；`-reset` 用于时序单元的出复位状态。`-oba`、`-xassign`、`-undef` 分别对应越界、显式 X 和未定义行为，作用于整个范围时必须配合 `-scope`；`-condition` 是控制该操作的组合条件。
 
-**用法与结果。** 已经用 `create_clock` 或 `create_reset` 定义的时钟、复位信号不能作为 X 注入源。`-nox` 是一种模型前提，不会给 RTL 添加复位或屏蔽逻辑；只有在规格或外部电路保证确定时才可以使用。User Guide 的 nox 语法行漏写了 condition 前的连字符，参数解释和快速参考都采用 `-condition`，这里采用后者并保留该差异说明。
+**用法与结果：** 已经用 `create_clock` 或 `create_reset` 定义的时钟、复位信号不能作为 X 注入源。`-nox` 是一种模型前提，不会给 RTL 添加复位或屏蔽逻辑；只有在规格或外部电路保证确定时才可以使用。User Guide 的 nox 语法行漏写了 condition 前的连字符，参数解释和快速参考都采用 `-condition`，这里采用后者并保留该差异说明。
 
 ```tcl
 fxp_assume -injectx -name cold_data -reset {u_buf.data_q}
@@ -122,9 +122,9 @@ fxp_assert -name output_defined -condition {out_valid} {out_data}
 fxp_assert [-name <name>] [-condition <expression>] <signal>
 ```
 
-**参数解释。** `-name` 指定检查名称，`-condition` 决定在哪些组合条件成立时要求目标信号确定；位置参数是观察信号。
+**参数解释：** `-name` 指定检查名称，`-condition` 决定在哪些组合条件成立时要求目标信号确定；位置参数是观察信号。
 
-**用法与结果。** 无有效数据的周期允许数据寄存器未初始化时，应当只在 out_valid 为真时才要求数据确定。同时还必须用 FPV 检查 out_valid 不会提前置位，否则错误的屏蔽条件可能让 FXP 看不到真实的问题。
+**用法与结果：** 无有效数据的周期允许数据寄存器未初始化时，应当只在 out_valid 为真时才要求数据确定。同时还必须用 FPV 检查 out_valid 不会提前置位，否则错误的屏蔽条件可能让 FXP 看不到真实的问题。
 
 ```tcl
 fxp_assert -name data_when_valid \
@@ -141,9 +141,9 @@ report_fv -class xprop -list
 fxp_compute_rootcause [-property <property-names>] [-stop] [-block]
 ```
 
-**参数解释。** `-property` 指定失败目标，`-block` 等待定位结束，`-stop` 停止相关计算并清理待计算的属性列表。
+**参数解释：** `-property` 指定失败目标，`-block` 等待定位结束，`-stop` 停止相关计算并清理待计算的属性列表。
 
-**用法与结果。** 先要有失败属性和轨迹，再执行来源分析。它会区分未初始化、显式 X、越界等来源，减少从下游逐级人工回溯的工作量，但仍然需要核对该路径的有效性控制。自动模式由 `fxp_compute_rootcause_auto` 控制，默认为 false。
+**用法与结果：** 先要有失败属性和轨迹，再执行来源分析。它会区分未初始化、显式 X、越界等来源，减少从下游逐级人工回溯的工作量，但仍然需要核对该路径的有效性控制。自动模式由 `fxp_compute_rootcause_auto` 控制，默认为 false。
 
 ```tcl
 fxp_compute_rootcause -property {output_defined} -block
@@ -158,9 +158,9 @@ fxp_report_rootcause -property {output_defined} -list
 fxp_report_rootcause [-property <property-names>] [-list] [-no_summary]
 ```
 
-**参数解释。** `-property` 选择目标，`-list` 按属性逐行输出，`-no_summary` 不显示来源类型的汇总。
+**参数解释：** `-property` 选择目标，`-list` 按属性逐行输出，`-no_summary` 不显示来源类型的汇总。
 
-**用法与结果。** 只执行报告命令，不会自动补齐缺失的来源计算。看到某个寄存器未初始化之后，应当进一步判断它是否应该有复位、复位是否被门控、工具是否识别了复位，以及下游是否错误地使用了无效数据。
+**用法与结果：** 只执行报告命令，不会自动补齐缺失的来源计算。看到某个寄存器未初始化之后，应当进一步判断它是否应该有复位、复位是否被门控、工具是否识别了复位，以及下游是否错误地使用了无效数据。
 
 ```tcl
 fxp_compute_rootcause -block

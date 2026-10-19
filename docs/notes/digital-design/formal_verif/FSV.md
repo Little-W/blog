@@ -199,7 +199,7 @@ vcf -f scripts/fsv_debug_good.tcl -batch 2>&1 | tee logs/fsv_debug_good.log
 vcf -f scripts/fsv_debug_bad.tcl -batch 2>&1 | tee logs/fsv_debug_bad.log
 ```
 
-**结果核查。** 正确版的源端不参与输出计算，错误版在调试开启时有明确的依赖。工具可能会对未使用的源做优化，因此必须先确认属性生成、源目的解析及报告分类；零属性或对象找不到都不能当作通过。示例结果仍有待在本机 VC Formal 上执行确认。
+**结果核查：** 正确版的源端不参与输出计算，错误版在调试开启时有明确的依赖。工具可能会对未使用的源做优化，因此必须先确认属性生成、源目的解析及报告分类；零属性或对象找不到都不能当作通过。示例结果仍有待在本机 VC Formal 上执行确认。
 
 ## 6. 信息流安全与普通功能断言相互补充
 
@@ -228,9 +228,9 @@ fsv_generate -src <signals> [-src_condition <expression>]
   [-zone <zone_name>] [-condition_cover]
 ```
 
-**参数解释。** `-src`、`-dest` 必填，可以是输入输出、寄存器、网络或实例；每个目的对象生成一个目标。`-src_condition` 只要求信息开始传播的那一拍成立；`-dest_condition` 只要求观察传播的那一拍成立，它们不要求同时成立或一直成立。`-exclude` 排除本条检查中的合法传播路径；`-name` 给属性和约束加前缀。`-zone` 把检查分组，同组的源标记共同作用于该组断言，但单条源/目的条件不会自动共享。`-condition_cover` 增加条件覆盖检查，便于识别不可达的条件。
+**参数解释：** `-src`、`-dest` 必填，可以是输入输出、寄存器、网络或实例；每个目的对象生成一个目标。`-src_condition` 只要求信息开始传播的那一拍成立；`-dest_condition` 只要求观察传播的那一拍成立，它们不要求同时成立或一直成立。`-exclude` 排除本条检查中的合法传播路径；`-name` 给属性和约束加前缀。`-zone` 把检查分组，同组的源标记共同作用于该组断言，但单条源/目的条件不会自动共享。`-condition_cover` 增加条件覆盖检查，便于识别不可达的条件。
 
-**用法与结果。** 这个命令证明的是给定模型中不存在指定的传播，而不是加密强度、所有侧信道或完整的系统安全。把源条件换成始终成立的普通假设会改变问题，可能造成错误的证明。时钟和复位不能作为普通的标记源；被 create_clock/create_reset 声明的对象会被自动忽略并给出警告。
+**用法与结果：** 这个命令证明的是给定模型中不存在指定的传播，而不是加密强度、所有侧信道或完整的系统安全。把源条件换成始终成立的普通假设会改变问题，可能造成错误的证明。时钟和复位不能作为普通的标记源；被 create_clock/create_reset 声明的对象会被自动忽略并给出警告。
 
 ```tcl
 fsv_generate -src {key_reg} -dest {debug_data} \
@@ -251,9 +251,9 @@ fsv_blackbox [-all] [-all_auto_path] [-no_auto_path]
   [-ignore_unresolved] [-data_path_only] [-remove] [<instance>]
 ```
 
-**参数解释。** `-all` 处理全部结构黑盒；默认的 `-all_auto_path` 自动建立路径；`-no_auto_path` 创建无自动路径的模型。`-add_path` 和 `-remove_path` 结合 `-src`、`-dest` 增减指定端口之间的传播；`-add_input_assertion` 检查安全信息能否到达黑盒输入。`-seq_path` 引入一拍传播，有助于避免组合环；`-comb_path` 使用组合传播。`-ignore_unresolved` 跳过未解析模块，`-data_path_only` 限制控制选择信号的传播，`-remove` 撤销安全抽象。
+**参数解释：** `-all` 处理全部结构黑盒；默认的 `-all_auto_path` 自动建立路径；`-no_auto_path` 创建无自动路径的模型。`-add_path` 和 `-remove_path` 结合 `-src`、`-dest` 增减指定端口之间的传播；`-add_input_assertion` 检查安全信息能否到达黑盒输入。`-seq_path` 引入一拍传播，有助于避免组合环；`-comb_path` 使用组合传播。`-ignore_unresolved` 跳过未解析模块，`-data_path_only` 限制控制选择信号的传播，`-remove` 撤销安全抽象。
 
-**用法与结果。** 直接对有 RTL 的模块做安全抽象时，自动路径可以来自 RTL 的结构关系；如果先用结构黑盒删除内部逻辑、再加安全抽象，就只能保守地连接所有输入与输出，可能制造更多失败。反过来，普通的结构黑盒如果切断了传播，也可能制造错误的通过。人工删除路径必须有设计或规格依据。
+**用法与结果：** 直接对有 RTL 的模块做安全抽象时，自动路径可以来自 RTL 的结构关系；如果先用结构黑盒删除内部逻辑、再加安全抽象，就只能保守地连接所有输入与输出，可能制造更多失败。反过来，普通的结构黑盒如果切断了传播，也可能制造错误的通过。人工删除路径必须有设计或规格依据。
 
 ```tcl
 fsv_blackbox -seq_path -all_auto_path u_cipher_ctrl
@@ -270,9 +270,9 @@ fsv_blackbox -remove_path -src ack_i -dest req_o u_cipher_ctrl
 fsv_report -blackbox [-list] [-path_config] [-path] [-col]
 ```
 
-**参数解释。** `-blackbox` 选择安全抽象报告，`-list` 列出对象，`-path_config` 显示用户配置，`-path` 展开从当前输入到输出的路径，`-col` 返回实例集合。这里只列出 User Guide 对安全黑盒报告明确说明的形式。
+**参数解释：** `-blackbox` 选择安全抽象报告，`-list` 列出对象，`-path_config` 显示用户配置，`-path` 展开从当前输入到输出的路径，`-col` 返回实例集合。这里只列出 User Guide 对安全黑盒报告明确说明的形式。
 
-**用法与结果。** 用户配置并不等于最终的路径集合；在自动建立路径和人工增删之后，应当查看 `-path`。路径缺失会导致假通过，过多保守的路径会导致假失败，两者的处理方向相反。
+**用法与结果：** 用户配置并不等于最终的路径集合；在自动建立路径和人工增删之后，应当查看 `-path`。路径缺失会导致假通过，过多保守的路径会导致假失败，两者的处理方向相反。
 
 ```tcl
 fsv_report -blackbox -list
