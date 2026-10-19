@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T10:59:51.929Z",
+  "updatedAt": "2026-10-19T11:02:47.594Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T10:59:51.929Z",
+      "updatedAt": "2026-10-19T11:02:47.594Z",
       "items": [
         {
           "id": "150882787",
@@ -380,23 +380,6 @@
           "pixivUrl": "https://www.pixiv.net/artworks/101015341",
           "image": "albums/pixiv-latest-50/101015341_p0.jpg",
           "thumbnail": "albums/pixiv-latest-50/thumbs/101015341_p0.webp",
-          "manual": false
-        },
-        {
-          "id": "126638995",
-          "pixivId": "126638995",
-          "title": "透き通った世界",
-          "author": "ファルケン@skebお仕募集中",
-          "description": "ひっくり返してもおｋ",
-          "tags": [
-            "ブルーアーカイブ",
-            "アロナ(ブルーアーカイブ)",
-            "メンタルヘルス",
-            "プラナ(ブルーアーカイブ)"
-          ],
-          "pixivUrl": "https://www.pixiv.net/artworks/126638995",
-          "image": "albums/pixiv-latest-50/126638995_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/126638995_p0.webp",
           "manual": false
         },
         {
