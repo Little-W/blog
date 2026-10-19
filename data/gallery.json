@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:07:33.062Z",
+  "updatedAt": "2026-10-19T09:07:35.296Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:07:33.062Z",
+      "updatedAt": "2026-10-19T09:07:35.296Z",
       "items": [
         {
           "id": "150882787",
@@ -1243,23 +1243,19 @@
           "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         },
         {
-          "id": "88724849",
-          "pixivId": "88724849",
-          "title": "毒花吐きの狼少女",
-          "author": "美和野らぐ",
+          "id": "101648338",
+          "pixivId": "101648338",
+          "title": "秋がきた🍁",
+          "author": "胡麻乃りお",
           "description": "",
           "tags": [
             "オリジナル",
-            "女の子",
-            "麦わら帽子",
-            "狼耳",
-            "口に花",
-            "花と女の子",
-            "オリジナル50000users入り"
+            "銀杏",
+            "オリジナル5000users入り"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/88724849",
-          "image": "albums/pixiv-latest-50/px88724849_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px88724849_p0.jpg"
+          "pixivUrl": "https://www.pixiv.net/artworks/101648338",
+          "image": "albums/pixiv-latest-50/px101648338_p0.png",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px101648338_p0.jpg"
         }
       ]
     }
