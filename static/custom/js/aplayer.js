@@ -125,6 +125,8 @@ try {
 } catch (error) {}
 var music_mini_queue_open = false;
 var music_mini_queue_close_timer = 0;
+var music_mini_player_edge_hide_timer = 0;
+var MUSIC_MINI_EDGE_HIDE_DELAY_MS = 4200;
 
 function load_music_context_recent() {
   var stored = [];
@@ -287,8 +289,6 @@ function sync_music_mini_player() {
   var player = window.ap0;
   var track = music_context_track(player);
   var hasQueue = Boolean(player && player.list && Array.isArray(player.list.audios) && player.list.audios.length);
-  mini.hidden = !hasQueue || !track;
-  if (!track) return;
 
   var title = document.getElementById('music-mini-title');
   var artist = document.getElementById('music-mini-artist');
@@ -298,6 +298,16 @@ function sync_music_mini_player() {
   var volume = document.getElementById('music-mini-volume');
   var playButton = document.getElementById('music-mini-toggle');
   var playIcon = document.getElementById('music-mini-play-icon');
+  if (!hasQueue || !track) {
+    mini.hidden = true;
+    clear_music_mini_player_edge_hide();
+    mini.classList.remove('isEdgeHidden');
+    return;
+  }
+  mini.hidden = false;
+  if (music_mini_player_collapsed && !mini.classList.contains('isEdgeHidden') && !music_mini_player_edge_hide_timer) {
+    schedule_music_mini_player_edge_hide(MUSIC_MINI_EDGE_HIDE_DELAY_MS);
+  }
   if (title) {
     title.textContent = track.title || '未命名曲目';
     title.setAttribute('title', track.title || '未命名曲目');
@@ -331,22 +341,60 @@ function sync_music_mini_player() {
 }
 
 function set_music_mini_player_collapsed(collapsed, persist) {
+  var previousCollapsed = music_mini_player_collapsed;
   music_mini_player_collapsed = Boolean(collapsed);
   if (music_mini_player_collapsed) set_music_mini_queue_open(false);
   var mini = document.getElementById('music-mini-player');
+  var hadCollapsedClass = Boolean(mini && mini.classList.contains('isCollapsed'));
   var button = document.getElementById('music-mini-collapse');
   var icon = document.getElementById('music-mini-collapse-icon');
+  if (!music_mini_player_collapsed) {
+    clear_music_mini_player_edge_hide();
+    if (mini) mini.classList.remove('isEdgeHidden');
+  } else if (!previousCollapsed || !hadCollapsedClass || persist) {
+    clear_music_mini_player_edge_hide();
+    if (mini) mini.classList.remove('isEdgeHidden');
+  }
   if (mini) mini.classList.toggle('isCollapsed', music_mini_player_collapsed);
+  if (music_mini_player_collapsed && (!previousCollapsed || !hadCollapsedClass || persist)) {
+    schedule_music_mini_player_edge_hide(MUSIC_MINI_EDGE_HIDE_DELAY_MS);
+  }
   if (button) {
     var label = music_mini_player_collapsed ? '展开侧边栏播放器' : '收缩到侧边栏';
     button.setAttribute('aria-label', label);
     button.setAttribute('title', label);
     button.setAttribute('aria-expanded', music_mini_player_collapsed ? 'false' : 'true');
+    if (persist && music_mini_player_collapsed && document.activeElement === button) button.blur();
   }
   if (icon) icon.setAttribute('d', music_mini_player_collapsed ? 'm10 6 6 6-6 6' : 'm14 6-6 6 6 6');
   if (persist) {
     try { localStorage.setItem(MUSIC_MINI_COLLAPSE_STORAGE_KEY, music_mini_player_collapsed ? 'true' : 'false'); } catch (error) {}
   }
+}
+
+function clear_music_mini_player_edge_hide() {
+  if (music_mini_player_edge_hide_timer) {
+    window.clearTimeout(music_mini_player_edge_hide_timer);
+    music_mini_player_edge_hide_timer = 0;
+  }
+}
+
+function schedule_music_mini_player_edge_hide(delay) {
+  clear_music_mini_player_edge_hide();
+  if (!music_mini_player_collapsed || music_mini_queue_open) return;
+  music_mini_player_edge_hide_timer = window.setTimeout(function() {
+    music_mini_player_edge_hide_timer = 0;
+    var mini = document.getElementById('music-mini-player');
+    if (!mini || mini.hidden || !music_mini_player_collapsed || music_mini_queue_open) return;
+    if (mini.matches(':hover') || mini.contains(document.activeElement)) return;
+    mini.classList.add('isEdgeHidden');
+  }, Math.max(0, Number(delay) || 0));
+}
+
+function reveal_music_mini_player_edge() {
+  clear_music_mini_player_edge_hide();
+  var mini = document.getElementById('music-mini-player');
+  if (mini) mini.classList.remove('isEdgeHidden');
 }
 
 function sync_music_mini_modes(player) {
@@ -479,6 +527,7 @@ function init_music_mini_player(player) {
   var loopButton = document.getElementById('music-mini-loop');
   var queueButton = document.getElementById('music-mini-queue-toggle');
   var queueClose = document.getElementById('music-mini-queue-close');
+  var mini = document.getElementById('music-mini-player');
   function nativeModeButton(test) {
     var controlRoot = document.getElementById('ctr_panel_div') || player.container;
     return controlRoot && [...controlRoot.querySelectorAll('.aplayer-icon')].find(function(button) {
@@ -521,6 +570,16 @@ function init_music_mini_player(player) {
   if (collapse) collapse.addEventListener('click', function() {
     set_music_mini_player_collapsed(!music_mini_player_collapsed, true);
   });
+  if (mini) {
+    mini.addEventListener('mouseenter', reveal_music_mini_player_edge);
+    mini.addEventListener('focusin', reveal_music_mini_player_edge);
+    mini.addEventListener('mouseleave', function() {
+      if (music_mini_player_collapsed) schedule_music_mini_player_edge_hide(2200);
+    });
+    mini.addEventListener('focusout', function(event) {
+      if (music_mini_player_collapsed && !mini.contains(event.relatedTarget)) schedule_music_mini_player_edge_hide(2200);
+    });
+  }
   set_music_mini_player_collapsed(music_mini_player_collapsed, false);
   ['play', 'pause', 'listswitch', 'timeupdate', 'loadedmetadata', 'volumechange', 'listadd', 'listremove', 'listclear'].forEach(function(eventName) {
     player.on(eventName, sync_music_mini_player);
