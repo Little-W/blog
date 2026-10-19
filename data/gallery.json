@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-19T09:07:35.296Z",
+  "updatedAt": "2026-10-19T09:07:53.818Z",
   "albums": [
     {
       "id": "pixiv-latest-50",
       "title": "精选插画",
       "description": "",
       "tags": [],
-      "updatedAt": "2026-10-19T09:07:35.296Z",
+      "updatedAt": "2026-10-19T09:07:53.818Z",
       "items": [
         {
           "id": "150882787",
@@ -1243,19 +1243,22 @@
           "thumbnail": "albums/pixiv-latest-50/thumbs/px102734382_p0.jpg"
         },
         {
-          "id": "101648338",
-          "pixivId": "101648338",
-          "title": "秋がきた🍁",
-          "author": "胡麻乃りお",
+          "id": "94763503",
+          "pixivId": "94763503",
+          "title": "ホワイト·クリスマス",
+          "author": "WERI",
           "description": "",
           "tags": [
-            "オリジナル",
-            "銀杏",
-            "オリジナル5000users入り"
+            "女の子",
+            "少女",
+            "クリスマス",
+            "ベレー帽",
+            "オリジナル50000users入り",
+            "オリジナル"
           ],
-          "pixivUrl": "https://www.pixiv.net/artworks/101648338",
-          "image": "albums/pixiv-latest-50/px101648338_p0.png",
-          "thumbnail": "albums/pixiv-latest-50/thumbs/px101648338_p0.jpg"
+          "pixivUrl": "https://www.pixiv.net/artworks/94763503",
+          "image": "albums/pixiv-latest-50/px94763503_p0.png",
+          "thumbnail": "albums/pixiv-latest-50/thumbs/px94763503_p0.jpg"
         }
       ]
     }
